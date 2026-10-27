@@ -83,10 +83,11 @@ async function action(b) {
 // Painel da Kulera. Protegido por ADMIN_KEY.
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  const key = req.headers['x-admin-key'] ?? req.headers['X-Admin-Key'] ?? req.headers['X-ADMIN-KEY'] ?? req.headers['x-adminkey'];
-  const adminKey = process.env.ADMIN_KEY || process.env.NEXT_PUBLIC_ADMIN_KEY || process.env.ADMIN_PASS || 'kulera';
-  if (!key || !sameKey(key, adminKey)) return res.status(401).json({ error: 'unauthorized' });
-  if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
+  try {
+    const key = req.headers['x-admin-key'] ?? req.headers['X-Admin-Key'] ?? req.headers['X-ADMIN-KEY'] ?? req.headers['x-adminkey'];
+    const adminKey = process.env.ADMIN_KEY || process.env.NEXT_PUBLIC_ADMIN_KEY || process.env.ADMIN_PASS || 'kulera';
+    if (!key || !sameKey(key, adminKey)) return res.status(401).json({ error: 'unauthorized' });
+    if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
 
   const totals = (await pool.query(
     `select count(*) filter (where status='paid')::int as paid, coalesce(sum(amount_minor) filter (where status='paid'),0)::bigint as paid_minor,
@@ -110,4 +111,8 @@ export default async function handler(req, res) {
   res.json({ totals: { ...totals, paid_minor: Number(totals.paid_minor), kulera_minor: Number(split.c), partners_minor: Number(split.p) },
     leads, orders, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
     submissions, plans: plans.map((x)=>({...x,price_minor:Number(x.price_minor)})), subscriptions: subs });
+  } catch (e) {
+    console.error('admin.error', String(e));
+    return res.status(500).json({ error: 'internal_error' });
+  }
 }
