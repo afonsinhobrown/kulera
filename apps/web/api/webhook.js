@@ -40,13 +40,13 @@ export default async function handler(req, res) {
     if (isNew.rowCount === 0) { await client.query('COMMIT'); return res.status(200).json({ ok: true, result: 'duplicate' }); }
 
     if (target === 'paid') {
-      // Confirmação verificada vence «falhado/cancelado»; «pago» nunca recua.
+      // ConfirmaAA�o verificada vence A�falhado/canceladoA�; A�pagoA� nunca recua.
       const upd = await client.query(
         `update fair_orders set status = 'paid', paid_at = coalesce(paid_at, now()),
            provider_payment_id = coalesce(provider_payment_id, $2) where id = $1 and status <> 'paid'`, [order.id, providerId]);
-      if (upd.rowCount === 1) { // acabou de passar a «pago»: regista a divisão da receita
+      if (upd.rowCount === 1) { // acabou de passar a A�pagoA�: regista a divisA�o da receita
         const r = await client.query(
-          `select o.book_id, o.amount_minor, b.partner_id, p.commission_bps from fair_orders o
+          `select o.book_id, o.amount_minor, o.plan_id, o.type, b.partner_id, p.commission_bps from fair_orders o
              left join fair_books b on b.id = o.book_id left join fair_partners p on p.id = b.partner_id where o.id = $1`, [order.id]);
         const x = r.rows[0];
         if (x?.book_id) {
@@ -56,6 +56,17 @@ export default async function handler(req, res) {
             `insert into fair_sales (order_id, book_id, partner_id, gross_minor, commission_bps, commission_minor, partner_minor)
              values ($1,$2,$3,$4,$5,$6,$7) on conflict do nothing`,
             [order.id, x.book_id, x.partner_id, x.amount_minor, bps, sp.commission, sp.partner]);
+        }
+        if (x?.type === 'subscription' && x?.plan_id) {
+          const pl = await client.query("select interval from fair_plans where id=$1", [x.plan_id]);
+          const days = pl.rows[0]?.interval === 'year' ? 365 : 30;
+          const buyer = await client.query("select buyer_name,buyer_phone,buyer_email from fair_orders where id=$1", [order.id]);
+          const b = buyer.rows[0];
+          if (b) {
+            await client.query(`insert into fair_subscriptions (buyer_name,buyer_phone,buyer_email,plan_id,order_id,status,starts_at,ends_at)
+              values ($1,$2,$3,$4,$5,'active',now(),now()+($6||'30 days')::interval)
+              on conflict do nothing`, [b.buyer_name, b.buyer_phone, b.buyer_email, x.plan_id, order.id, days + ' days']);
+          }
         }
       }
     } else {

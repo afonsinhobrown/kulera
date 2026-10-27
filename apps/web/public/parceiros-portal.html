@@ -1,0 +1,73 @@
+﻿<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kulera+ | Portal de Parceiros</title>
+<link rel="stylesheet" href="style.css">
+<style>form.f{display:grid;gap:10px;max-width:560px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px}table{border-collapse:collapse;width:100%;font-size:14px;background:#fff}th,td{border:1px solid var(--line);padding:8px;text-align:left}textarea,input,select{font:inherit;padding:8px;border:1.5px solid #9db3b0;border-radius:6px;width:100%}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}h2{font-family:Georgia,serif;margin-top:24px}</style>
+</head>
+<body>
+<div class="top">Kulera<span>+</span> | Portal de Parceiros</div>
+<main>
+  <div id="auth">
+    <div class="row" style="max-width:900px">
+      <form class="f" id="login">
+        <b>Entrar</b>
+        <label>Email<input name="email" type="email" required></label>
+        <label>Palavra-passe<input name="password" type="password" required></label>
+        <p class="msg" id="lmsg"></p>
+        <button>Entrar</button>
+      </form>
+      <form class="f" id="reg">
+        <b>Registar (Editora/Autor)</b>
+        <label>Nome/Organização<input name="name" required></label>
+        <div class="row"><label>Tipo <select name="kind"><option value="publisher">Editora</option><option value="author">Autor</option></select></label><label>Telefone<input name="phone"></label></div>
+        <label>Email<input name="email" type="email" required></label>
+        <label>Palavra-passe (mín. 6)<input name="password" type="password" required></label>
+        <p class="msg" id="rmsg"></p>
+        <button>Registar</button>
+      </form>
+    </div>
+  </div>
+  <div id="app" hidden>
+    <p>Bem-vindo, <span id="pname"></span> (<span id="pstatus"></span>)</p>
+    <button id="logout" class="sec">Sair</button>
+    <h2>Submeter manuscrito</h2>
+    <form class="f" id="sub">
+      <input type="hidden" name="contentHtml">
+      <label>Título<input name="title" required maxlength="200"></label>
+      <label>Autor<input name="author" required maxlength="200"></label>
+      <label>Sinopse<textarea name="description" rows="3" maxlength="2000"></textarea></label>
+      <div class="row"><label>Idioma<input name="language" value="pt"></label><label>Capa (URL)<input name="coverUrl"></label></div>
+      <label>Ficheiro (.docx ou HTML)<input type="file" id="file" accept=".docx,.html,.htm"></label>
+      <p class="msg" id="fmsg"></p>
+      <p class="msg" id="smsg"></p>
+      <button>Submeter</button>
+    </form>
+    <h2>As minhas submissões</h2>
+    <div class="wrap"><table id="subs"></table></div>
+  </div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script>
+const $=id=>document.getElementById(id); let TOK=localStorage.getItem('ptok')||'',contentHtml=null;
+async function call(path,body,headers={}){
+  const h={'Content-Type':'application/json',...headers};
+  if(TOK) h['x-partner-token']=TOK;
+  const r=await fetch(path,{method:body?'POST':(headers.method||'GET'),headers:h,body:body?JSON.stringify(body):undefined});
+  return {ok:r.ok,j:await r.json()};
+}
+function cell(v){const td=document.createElement('td');td.textContent=v??'';return td;}
+function fill(t,h,rows,m){t.innerHTML='';const tr=document.createElement('tr');h.forEach(x=>{const th=document.createElement('th');th.textContent=x;tr.appendChild(th)});t.appendChild(tr);rows.forEach(r=>t.appendChild(m(r)));}
+async function loadMe(){const {ok,j}=await call('/api/partner-auth');if(!ok)throw 0;$('#pname').textContent=j.name;$('#pstatus').textContent=j.status;$('#auth').hidden=true;$('#app').hidden=false;loadSubs();}
+async function loadSubs(){const {ok,j}=await call('/api/partner-submit');if(!ok)return;fill($('#subs'),['Título','Autor','Estado','Notas','Criado'],j.submissions||[],s=>{const tr=document.createElement('tr');const st={submitted:'Submetido',in_review:'Em análise',changes_requested:'Alterações pedidas',approved:'Aprovado',rejected:'Rejeitado'}[s.status]||s.status;tr.append(cell(s.title),cell(s.author),cell(st),cell(s.admin_notes),cell(s.created_at?new Date(s.created_at).toLocaleString('pt-MZ'):''));return tr});}
+$('#file').onchange=async e=>{const f=e.target.files[0];contentHtml=null;const m=$('fmsg');m.textContent='A converter...';if(!f){m.textContent='';return;}try{if(/\.docx$/i.test(f.name)){if(!window.mammoth)throw 0;const r=await mammoth.convertToHtml({arrayBuffer:await f.arrayBuffer()});contentHtml=r.value;}else contentHtml=await f.text();m.textContent='Pronto ('+Math.round(contentHtml.length/1000)+'k)';}catch{m.className='msg err';m.textContent='Erro ao ler ficheiro';}};
+$('#reg').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-auth',{action:'register',name:f.name.value,kind:f.kind.value,phone:f.phone.value,email:f.email.value,password:f.password.value});$('rmsg').textContent=ok?'Registo enviado. Já pode entrar.':(j.error==='exists'?'Já existe conta com este email.':'Verifique os dados.');$('rmsg').className=ok?'msg':'msg err';};
+$('#login').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-auth',{action:'login',email:f.email.value,password:f.password.value});if(!ok){$('lmsg').textContent='Credenciais inválidas.';$('lmsg').className='msg err';return;}TOK=j.token;localStorage.setItem('ptok',TOK);loadMe();};
+$('#sub').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-submit',{title:f.title.value,author:f.author.value,description:f.description.value,language:f.language.value,coverUrl:f.coverUrl.value,contentHtml});$('smsg').textContent=ok?'Submetido com sucesso.':'Erro ao submeter.';$('smsg').className=ok?'msg':'msg err';if(ok){f.reset();contentHtml=null;$('#fmsg').textContent='';loadSubs();}};
+$('#logout').onclick=()=>{localStorage.removeItem('ptok');location.reload();};
+if(TOK)loadMe().catch(()=>{});
+</script>
+</body>
+</html>

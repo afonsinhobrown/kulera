@@ -61,9 +61,11 @@ create table if not exists fair_books (
   updated_at timestamptz not null default now()
 );
 alter table fair_orders add column if not exists book_id uuid references fair_books (id);
+alter table fair_orders add column if not exists plan_id uuid;
+alter table fair_orders add column if not exists type text not null default 'book' check (type in ('book','subscription'));
 create table if not exists fair_sales (
   order_id uuid primary key references fair_orders (id),
-  book_id uuid not null references fair_books (id),
+  book_id uuid references fair_books (id),
   partner_id uuid references fair_partners (id),
   gross_minor bigint not null,
   commission_bps int not null check (commission_bps between 0 and 10000), -- percentagem aplicada na altura
@@ -71,4 +73,59 @@ create table if not exists fair_sales (
   partner_minor bigint not null,
   created_at timestamptz not null default now(),
   check (commission_minor + partner_minor = gross_minor)
+);
+
+-- Parceiros com acesso self-service
+create table if not exists fair_partner_users (
+  id uuid primary key default gen_random_uuid(),
+  partner_id uuid not null references fair_partners (id) on delete cascade,
+  email text not null unique,
+  password_hash text not null,
+  status text not null default 'active' check (status in ('active','suspended')),
+  created_at timestamptz not null default now()
+);
+
+-- SubmissAμes de manuscritos por parceiros
+create table if not exists fair_submissions (
+  id uuid primary key default gen_random_uuid(),
+  partner_id uuid not null references fair_partners (id),
+  partner_user_id uuid references fair_partner_users (id),
+  title text not null,
+  author text not null,
+  description text,
+  language text not null default 'pt',
+  cover_url text,
+  content_html text,
+  status text not null default 'submitted' check (status in ('submitted','in_review','changes_requested','approved','rejected')),
+  admin_notes text,
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Planos de subscriA§A£o
+create table if not exists fair_plans (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  name text not null,
+  description text,
+  price_minor bigint not null check (price_minor >= 0),
+  currency char(3) not null default 'MZN',
+  interval text not null check (interval in ('month','year')),
+  status text not null default 'active' check (status in ('active','archived')),
+  created_at timestamptz not null default now()
+);
+
+-- SubscriA§Aμes activas
+create table if not exists fair_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  buyer_name text not null,
+  buyer_phone text not null,
+  buyer_email text,
+  plan_id uuid not null references fair_plans (id),
+  order_id uuid references fair_orders (id),
+  status text not null default 'active' check (status in ('active','cancelled','expired')),
+  starts_at timestamptz not null default now(),
+  ends_at timestamptz not null,
+  created_at timestamptz not null default now()
 );

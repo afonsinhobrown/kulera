@@ -1,0 +1,47 @@
+﻿<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kulera+ | Planos de subscri\u00e7\u00e3o</title>
+<link rel="stylesheet" href="style.css">
+<style>.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:18px}.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;box-shadow:0 1px 0 rgba(0,0,0,.02)}.price{font:700 28px Georgia,serif;margin:8px 0}.btn{display:inline-block;background:var(--brand);color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;border:0;cursor:pointer}</style>
+</head>
+<body>
+<header class="top"><div class="brand">Kulera<span>+</span></div><nav><a href="index.html">Loja</a><a href="planos.html">Planos</a><a href="parceiros.html">Parceiros</a></nav></header>
+<main>
+  <h1>Planos mensais / anuais</h1>
+  <p>Aceda \u00e0 biblioteca com subscri\u00e7\u00e3o.</p>
+  <div class="grid" id="plans"></div>
+  <dialog id="dlg"><form method="dialog" class="f" style="max-width:420px" id="buy">
+    <b>Subcrever plano</b>
+    <input type="hidden" name="planId">
+    <label>Nome completo<input name="name" required></label>
+    <label>Telefone (M-Pesa/e-Mola)<input name="phone" required placeholder="84XXXXXXX"></label>
+    <label>Email (opcional)<input name="email" type="email"></label>
+    <p class="msg" id="bmsg"></p>
+    <div class="row"><button class="btn">Continuar para pagamento</button><button type="button" onclick="dlg.close()">Cancelar</button></div>
+  </form></dialog>
+</main>
+<script>
+const $=id=>document.getElementById(id),dlg=$('dlg');
+async function load(){
+  const r=await fetch('/api/subscriptions'); const j=await r.json();
+  const g=$('plans'); g.innerHTML='';
+  (j.plans||[]).forEach(p=>{
+    const d=document.createElement('div'); d.className='card';
+    d.innerHTML='<h3>'+p.name+'</h3><div class="price">'+(p.price_minor/100).toLocaleString('pt-MZ',{style:'currency',currency:p.currency})+' / '+(p.interval==='year'?'ano':'m\u00eas')+'</div><p>'+ (p.description||'')+'</p><button class="btn">Subscrever</button>';
+    d.querySelector('button').onclick=()=>{dlg.querySelector('[name=planId]').value=p.id;dlg.showModal();};
+    g.appendChild(d);
+  });
+}
+$('#buy').onsubmit=async e=>{
+  e.preventDefault(); const f=e.target; $('bmsg').textContent='A gerar...';
+  const r=await fetch('/api/subscriptions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({planId:f.planId.value,name:f.name.value,phone:f.phone.value,email:f.email.value})});
+  const j=await r.json(); if(!r.ok){$('bmsg').textContent='Verifique os dados.';return;}
+  location.href=j.checkoutUrl;
+};
+load();
+</script>
+</body>
+</html>

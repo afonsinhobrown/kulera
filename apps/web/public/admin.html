@@ -16,21 +16,44 @@
     <div class="kpi" id="kpi"></div>
     <p><button id="csvL" class="sec mini">Parceiros interessados (CSV)</button> <button id="csvO" class="sec mini">Vendas (CSV)</button> <button id="csvP" class="sec mini">Valores a pagar a parceiros (CSV)</button></p>
 
+    <h2>Submissões de parceiros</h2><div class="wrap"><table id="subs"></table></div>
+    <form class="f" id="subForm">
+      <b>Aprovar submissão</b>
+      <input type="hidden" name="submissionId">
+      <label>Preço (MZN)<input name="price" type="number" min="1" step="0.01" required></label>
+      <label>Estado <select name="status"><option value="draft">Criar como rascunho</option><option value="published">Publicar já</option></select></label>
+      <label>Notas (opcional)<input name="notes"></label>
+      <p class="msg" id="subMsg"></p>
+      <div class="row"><button type="submit">Aprovar e criar livro</button><button type="button" id="subReject">Pedir alterações / Rejeitar</button></div>
+    </form>
+
     <h2>Livros</h2><div class="wrap"><table id="books"></table></div>
     <form class="f" id="bookForm">
       <b id="bookFormTitle">Novo livro</b><input type="hidden" name="id">
-      <label>Título<input name="title" required maxlength="200"></label>
+      <label>TA-tulo<input name="title" required maxlength="200"></label>
       <label>Autor<input name="author" required maxlength="200"></label>
       <label>Sinopse<textarea name="description" rows="3" maxlength="2000"></textarea></label>
-      <div class="row"><label>Preço (MZN)<input name="price" type="number" min="1" step="0.01" inputmode="decimal" required></label><label>Idioma<input name="language" value="pt" maxlength="10"></label></div>
-      <label>Parceiro <select name="partnerId"><option value="">Kulera (livro próprio)</option></select></label>
-      <label>Endereço da capa <small>(opcional, imagem https)</small><input name="coverUrl" maxlength="500"></label>
+      <div class="row"><label>PreAo (MZN)<input name="price" type="number" min="1" step="0.01" inputmode="decimal" required></label><label>Idioma<input name="language" value="pt" maxlength="10"></label></div>
+      <label>Parceiro <select name="partnerId"><option value="">Kulera (livro prA3prio)</option></select></label>
+      <label>EndereAo da capa <small>(opcional, imagem https)</small><input name="coverUrl" maxlength="500"></label>
       <label>Ficheiro do livro <small>(Word .docx ou HTML)</small><input type="file" id="file" accept=".docx,.html,.htm"></label>
       <p class="msg" id="fileMsg"></p>
       <label>Estado <select name="status"><option value="draft">Rascunho</option><option value="published">Publicado</option><option value="suspended">Suspenso</option></select></label>
       <p class="msg" id="bookMsg" role="alert"></p>
       <div class="row"><button type="submit" class="mini">Guardar livro</button><button type="button" id="bookReset" class="sec mini">Novo</button></div>
     </form>
+
+    <h2>Planos de subscrição</h2><div class="wrap"><table id="plans"></table></div>
+    <form class="f" id="planForm">
+      <b>Novo/Editar plano</b><input type="hidden" name="id">
+      <div class="row"><label>Código<input name="code" required></label><label>Nome<input name="name" required></label></div>
+      <label>Descrição<input name="description"></label>
+      <div class="row"><label>Preço (MZN)<input name="price" type="number" min="0" step="0.01" required></label><label>Moeda<input name="currency" value="MZN"></label></div>
+      <div class="row"><label>Intervalo <select name="interval"><option value="month">Mensal</option><option value="year">Anual</option></select></label><label>Estado <select name="status"><option value="active">Ativo</option><option value="archived">Arquivado</option></select></label></div>
+      <p class="msg" id="planMsg"></p>
+      <div class="row"><button type="submit">Guardar plano</button><button type="button" id="planReset" class="sec">Novo</button></div>
+    </form>
+    <h2>Subscrições</h2><div class="wrap"><table id="subsList"></table></div>
 
     <h2>Parceiros</h2><div class="wrap"><table id="partners"></table></div>
     <form class="f" id="partnerForm">
@@ -84,7 +107,11 @@ $('partnerForm').addEventListener('submit',async(e)=>{e.preventDefault();const f
   const {ok,j}=await api({action:'save_partner',id:f.id.value||undefined,name:f.name.value,kind:f.kind.value,commissionBps:Math.round(Number(f.commission.value)*100),phone:f.phone.value,email:f.email.value,status:f.status.value});
   m.className=ok?'msg':'msg err';m.textContent=ok?'Guardado.':'Verifique os campos.';if(ok){f.id.value=j.id;load()}});
 $('bookReset').onclick=resetBook;$('partnerReset').onclick=resetPartner;
-$('login').addEventListener('submit',async(e)=>{e.preventDefault();KEY=$('key').value;try{await load();$('login').hidden=true;$('app').hidden=false;setInterval(()=>{if(!document.activeElement||!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))load().catch(()=>{})},20000)}catch{$('err').textContent='Chave incorrecta.'}});
+$('subForm').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target,m=$('subMsg');const {ok}=await api({action:'approve_submission',submissionId:f.submissionId.value,priceMinor:Math.round(Number(f.price.value)*100),status:f.status.value,adminNotes:f.notes.value});m.className=ok?'msg':'msg err';m.textContent=ok?'Aprovado. Livro criado.':'Erro.';if(ok){load();}});
+$('subReject').onclick=async()=>{const f=$('subForm'),m=$('subMsg');const {ok}=await api({action:'reject_submission',submissionId:f.submissionId.value,status:'changes_requested',adminNotes:f.notes.value});m.className=ok?'msg':'msg err';m.textContent=ok?'Registado.':'Erro.';if(ok)load();};
+$('planForm').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target,m=$('planMsg');const {ok}=await api({action:'save_plan',id:f.id.value||undefined,code:f.code.value,name:f.name.value,description:f.description.value,priceMinor:Math.round(Number(f.price.value)*100),currency:f.currency.value,interval:f.interval.value,status:f.status.value});m.className=ok?'msg':'msg err';m.textContent=ok?'Guardado.':'Erro.';if(ok)load();});
+$('planReset').onclick=()=>{$('planForm').reset();$('planForm').id.value='';$('planMsg').textContent='';};
+$('login').addEventListener('submit',async(e)=>{e.preventDefault();KEY=($('key').value||'').trim();try{await load();$('login').hidden=true;$('app').hidden=false;setInterval(()=>{if(!document.activeElement||!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))load().catch(()=>{})},20000)}catch{$('err').textContent='Chave incorrecta.'}});
 async function csv(t){const r=await fetch('/api/admin?format=csv&type='+t,{headers:{'x-admin-key':KEY}});const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='kulera-'+t+'.csv';a.click()}
 $('csvL').onclick=()=>csv('leads');$('csvO').onclick=()=>csv('orders');$('csvP').onclick=()=>csv('payouts');
 </script>
