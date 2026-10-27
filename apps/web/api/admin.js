@@ -121,7 +121,7 @@ export default async function handler(req, res) {
     leads, orders, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
     submissions, plans: plans.map((x)=>({...x,price_minor:Number(x.price_minor)})), subscriptions: subs });
   } catch (e) {
-    console.error('admin.error', String(e));
+    console.error('admin.error', e?.message || String(e));
     return res.status(500).json({ error: 'internal_error' });
   }
 }

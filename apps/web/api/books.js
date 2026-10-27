@@ -9,7 +9,7 @@ export default async function handler(req, res) {
     res.json(rows.map((b) => ({ id: b.id, title: b.title, author: b.author, description: b.description, language: b.language,
       priceMinor: Number(b.price_minor), currency: b.currency, coverUrl: b.cover_url })));
   } catch (e) {
-    console.error('books.error', String(e));
+    console.error('books.error', e?.message || String(e));
     res.status(500).json({ error: 'internal_error' });
   }
 }
