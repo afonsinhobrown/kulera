@@ -44,7 +44,7 @@ let current=null;
 try{const t=localStorage.getItem('kulera_token');if(t){$('have').hidden=false;$('haveLink').href='/ler.html?t='+t}}catch{}
 fetch('/api/books').then(r=>r.json()).then(list=>{
   const box=$('books');box.innerHTML='';
-  if(!Array.isArray(list) || !list.length){box.innerHTML='<p class="empty">Ainda nA�o hA� livros disponA-veis. Volte em breve.</p>';return}
+  if(!Array.isArray(list) || !list.length){box.innerHTML='<p class="empty">Ainda não há livros disponíveis. Volte em breve.</p>';return}
   list.forEach(b=>{
     const c=document.createElement('div');c.className='card';
     const cv=document.createElement('div');cv.className='cover';
