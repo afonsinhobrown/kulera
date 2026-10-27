@@ -99,10 +99,7 @@ async function action(b) {
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   try {
-    const key = req.headers['x-admin-key'] ?? req.headers['X-Admin-Key'] ?? req.headers['X-ADMIN-KEY'] ?? req.headers['x-adminkey'];
-    const adminKey = process.env.ADMIN_KEY || process.env.NEXT_PUBLIC_ADMIN_KEY || process.env.ADMIN_PASS || 'kulera';
-    if (!key || !sameKey(key, adminKey)) return res.status(401).json({ error: 'unauthorized' });
-      if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
+    if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
 
   const totals = (await pool.query(
     `select count(*) filter (where status='paid')::int as paid, coalesce(sum(amount_minor) filter (where status='paid'),0)::bigint as paid_minor,
