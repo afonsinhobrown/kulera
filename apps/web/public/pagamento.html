@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pagamento · Kulera+</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="top">Kulera<span>+</span></div>
+<main>
+  <div class="panel" id="panel" aria-live="polite"><div class="spinner"></div><h1>A confirmar o pagamento…</h1><p>Não feche esta página. Normalmente demora poucos segundos.</p></div>
+</main>
+<script>
+const t=new URLSearchParams(location.search).get('t')||'';
+const panel=document.getElementById('panel');
+const read='/ler.html?t='+encodeURIComponent(t);
+let tries=0, support='';
+fetch('/api/book').then(r=>r.json()).then(b=>support=b.supportWhatsApp||'').catch(()=>{});
+try{ if(/^[a-f0-9]{64}$/.test(t)) localStorage.setItem('kulera_token',t); }catch{}
+function show(html){ panel.innerHTML=html; }
+function paid(){ show('<h1 class="ok">Pagamento confirmado</h1><p>Obrigado! O seu livro já está disponível.</p><a class="btn" href="'+read+'">Ler agora</a><p class="note">Guarde este endereço para voltar a ler noutro dispositivo:<br><span style="word-break:break-all">'+location.origin+read+'</span></p>'); }
+function failed(){ show('<h1>O pagamento não foi concluído</h1><p>Nada foi cobrado. Pode tentar novamente.</p><a class="btn" href="/">Tentar novamente</a>'); }
+function late(){ show('<h1>Ainda sem confirmação</h1><p>Se já pagou, a confirmação pode demorar alguns minutos. Volte a abrir esta página mais tarde.</p><a class="btn sec" href="'+location.href+'">Verificar outra vez</a>'+(support?'<p class="note">Precisa de ajuda? <a href="https://wa.me/'+support+'">Fale connosco no WhatsApp</a>.</p>':'')); }
+async function check(){
+  if(!/^[a-f0-9]{64}$/.test(t)) return show('<h1>Ligação inválida</h1><a class="btn" href="/">Voltar ao início</a>');
+  try{
+    const r=await fetch('/api/status?t='+t); const j=await r.json();
+    if(j.status==='paid') return paid();
+    if(j.status==='failed'||j.status==='cancelled') return failed();
+  }catch{}
+  if(++tries>=100) return late();
+  setTimeout(check,3000);
+}
+check();
+</script>
+</body>
+</html>

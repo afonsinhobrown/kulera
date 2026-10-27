@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kulera+ · Comprar e ler livros</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.books{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));margin:18px 0 30px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;display:grid;gap:8px;align-content:start}
+.card .cover{max-width:none;font-size:18px;padding:12px;box-shadow:none}
+.card h3{font:700 18px/1.2 Georgia,serif;margin:0}
+.card p{margin:0;font-size:14px;color:#44606a}
+.card .p{font:700 18px Georgia,serif;color:var(--ink)}
+.card button{font-size:16px;padding:11px}
+.buy{scroll-margin-top:12px}
+.empty{color:#5b747c}
+</style>
+</head>
+<body>
+<div class="top">Kulera<span>+</span></div>
+<main>
+  <h1>Compre e leia na Kulera+</h1>
+  <p class="how">Pague com M-Pesa, e-Mola ou cartão Visa e comece a ler logo a seguir, no telemóvel ou no computador. Os livros lêem-se apenas na plataforma.</p>
+  <p class="note" id="have" hidden>Já comprou? <a id="haveLink" href="#">Abrir o meu livro</a></p>
+  <div class="books" id="books" aria-live="polite"><p class="empty">A carregar livros…</p></div>
+
+  <section class="buy panel" id="buy" hidden style="max-width:520px;margin:0 0 30px">
+    <h1 id="bTitle" style="font-size:26px"></h1><p class="author" id="bAuthor"></p><p id="bDesc"></p><p class="price" id="bPrice"></p>
+    <form id="form" novalidate style="border:0;padding:0">
+      <label>Nome<input name="name" autocomplete="name" required maxlength="80"></label>
+      <label>Telemóvel <small>(para o seu exemplar e para o suporte)</small><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="84 000 0000" required></label>
+      <label>Email <small>(opcional)</small><input name="email" type="email" autocomplete="email"></label>
+      <p class="msg" id="msg" role="alert" aria-live="polite"></p>
+      <button id="go" type="submit">Comprar</button>
+    </form>
+  </section>
+
+  <section class="partner" aria-labelledby="ph">
+    <h2 id="ph">É editora ou escritor?</h2>
+    <p>Venda os seus livros na Kulera+ e chegue a leitores em Moçambique e na diáspora. Inscreva-se hoje, ainda na feira.</p>
+    <a class="btn" href="parceiros.html">Quero vender na Kulera+</a>
+  </section>
+</main>
+<script>
+const $=(id)=>document.getElementById(id);
+const errors={invalid_name:'Escreva o seu nome.',invalid_phone:'Escreva um número de telemóvel válido, só com números.',invalid_email:'O email não parece válido.',book_unavailable:'Este livro já não está disponível.',payment_unavailable:'Não foi possível iniciar o pagamento. Tente novamente dentro de instantes.'};
+const money=(m,c)=>{try{return new Intl.NumberFormat('pt-MZ',{style:'currency',currency:c}).format(m/100)}catch{return (m/100).toFixed(2)+' '+c}};
+let current=null;
+try{const t=localStorage.getItem('kulera_token');if(t){$('have').hidden=false;$('haveLink').href='/ler.html?t='+t}}catch{}
+fetch('/api/books').then(r=>r.json()).then(list=>{
+  const box=$('books');box.innerHTML='';
+  if(!list.length){box.innerHTML='<p class="empty">Ainda não há livros disponíveis. Volte em breve.</p>';return}
+  list.forEach(b=>{
+    const c=document.createElement('div');c.className='card';
+    const cv=document.createElement('div');cv.className='cover';
+    if(b.coverUrl){const im=document.createElement('img');im.src=b.coverUrl;im.alt='Capa de '+b.title;im.onerror=()=>{im.remove();cv.append(b.title)};cv.appendChild(im)}else cv.textContent=b.title;
+    const h=document.createElement('h3');h.textContent=b.title;
+    const a=document.createElement('p');a.textContent=b.author;
+    const p=document.createElement('p');p.className='p';p.textContent=money(b.priceMinor,b.currency);
+    const btn=document.createElement('button');btn.type='button';btn.textContent='Comprar';btn.onclick=()=>choose(b);
+    c.append(cv,h,a,p,btn);box.appendChild(c);
+  });
+  if(list.length===1)choose(list[0],false);
+}).catch(()=>{$('books').innerHTML='<p class="empty">Não foi possível carregar. Atualize a página.</p>'});
+function choose(b,scroll=true){current=b;$('buy').hidden=false;$('bTitle').textContent=b.title;$('bAuthor').textContent=b.author;$('bDesc').textContent=b.description||'';$('bPrice').textContent=money(b.priceMinor,b.currency);$('go').textContent='Comprar por '+money(b.priceMinor,b.currency);if(scroll)$('buy').scrollIntoView({behavior:'smooth'})}
+$('form').addEventListener('submit',async(e)=>{
+  e.preventDefault();if(!current)return;const f=new FormData(e.target),msg=$('msg'),btn=$('go');
+  msg.className='msg';msg.textContent='';btn.disabled=true;const label=btn.textContent;btn.textContent='A abrir o pagamento…';
+  try{
+    const r=await fetch('/api/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bookId:current.id,name:f.get('name'),phone:f.get('phone'),email:f.get('email')})});
+    const j=await r.json();if(!r.ok)throw new Error(j.error);
+    try{localStorage.setItem('kulera_token',j.token)}catch{}
+    window.location.href=j.checkoutUrl;
+  }catch(err){msg.className='msg err';msg.textContent=errors[err.message]||'Algo correu mal. Tente novamente.';btn.disabled=false;btn.textContent=label}
+});
+</script>
+</body>
+</html>

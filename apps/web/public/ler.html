@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>A ler · Kulera+</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="reader">
+<div class="bar">
+  <select id="toc" aria-label="Capítulos"></select>
+  <button id="smaller" aria-label="Letra menor">A−</button>
+  <button id="bigger" aria-label="Letra maior">A+</button>
+  <button id="theme" aria-label="Mudar tema">◐</button>
+</div>
+<article class="page" id="page"><p>A abrir o livro…</p></article>
+<nav class="pager"><button id="prev">Anterior</button><button id="next">Seguinte</button></nav>
+<script>
+const $=(id)=>document.getElementById(id);
+const t=new URLSearchParams(location.search).get('t')||'';
+let i=0,total=1,size=19;
+try{ i=Number(localStorage.getItem('kulera_ch_'+t))||0; size=Number(localStorage.getItem('kulera_fs'))||19; if(localStorage.getItem('kulera_dark')==='1') document.body.classList.add('dark'); }catch{}
+document.addEventListener('contextmenu',e=>e.preventDefault());
+document.addEventListener('copy',e=>e.preventDefault());
+function setSize(){ document.documentElement.style.setProperty('--fs',size+'px'); try{localStorage.setItem('kulera_fs',size)}catch{} }
+async function load(n){
+  try{
+    const r=await fetch('/api/chapter?t='+encodeURIComponent(t)+'&i='+n);
+    if(r.status===403) return $('page').innerHTML='<h1>Sem acesso</h1><p>Não encontrámos um pagamento confirmado para esta ligação. Abra o endereço que recebeu depois da compra.</p><p><a href="/">Voltar ao início</a></p>';
+    const j=await r.json();
+    if(!r.ok){ if(j.error==='invalid_chapter'&&n!==0) return load(0); throw new Error(j.error); }
+    i=j.index; total=j.total; document.title=j.title+' · Kulera+';
+    $('page').innerHTML=j.html;
+    const toc=$('toc'); if(!toc.options.length) j.toc.forEach((x,k)=>toc.add(new Option(x,k)));
+    toc.value=i; $('prev').disabled=i===0; $('next').disabled=i===total-1;
+    try{localStorage.setItem('kulera_ch_'+t,i)}catch{}
+    window.scrollTo(0,0);
+  }catch{ $('page').innerHTML='<p>Não foi possível abrir o livro agora. Atualize a página.</p>'; }
+}
+$('toc').onchange=e=>load(Number(e.target.value));
+$('prev').onclick=()=>load(i-1); $('next').onclick=()=>load(i+1);
+$('smaller').onclick=()=>{size=Math.max(15,size-1);setSize()}; $('bigger').onclick=()=>{size=Math.min(28,size+1);setSize()};
+$('theme').onclick=()=>{const d=document.body.classList.toggle('dark');try{localStorage.setItem('kulera_dark',d?'1':'0')}catch{}};
+setSize(); load(i);
+</script>
+</body>
+</html>

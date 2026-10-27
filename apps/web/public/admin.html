@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Painel · Kulera+</title>
+<link rel="stylesheet" href="style.css">
+<style>table{border-collapse:collapse;width:100%;font-size:14px;background:#fff}th,td{border:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}.wrap{overflow-x:auto;margin-bottom:8px}.kpi{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}.kpi div{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 16px}.kpi b{display:block;font:700 24px Georgia,serif}select,textarea{font:inherit;padding:8px;border:1.5px solid #9db3b0;border-radius:6px;width:100%;background:#fff}h2{font-family:Georgia,serif;margin-top:30px}.mini{display:inline-block;font-size:14px;padding:8px 12px}form.f{display:grid;gap:10px;max-width:560px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}</style>
+</head>
+<body>
+<div class="top">Kulera<span>+</span> · Painel</div>
+<main>
+  <form id="login" style="max-width:420px"><label>Chave de acesso<input id="key" type="password" autocomplete="current-password" required></label><p class="msg err" id="err"></p><button type="submit">Entrar</button></form>
+  <div id="app" hidden>
+    <div class="kpi" id="kpi"></div>
+    <p><button id="csvL" class="sec mini">Parceiros interessados (CSV)</button> <button id="csvO" class="sec mini">Vendas (CSV)</button> <button id="csvP" class="sec mini">Valores a pagar a parceiros (CSV)</button></p>
+
+    <h2>Livros</h2><div class="wrap"><table id="books"></table></div>
+    <form class="f" id="bookForm">
+      <b id="bookFormTitle">Novo livro</b><input type="hidden" name="id">
+      <label>Título<input name="title" required maxlength="200"></label>
+      <label>Autor<input name="author" required maxlength="200"></label>
+      <label>Sinopse<textarea name="description" rows="3" maxlength="2000"></textarea></label>
+      <div class="row"><label>Preço (MZN)<input name="price" type="number" min="1" step="0.01" inputmode="decimal" required></label><label>Idioma<input name="language" value="pt" maxlength="10"></label></div>
+      <label>Parceiro <select name="partnerId"><option value="">Kulera (livro próprio)</option></select></label>
+      <label>Endereço da capa <small>(opcional, imagem https)</small><input name="coverUrl" maxlength="500"></label>
+      <label>Ficheiro do livro <small>(Word .docx ou HTML)</small><input type="file" id="file" accept=".docx,.html,.htm"></label>
+      <p class="msg" id="fileMsg"></p>
+      <label>Estado <select name="status"><option value="draft">Rascunho</option><option value="published">Publicado</option><option value="suspended">Suspenso</option></select></label>
+      <p class="msg" id="bookMsg" role="alert"></p>
+      <div class="row"><button type="submit" class="mini">Guardar livro</button><button type="button" id="bookReset" class="sec mini">Novo</button></div>
+    </form>
+
+    <h2>Parceiros</h2><div class="wrap"><table id="partners"></table></div>
+    <form class="f" id="partnerForm">
+      <b id="partnerFormTitle">Novo parceiro</b><input type="hidden" name="id">
+      <label>Nome<input name="name" required maxlength="120"></label>
+      <div class="row"><label>Tipo <select name="kind"><option value="publisher">Editora</option><option value="author">Escritor</option></select></label><label>Comissão da Kulera (%)<input name="commission" type="number" min="0" max="100" step="0.01" required></label></div>
+      <div class="row"><label>Telemóvel<input name="phone" type="tel"></label><label>Email<input name="email" type="email"></label></div>
+      <label>Estado <select name="status"><option value="active">Activo</option><option value="suspended">Suspenso</option></select></label>
+      <p class="msg" id="partnerMsg" role="alert"></p>
+      <div class="row"><button type="submit" class="mini">Guardar parceiro</button><button type="button" id="partnerReset" class="sec mini">Novo</button></div>
+    </form>
+
+    <h2>Valores a pagar aos parceiros</h2><div class="wrap"><table id="payouts"></table></div>
+    <h2>Parceiros interessados</h2><div class="wrap"><table id="leads"></table></div>
+    <h2>Últimas vendas</h2><div class="wrap"><table id="orders"></table></div>
+  </div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script>
+const $=(id)=>document.getElementById(id);let KEY='',DATA=null,contentHtml=null;
+const fmt=(m)=>(m/100).toLocaleString('pt-MZ',{minimumFractionDigits:2})+' MZN';
+const cell=(v)=>{const td=document.createElement('td');td.textContent=v??'';return td;};
+const api=(body)=>fetch('/api/admin',{method:'POST',headers:{'x-admin-key':KEY,'Content-Type':'application/json'},body:JSON.stringify(body)}).then(async r=>({ok:r.ok,j:await r.json()}));
+function fill(t,heads,rows,make){t.innerHTML='';const tr=document.createElement('tr');heads.forEach(h=>{const th=document.createElement('th');th.textContent=h;tr.appendChild(th)});t.appendChild(tr);rows.forEach(r=>t.appendChild(make(r)));}
+function btn(label,fn){const b=document.createElement('button');b.type='button';b.className='sec mini';b.textContent=label;b.onclick=fn;const td=document.createElement('td');td.appendChild(b);return td;}
+async function load(){
+  const r=await fetch('/api/admin',{headers:{'x-admin-key':KEY}});if(!r.ok)throw new Error('auth');const j=await r.json();DATA=j;const T=j.totals;
+  $('kpi').innerHTML='';[['Vendas pagas',T.paid],['Receita',fmt(T.paid_minor)],['Fica na Kulera',fmt(T.kulera_minor)],['A pagar a parceiros',fmt(T.partners_minor)],['Pagamentos em aberto',T.open_orders]].forEach(([l,v])=>{const d=document.createElement('div');d.innerHTML='<b></b><span></span>';d.firstChild.textContent=v;d.lastChild.textContent=l;$('kpi').appendChild(d)});
+  const sel=document.querySelector('#bookForm [name=partnerId]'),cur=sel.value;sel.length=1;j.partners.forEach(p=>sel.add(new Option(p.name,p.id)));sel.value=cur;
+  fill($('books'),['Livro','Preço','Parceiro','Conteúdo','Estado',''],j.books,b=>{const tr=document.createElement('tr');const p=j.partners.find(x=>x.id===b.partner_id);tr.append(cell(b.title+' — '+b.author),cell(fmt(b.price_minor)),cell(p?p.name:'Kulera'),cell(b.has_content?'Sim':'Falta'),cell({draft:'Rascunho',published:'Publicado',suspended:'Suspenso'}[b.status]),btn('Editar',()=>editBook(b)));return tr});
+  fill($('partners'),['Parceiro','Tipo','Comissão','Contacto','Estado',''],j.partners,p=>{const tr=document.createElement('tr');tr.append(cell(p.name),cell(p.kind==='publisher'?'Editora':'Escritor'),cell((p.commission_bps/100)+'%'),cell([p.phone,p.email].filter(Boolean).join(' · ')),cell(p.status==='active'?'Activo':'Suspenso'),btn('Editar',()=>editPartner(p)));return tr});
+  fill($('payouts'),['Parceiro','Vendas','Valor bruto','A pagar ao parceiro'],j.payouts,x=>{const tr=document.createElement('tr');tr.append(cell(x.name),cell(x.sales),cell(fmt(x.gross)),cell(fmt(x.owed)));return tr});
+  fill($('leads'),['Data','Nome','Tipo','Telemóvel','Livros','Estado'],j.leads,l=>{const tr=document.createElement('tr');tr.append(cell(new Date(l.created_at).toLocaleString('pt-MZ')),cell(l.name+(l.organisation?' · '+l.organisation:'')),cell(l.kind==='publisher'?'Editora':'Escritor'));
+    const td=cell(l.phone);const a=document.createElement('a');a.href='https://wa.me/'+l.phone;a.textContent=' WhatsApp';td.appendChild(a);tr.append(td,cell(l.titles_count));
+    const s=document.createElement('select');[['new','Novo'],['contacted','Contactado'],['signed','Subscreveu'],['declined','Recusou']].forEach(([v,t])=>s.add(new Option(t,v)));s.value=l.status;s.onchange=()=>api({action:'lead_status',id:l.id,status:s.value});const tds=document.createElement('td');tds.appendChild(s);tr.appendChild(tds);return tr});
+  fill($('orders'),['Data','Comprador','Telemóvel','Livro','Valor','Estado'],j.orders,o=>{const tr=document.createElement('tr');tr.append(cell(new Date(o.created_at).toLocaleString('pt-MZ')),cell(o.buyer_name),cell(o.buyer_phone),cell(o.book),cell(fmt(o.amount_minor)),cell(o.status));return tr});
+}
+function editBook(b){const f=$('bookForm');$('bookFormTitle').textContent='Editar: '+b.title;f.id.value=b.id;f.title.value=b.title;f.author.value=b.author;f.description.value=b.description||'';f.price.value=(b.price_minor/100).toFixed(2);f.language.value=b.language;f.partnerId.value=b.partner_id||'';f.coverUrl.value=b.cover_url||'';f.status.value=b.status;contentHtml=null;$('file').value='';$('fileMsg').textContent=b.has_content?'Já tem conteúdo. Só escolha um ficheiro se quiser substituí-lo.':'';f.scrollIntoView({behavior:'smooth'})}
+function resetBook(){$('bookForm').reset();$('bookForm').id.value='';$('bookFormTitle').textContent='Novo livro';contentHtml=null;$('fileMsg').textContent='';$('bookMsg').textContent=''}
+function editPartner(p){const f=$('partnerForm');$('partnerFormTitle').textContent='Editar: '+p.name;f.id.value=p.id;f.name.value=p.name;f.kind.value=p.kind;f.commission.value=p.commission_bps/100;f.phone.value=p.phone||'';f.email.value=p.email||'';f.status.value=p.status;f.scrollIntoView({behavior:'smooth'})}
+function resetPartner(){$('partnerForm').reset();$('partnerForm').id.value='';$('partnerFormTitle').textContent='Novo parceiro';$('partnerMsg').textContent=''}
+$('file').addEventListener('change',async(e)=>{const file=e.target.files[0];contentHtml=null;if(!file)return;const m=$('fileMsg');m.className='msg';m.textContent='A converter…';
+  try{if(/\.docx$/i.test(file.name)){if(!window.mammoth)throw new Error('mammoth');const r=await mammoth.convertToHtml({arrayBuffer:await file.arrayBuffer()},{styleMap:["p[style-name='Title'] => h1:fresh","p[style-name='Título'] => h1:fresh","p[style-name='Heading 1'] => h1:fresh","p[style-name='Título 1'] => h1:fresh"]});contentHtml=r.value}else contentHtml=await file.text();
+    if(!contentHtml.trim())throw new Error('empty');m.textContent='Pronto: '+Math.round(contentHtml.length/1000)+' mil caracteres. Cada «Título 1» do Word passa a ser um capítulo.'}
+  catch{contentHtml=null;m.className='msg err';m.textContent='Não foi possível ler o ficheiro. Se for Word, tente exportar para HTML.'}});
+$('bookForm').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target,m=$('bookMsg');m.className='msg';m.textContent='A guardar…';
+  const {ok,j}=await api({action:'save_book',id:f.id.value||undefined,title:f.title.value,author:f.author.value,description:f.description.value,language:f.language.value,priceMinor:Math.round(Number(f.price.value)*100),partnerId:f.partnerId.value||null,coverUrl:f.coverUrl.value,status:f.status.value,contentHtml});
+  if(!ok){m.className='msg err';m.textContent=j.error==='content_too_large'?'O livro é demasiado grande (máximo cerca de 3,5 milhões de caracteres).':'Verifique os campos (título, autor e preço).';return}
+  m.className='msg';m.textContent=j.warning?'Guardado como rascunho: falta o ficheiro do livro.':'Guardado.';f.id.value=j.id;contentHtml=null;load()});
+$('partnerForm').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target,m=$('partnerMsg');
+  const {ok,j}=await api({action:'save_partner',id:f.id.value||undefined,name:f.name.value,kind:f.kind.value,commissionBps:Math.round(Number(f.commission.value)*100),phone:f.phone.value,email:f.email.value,status:f.status.value});
+  m.className=ok?'msg':'msg err';m.textContent=ok?'Guardado.':'Verifique os campos.';if(ok){f.id.value=j.id;load()}});
+$('bookReset').onclick=resetBook;$('partnerReset').onclick=resetPartner;
+$('login').addEventListener('submit',async(e)=>{e.preventDefault();KEY=$('key').value;try{await load();$('login').hidden=true;$('app').hidden=false;setInterval(()=>{if(!document.activeElement||!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))load().catch(()=>{})},20000)}catch{$('err').textContent='Chave incorrecta.'}});
+async function csv(t){const r=await fetch('/api/admin?format=csv&type='+t,{headers:{'x-admin-key':KEY}});const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='kulera-'+t+'.csv';a.click()}
+$('csvL').onclick=()=>csv('leads');$('csvO').onclick=()=>csv('orders');$('csvP').onclick=()=>csv('payouts');
+</script>
+</body>
+</html>

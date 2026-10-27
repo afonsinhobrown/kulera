@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Venda os seus livros · Kulera+</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="top">Kulera<span>+</span></div>
+<main>
+  <div class="grid" style="max-width:760px">
+    <div>
+      <h1 id="h">Venda os seus livros na Kulera+</h1>
+      <ul id="pts" class="pts"></ul>
+      <p class="offer" id="offer" hidden></p>
+      <form id="form" novalidate>
+        <label>Sou
+          <select name="kind" required><option value="publisher">Editora</option><option value="author">Escritor independente</option></select></label>
+        <label>Nome<input name="name" autocomplete="name" required maxlength="80"></label>
+        <label>Editora ou nome artístico <small>(opcional)</small><input name="organisation" maxlength="120"></label>
+        <label>WhatsApp ou telemóvel<input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="84 000 0000" required></label>
+        <label>Email <small>(opcional)</small><input name="email" type="email" autocomplete="email"></label>
+        <label>Quantos livros quer vender? <small>(opcional)</small><input name="titles" type="number" min="0" inputmode="numeric"></label>
+        <label>Quer dizer-nos mais? <small>(opcional)</small><input name="message" maxlength="600"></label>
+        <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
+        <p class="msg" id="msg" role="alert" aria-live="polite"></p>
+        <button id="send" type="submit">Quero ser parceiro</button>
+      </form>
+      <div class="panel" id="done" hidden><h1 class="ok">Recebemos o seu contacto</h1><p>A equipa da Kulera fala consigo em breve, pelo número que indicou.</p><a class="btn sec" href="/">Voltar ao início</a></div>
+    </div>
+  </div>
+</main>
+<style>.pts{padding-left:20px;margin:0 0 16px}.pts li{margin:0 0 8px}.offer{background:#fff6e0;border:1.5px solid var(--gold);border-radius:8px;padding:12px 14px;font-weight:600}select{font:inherit;padding:13px 12px;border:1.5px solid #9db3b0;border-radius:6px;background:#fff;color:var(--ink)}</style>
+<script>
+const $=(id)=>document.getElementById(id);
+const errors={invalid_name:'Escreva o seu nome.',invalid_phone:'Escreva um número válido, só com números.',invalid_email:'O email não parece válido.'};
+fetch('/api/book').then(r=>r.json()).then(b=>{const p=b.partner||{};
+  if(p.headline){$('h').textContent=p.headline;document.title=p.headline+' · Kulera+';}
+  (p.points||[]).forEach(t=>{const li=document.createElement('li');li.textContent=t;$('pts').appendChild(li);});
+  if(p.offer){$('offer').textContent=p.offer;$('offer').hidden=false;}
+}).catch(()=>{});
+$('form').addEventListener('submit',async(e)=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));const btn=$('send'),msg=$('msg');
+  msg.className='msg';msg.textContent='';btn.disabled=true;
+  try{const r=await fetch('/api/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(f)});const j=await r.json();if(!r.ok)throw new Error(j.error);
+    e.target.hidden=true;$('done').hidden=false;}
+  catch(err){msg.className='msg err';msg.textContent=errors[err.message]||'Algo correu mal. Tente novamente.';btn.disabled=false;}
+});
+</script>
+</body>
+</html>
