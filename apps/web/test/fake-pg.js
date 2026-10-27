@@ -4,9 +4,11 @@ const rows = (r) => ({ rows: r, rowCount: r.length });
 async function q(sql, p = []) {
   const s = sql.replace(/\s+/g, ' ').trim();
   if (/^(BEGIN|COMMIT|ROLLBACK)/.test(s)) return rows([]);
-  if (s.startsWith('select id, title, price_minor, currency from fair_books')) return rows(S.books.filter((b) => b.id === p[0] && b.status === 'published' && b.content_html != null));
+  if (s.startsWith('select id, title, price_minor, currency')) return rows(S.books.filter((b) => b.id === p[0] && b.status === 'published' && (b.kind === 'physical' || b.content_html != null)).map(b=>({ id: b.id, title: b.title, price_minor: b.price_minor, currency: b.currency, kind: b.kind||'ebook', requires_shipping: b.requires_shipping||false, stock: b.stock, content_html: b.content_html })));
   if (s.startsWith('select id, title, author, description, language, price_minor')) return rows(S.books.filter((b) => b.status === 'published' && b.content_html != null).map((b) => ({ id: b.id, title: b.title, author: 'A', description: null, language: 'pt', price_minor: b.price_minor, currency: b.currency, cover_url: null })));
-  if (s.startsWith('insert into fair_orders')) { S.orders.push({ id: p[0], token: p[1], reference: p[2], buyer_name: p[3], buyer_phone: p[4], amount_minor: p[6], currency: p[7], book_id: p[8], status: 'created', provider_payment_id: null }); return rows([{}]); }
+  if (s.startsWith('insert into fair_orders')) { S.orders.push({ id: p[0], token: p[1], reference: p[2], buyer_name: p[3], buyer_phone: p[4], amount_minor: p[6], currency: p[7], book_id: p[8], status: 'created', provider_payment_id: null, type: p[9]||'book' }); return rows([{}]); }
+  if (s.startsWith('update fair_books set stock = stock - 1')) { const b=S.books.find(x=>x.id===p[0]); if(b&&b.stock!=null&&b.stock>=1)b.stock--; return rows([{}]); }
+  if (s.startsWith('update fair_books set stock = stock + 1')) { const b=S.books.find(x=>x.id===p[0]); if(b&&b.stock!=null)b.stock++; return rows([{}]); }
   if (s.startsWith('update fair_orders set provider_payment_id = $2, checkout_url')) { const o = S.orders.find((x) => x.id === p[0]); o.provider_payment_id = p[1]; if (o.status === 'created') o.status = 'pending'; return rows([{}]); }
   if (s.startsWith("update fair_orders set status = 'failed'")) return rows([]);
   if (s.startsWith('select id, status from fair_orders where provider_payment_id')) return rows(S.orders.filter((o) => (p[0] && o.provider_payment_id === p[0]) || o.reference === p[1]));
