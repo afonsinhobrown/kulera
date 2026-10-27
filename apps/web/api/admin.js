@@ -41,7 +41,7 @@ async function action(b) {
       const content = typeof b.contentHtml === 'string' && b.contentHtml.trim() ? b.contentHtml : null;
       if (content && content.length > 3_500_000) return [413, { error: 'content_too_large' }];
       const kind = b.kind === 'physical' ? 'physical' : 'ebook';
-      const stock = kind === 'physical' && b.stock !== '' && b.stock != null ? Number(b.stock) : null;
+      const stock = kind === 'physical' && b.stock !== '' && b.stock != null && !isNaN(Number(b.stock)) ? Number(b.stock) : (kind === 'physical' ? 0 : null);
       const requiresShipping = kind === 'physical';
       const args = [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 500) || null, content, kind, stock, requiresShipping];
       let id = b.id;
