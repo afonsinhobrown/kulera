@@ -18,13 +18,13 @@
 
     <h2>Submissões de parceiros</h2><div class="wrap"><table id="subs"></table></div>
     <form class="f" id="subForm">
-      <b>Aprovar submissão</b>
+      <b>Ação sobre submissão</b>
       <input type="hidden" name="submissionId">
-      <label>Preço (MZN)<input name="price" type="number" min="1" step="0.01" required></label>
-      <label>Estado <select name="status"><option value="draft">Criar como rascunho</option><option value="published">Publicar já</option></select></label>
-      <label>Notas (opcional)<input name="notes"></label>
+      <label>Preço para criar livro (MZN)<input name="price" type="number" min="1" step="0.01" placeholder="Ex: 299.00"></label>
+      <label>Ao aprovar, criar livro como <select name="status"><option value="draft">Rascunho</option><option value="published">Publicado</option></select></label>
+      <label>Notas para o parceiro (opcional)<input name="notes"></label>
       <p class="msg" id="subMsg"></p>
-      <div class="row"><button type="submit">Aprovar e criar livro</button><button type="button" id="subReject">Pedir alterações / Rejeitar</button></div>
+      <div class="row"><button type="submit" style="background:var(--gold)">Aprovar e criar livro</button><button type="button" id="subReject" class="sec">Pedir alterações / Rejeitar</button></div>
     </form>
 
     <h2>Livros</h2><div class="wrap"><table id="books"></table></div>
