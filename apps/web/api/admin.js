@@ -87,22 +87,31 @@ export default async function handler(req, res) {
     const key = req.headers['x-admin-key'] ?? req.headers['X-Admin-Key'] ?? req.headers['X-ADMIN-KEY'] ?? req.headers['x-adminkey'];
     const adminKey = process.env.ADMIN_KEY || process.env.NEXT_PUBLIC_ADMIN_KEY || process.env.ADMIN_PASS || 'kulera';
     if (!key || !sameKey(key, adminKey)) return res.status(401).json({ error: 'unauthorized' });
-    if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
+      if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
 
   const totals = (await pool.query(
     `select count(*) filter (where status='paid')::int as paid, coalesce(sum(amount_minor) filter (where status='paid'),0)::bigint as paid_minor,
             count(*) filter (where status in ('created','pending'))::int as open_orders from fair_orders`)).rows[0];
   const split = (await pool.query('select coalesce(sum(commission_minor),0)::bigint c, coalesce(sum(partner_minor),0)::bigint p from fair_sales')).rows[0];
   const leads = (await pool.query('select id, created_at, name, organisation, kind, phone, email, titles_count, message, status from partner_leads order by created_at desc limit 500')).rows;
-  const orders = (await pool.query(`select o.created_at, o.paid_at, o.buyer_name, o.buyer_phone, o.buyer_email, b.title as book, o.amount_minor, o.currency, o.status, o.type
-      from fair_orders o left join fair_books b on b.id = o.book_id order by o.created_at desc limit 500`)).rows;
+  let orders;
+  try {
+    orders = (await pool.query(`select o.created_at, o.paid_at, o.buyer_name, o.buyer_phone, o.buyer_email, b.title as book, o.amount_minor, o.currency, o.status, coalesce(o.type,'book') as type
+        from fair_orders o left join fair_books b on b.id = o.book_id order by o.created_at desc limit 500`)).rows;
+  } catch {
+    orders = (await pool.query(`select o.created_at, o.paid_at, o.buyer_name, o.buyer_phone, o.buyer_email, b.title as book, o.amount_minor, o.currency, o.status
+        from fair_orders o left join fair_books b on b.id = o.book_id order by o.created_at desc limit 500`)).rows.map(x=>({...x,type:'book'}));
+  }
   const books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content from fair_books order by created_at desc`)).rows;
   const partners = (await pool.query('select id, name, kind, phone, email, commission_bps, status from fair_partners order by created_at desc')).rows;
   const payouts = (await pool.query(`select p.name, count(*)::int as sales, sum(s.gross_minor)::bigint as gross, sum(s.partner_minor)::bigint as owed
       from fair_sales s join fair_partners p on p.id = s.partner_id group by p.name order by owed desc`)).rows;
-  const submissions = (await pool.query(`select s.id, s.title, s.author, s.status, s.admin_notes, s.created_at, p.name as partner from fair_submissions s left join fair_partners p on p.id=s.partner_id order by s.created_at desc limit 500`)).rows;
-  const plans = (await pool.query('select id,code,name,description,price_minor,currency,interval,status from fair_plans order by created_at asc')).rows;
-  const subs = (await pool.query(`select s.id,s.buyer_name,s.buyer_phone,s.status,s.starts_at,s.ends_at,pl.name as plan from fair_subscriptions s left join fair_plans pl on pl.id=s.plan_id order by s.created_at desc limit 500`)).rows;
+  let submissions = [];
+  try { submissions = (await pool.query(`select s.id, s.title, s.author, s.status, s.admin_notes, s.created_at, p.name as partner from fair_submissions s left join fair_partners p on p.id=s.partner_id order by s.created_at desc limit 500`)).rows; } catch {}
+  let plans = [];
+  try { plans = (await pool.query('select id,code,name,description,price_minor,currency,interval,status from fair_plans order by created_at asc')).rows; } catch {}
+  let subs = [];
+  try { subs = (await pool.query(`select s.id,s.buyer_name,s.buyer_phone,s.status,s.starts_at,s.ends_at,pl.name as plan from fair_subscriptions s left join fair_plans pl on pl.id=s.plan_id order by s.created_at desc limit 500`)).rows; } catch {}
 
   if (req.query?.format === 'csv') {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
