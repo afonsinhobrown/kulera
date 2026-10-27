@@ -18,7 +18,7 @@
 </style>
 </head>
 <body>
-<div class="top">Kulera<span>+</span></div>
+<div class="top">Kulera<span>+</span> <nav style="margin-left:auto;display:flex;gap:12px;flex-wrap:wrap"><a href="parceiros-portal.html">Portal Editores</a><a href="planos.html">Planos</a><a href="parceiros.html">Parceiros</a><a href="admin.html">Admin</a></nav></div>
 <main>
   <h1>Compre e leia na Kulera+</h1>
   <p class="how">Pague com M-Pesa, e-Mola ou cartão Visa e comece a ler logo a seguir, no telemóvel ou no computador. Os livros lêem-se apenas na plataforma.</p>
@@ -50,7 +50,7 @@ let current=null;
 try{const t=localStorage.getItem('kulera_token');if(t){$('have').hidden=false;$('haveLink').href='/ler.html?t='+t}}catch{}
 fetch('/api/books').then(r=>r.json()).then(list=>{
   const box=$('books');box.innerHTML='';
-  if(!list.length){box.innerHTML='<p class="empty">Ainda não há livros disponíveis. Volte em breve.</p>';return}
+  if(!Array.isArray(list) || !list.length){box.innerHTML='<p class="empty">Ainda nA�o hA� livros disponA-veis. Volte em breve.</p>';return}
   list.forEach(b=>{
     const c=document.createElement('div');c.className='card';
     const cv=document.createElement('div');cv.className='cover';
