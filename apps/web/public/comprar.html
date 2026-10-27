@@ -39,7 +39,7 @@ async function load(){
   const b=(list||[]).find(x=>x.id===id);
   if(!b){$('info').innerHTML='<p class="msg err">Livro não encontrado.</p>'; $('form').hidden=true; return;}
   isPhysical = b.kind==='physical' || b.requiresShipping;
-  $('info').innerHTML='<p><b>'+b.title+'</b><br>'+b.author+'<br>'+ (isPhysical?'Livro físico (entrega)':'E-book') +'<br><span class="price" style="font-size:24px">'+money(b.priceMinor,b.currency)+'</span></p>';
+  $('info').innerHTML='<p><b>'+b.title+'</b><br>'+b.author+'<br>'+ (isPhysical?'Livro físico • Entrega ao domicílio':'E-book • Leitura digital protegida') +'<br><span class="price" style="font-size:24px">'+money(b.priceMinor,b.currency)+'</span></p>';
   if(isPhysical){$('ship').hidden=false;$('form').shippingName.value=$('form').name.value||'';$('form').shippingPhone.value=$('form').phone.value||'';$('form').name.oninput=()=>{$('form').shippingName.value=$('form').name.value};$('form').phone.oninput=()=>{$('form').shippingPhone.value=$('form').phone.value};}
   $('form').onsubmit=async e=>{
     e.preventDefault();const f=new FormData(e.target),msg=$('msg'),btn=$('go');
