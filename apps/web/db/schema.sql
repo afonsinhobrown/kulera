@@ -47,22 +47,31 @@ create table if not exists fair_partners (
 );
 create table if not exists fair_books (
   id uuid primary key default gen_random_uuid(),
-  partner_id uuid references fair_partners (id),   -- null = livro da própria Kulera
+  partner_id uuid references fair_partners (id),   -- null = livro da prA3pria Kulera
   title text not null,
   author text not null,
   description text,
   language text not null default 'pt',
-  price_minor bigint not null check (price_minor > 0), -- preço SEMPRE vem daqui
+  price_minor bigint not null check (price_minor > 0), -- preAo SEMPRE vem daqui
   currency char(3) not null default 'MZN',
   cover_url text,
   content_html text,                               -- livro convertido; nunca sai sem pagamento
-  status text not null default 'draft' check (status in ('draft','published','suspended')),
+  kind text not null default 'ebook' check (kind in ('ebook','physical')),
+  stock integer check (stock is null or stock >= 0),
+  requires_shipping boolean not null default false,
+  shipping_info text,
+  status text not null default 'draft' check (status in ('draft', 'published', 'suspended')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 alter table fair_orders add column if not exists book_id uuid references fair_books (id);
 alter table fair_orders add column if not exists plan_id uuid;
-alter table fair_orders add column if not exists type text not null default 'book' check (type in ('book','subscription'));
+alter table fair_orders add column if not exists type text not null default 'book' check (type in ('book','subscription','physical'));
+alter table fair_orders add column if not exists shipping_name text;
+alter table fair_orders add column if not exists shipping_phone text;
+alter table fair_orders add column if not exists shipping_address text;
+alter table fair_orders add column if not exists shipping_city text;
+alter table fair_orders add column if not exists shipped_at timestamptz;
 create table if not exists fair_sales (
   order_id uuid primary key references fair_orders (id),
   book_id uuid references fair_books (id),
