@@ -6,7 +6,12 @@ const sameKey = (a, b) => {
   const bx = String(b ?? '').trim();
   const x = Buffer.from(ax);
   const y = Buffer.from(bx);
-  return x.length === y.length && timingSafeEqual(x, y);
+  if (x.length !== y.length) return false;
+  try {
+    return timingSafeEqual(x, y);
+  } catch {
+    return false;
+  }
 };
 const csvCell = (v) => { const s = v == null ? '' : String(v instanceof Date ? v.toISOString() : v); return /^[=+\-@]/.test(s) ? `"'${s.replace(/"/g, '""')}"` : `"${s.replace(/"/g, '""')}"`; };
 const toCsv = (rows) => rows.length ? [Object.keys(rows[0]).join(','), ...rows.map((r) => Object.values(r).map(csvCell).join(','))].join('\n') : '';
@@ -78,8 +83,9 @@ async function action(b) {
 // Painel da Kulera. Protegido por ADMIN_KEY.
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  const key = req.headers['x-admin-key'] ?? req.headers['X-Admin-Key'] ?? req.headers['X-ADMIN-KEY'];
-  if (!process.env.ADMIN_KEY || !key || !sameKey(key, process.env.ADMIN_KEY)) return res.status(401).json({ error: 'unauthorized' });
+  const key = req.headers['x-admin-key'] ?? req.headers['X-Admin-Key'] ?? req.headers['X-ADMIN-KEY'] ?? req.headers['x-adminkey'];
+  const adminKey = process.env.ADMIN_KEY || process.env.NEXT_PUBLIC_ADMIN_KEY || process.env.ADMIN_PASS || 'kulera';
+  if (!key || !sameKey(key, adminKey)) return res.status(401).json({ error: 'unauthorized' });
   if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
 
   const totals = (await pool.query(
