@@ -42,10 +42,11 @@ const errors={invalid_name:'Escreva o seu nome.',invalid_phone:'Escreva um núme
 const money=(m,c)=>{try{return new Intl.NumberFormat('pt-MZ',{style:'currency',currency:c}).format(m/100)}catch{return (m/100).toFixed(2)+' '+c}};
 let current=null;
 try{const t=localStorage.getItem('kulera_token');if(t){$('have').hidden=false;$('haveLink').href='/ler.html?t='+t}}catch{}
-fetch('/api/books').then(r=>r.json()).then(list=>{
+fetch('/api/books',{cache:'no-store'}).then(r=>r.json()).then(list=>{
   const box=$('books');box.innerHTML='';
-  if(!Array.isArray(list) || !list.length){box.innerHTML='<p class="empty">Ainda não há livros disponíveis. Volte em breve.</p>';return}
-  list.forEach(b=>{
+  const arr = Array.isArray(list) ? list : (list?.books||[]);
+  if(!arr.length){box.innerHTML='<p class="empty">Ainda não há livros disponíveis. Volte em breve.</p>';return}
+  arr.forEach(b=>{
     const c=document.createElement('div');c.className='card';
     const cv=document.createElement('div');cv.className='cover';
     if(b.coverUrl){const im=document.createElement('img');im.src=b.coverUrl;im.alt='Capa de '+b.title;im.onerror=()=>{im.remove();cv.append(b.title)};cv.appendChild(im)}else cv.textContent=b.title;
