@@ -29,10 +29,12 @@ export default async function handler(req, res) {
     if (!shippingAddress || shippingAddress.length < 5) return res.status(400).json({ error: 'invalid_address' });
   }
   let priceMinor = Number(book.price_minor);
-  if (process.env.SANDBOX === 'true' || process.env.TEST_PRICE_MT === '1' || process.env.FORCE_TEST_PRICE === '1' || process.env.TEST_PRICE_MT === '11') {
-    priceMinor = 1100;
-  } else if (process.env.TEST_PRICE_MT_ALL) {
-    priceMinor = Math.round(Number(process.env.TEST_PRICE_MT_ALL) * 100);
+  if (process.env.NODE_ENV !== 'production') {
+    if (process.env.SANDBOX === 'true' || process.env.TEST_PRICE_MT === '1' || process.env.FORCE_TEST_PRICE === '1' || process.env.TEST_PRICE_MT === '11') {
+      priceMinor = process.env.TEST_PRICE_MT_ALL ? Math.round(Number(process.env.TEST_PRICE_MT_ALL) * 100) : 1100;
+    } else if (process.env.TEST_PRICE_MT_ALL) {
+      priceMinor = Math.round(Number(process.env.TEST_PRICE_MT_ALL) * 100);
+    }
   }
   const isPhysical = book.kind === 'physical' || book.requires_shipping;
 
