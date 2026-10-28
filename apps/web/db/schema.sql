@@ -47,12 +47,12 @@ create table if not exists fair_partners (
 );
 create table if not exists fair_books (
   id uuid primary key default gen_random_uuid(),
-  partner_id uuid references fair_partners (id),   -- null = livro da prA3pria Kulera
+  partner_id uuid references fair_partners (id),   -- null = livro da própria Kulera
   title text not null,
   author text not null,
   description text,
   language text not null default 'pt',
-  price_minor bigint not null check (price_minor > 0), -- preAo SEMPRE vem daqui
+  price_minor bigint not null check (price_minor > 0), -- preço SEMPRE vem daqui
   currency char(3) not null default 'MZN',
   cover_url text,
   content_html text,                               -- livro convertido; nunca sai sem pagamento
@@ -94,7 +94,7 @@ create table if not exists fair_partner_users (
   created_at timestamptz not null default now()
 );
 
--- SubmissAμes de manuscritos por parceiros
+-- Submissões de manuscritos por parceiros
 create table if not exists fair_submissions (
   id uuid primary key default gen_random_uuid(),
   partner_id uuid not null references fair_partners (id),
@@ -112,7 +112,7 @@ create table if not exists fair_submissions (
   updated_at timestamptz not null default now()
 );
 
--- Planos de subscriA§A£o
+-- Planos de subscrição
 create table if not exists fair_plans (
   id uuid primary key default gen_random_uuid(),
   code text not null unique,
@@ -125,7 +125,7 @@ create table if not exists fair_plans (
   created_at timestamptz not null default now()
 );
 
--- SubscriA§Aμes activas
+-- Subscrições activas
 create table if not exists fair_subscriptions (
   id uuid primary key default gen_random_uuid(),
   buyer_name text not null,

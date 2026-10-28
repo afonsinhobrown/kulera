@@ -59,7 +59,7 @@ async function action(b) {
           id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id', [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 500) || null, content])).rows[0].id;
         }
       }
-      // Nunca fica publicado um livro sem conteA�do.
+      // Nunca fica publicado um livro sem conteúdo.
       const rev = await pool.query("update fair_books set status='draft' where id=$1 and status='published' and (kind is distinct from 'physical') and content_html is null", [id]);
       return [200, { ok: true, id, warning: rev.rowCount ? 'sem_conteudo_ficou_rascunho' : undefined }];
     }

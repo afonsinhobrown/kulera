@@ -40,11 +40,11 @@ export default async function handler(req, res) {
     if (isNew.rowCount === 0) { await client.query('COMMIT'); return res.status(200).json({ ok: true, result: 'duplicate' }); }
 
     if (target === 'paid') {
-      // ConfirmaAA�o verificada vence A�falhado/canceladoA�; A�pagoA� nunca recua.
+      // Confirmação verificada vence «falhado/cancelado»; «pago» nunca recua.
       const upd = await client.query(
         `update fair_orders set status = 'paid', paid_at = coalesce(paid_at, now()),
            provider_payment_id = coalesce(provider_payment_id, $2) where id = $1 and status <> 'paid'`, [order.id, providerId]);
-      if (upd.rowCount === 1) { // acabou de passar a A�pagoA�: regista a divisA�o da receita
+      if (upd.rowCount === 1) { // acabou de passar a «pago»: regista a divisão da receita
         const r = await client.query(
           `select o.book_id, o.amount_minor, o.plan_id, o.type, b.partner_id, p.commission_bps from fair_orders o
              left join fair_books b on b.id = o.book_id left join fair_partners p on p.id = b.partner_id where o.id = $1`, [order.id]);

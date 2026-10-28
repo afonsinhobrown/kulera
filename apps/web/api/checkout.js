@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   const shippingAddress = String(req.body?.shippingAddress ?? '').trim();
   const shippingCity = String(req.body?.shippingCity ?? '').trim();
 
-  // PreAo, moeda e disponibilidade SEMPRE da base de dados. Nunca se vende um livro sem conteA�do publicado.
+  // Preço, moeda e disponibilidade SEMPRE da base de dados. Nunca se vende um livro sem conteúdo publicado.
   const found = await pool.query(
     "select id, title, price_minor, currency, kind, requires_shipping, stock, content_html from fair_books where id = $1 and status = 'published'", [bookId]);
   const book = found.rows[0];

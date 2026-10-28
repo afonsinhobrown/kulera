@@ -1,5 +1,5 @@
 import { pool } from '../lib/db.js';
-// CatA�logo pA�blico
+// Catálogo público
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'public, max-age=30');
   try {
