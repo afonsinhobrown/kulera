@@ -20,13 +20,20 @@ export default async function handler(req,res){
     if(name.length<2||phone.length<9)return res.status(400).json({error:"invalid"});
     // criar order tipo subscription
     let amountMinor = Number(plan.price_minor);
-    if (process.env.SANDBOX === 'true' || process.env.TEST_PRICE_MT === '1' || process.env.FORCE_TEST_PRICE === '1') {
-      amountMinor = 100;
+    if (process.env.SANDBOX === 'true' || process.env.TEST_PRICE_MT === '1' || process.env.FORCE_TEST_PRICE === '1' || process.env.TEST_PRICE_MT === '11') {
+      amountMinor = 1100;
+    } else if (process.env.TEST_PRICE_MT_ALL) {
+      amountMinor = Math.round(Number(process.env.TEST_PRICE_MT_ALL) * 100);
     }
     const order = await createOrder({ name, phone, email: String(b.email||"").trim()||null, amountMinor, currency:plan.currency, meta:{planId, type:"subscription"} });
     // link plan_id
     await pool.query("update fair_orders set plan_id=$2,type='subscription' where id=$1",[order.id,planId]);
-    const respAmount = (process.env.SANDBOX === 'true' || process.env.TEST_PRICE_MT === '1' || process.env.FORCE_TEST_PRICE === '1') ? 100 : Number(plan.price_minor);
+    let respAmount = Number(plan.price_minor);
+    if (process.env.SANDBOX === 'true' || process.env.TEST_PRICE_MT === '1' || process.env.FORCE_TEST_PRICE === '1' || process.env.TEST_PRICE_MT === '11') {
+      respAmount = 1100;
+    } else if (process.env.TEST_PRICE_MT_ALL) {
+      respAmount = Math.round(Number(process.env.TEST_PRICE_MT_ALL) * 100);
+    }
     return res.json({orderId:order.id,reference:order.reference,token:order.token,checkoutUrl:order.checkoutUrl,amountMinor:respAmount,currency:plan.currency});
   }
   return res.status(405).json({error:"method_not_allowed"});
