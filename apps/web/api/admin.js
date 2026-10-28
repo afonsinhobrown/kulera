@@ -63,6 +63,18 @@ async function action(b) {
       const rev = await pool.query("update fair_books set status='draft' where id=$1 and status='published' and (kind is distinct from 'physical') and content_html is null", [id]);
       return [200, { ok: true, id, warning: rev.rowCount ? 'sem_conteudo_ficou_rascunho' : undefined }];
     }
+    case 'delete_book': {
+      if (!uuid(b.id)) return [400, { error: 'invalid' }];
+      try {
+        await pool.query('delete from fair_sales where book_id = $1', [b.id]);
+      } catch {}
+      try {
+        await pool.query('update fair_orders set book_id = null where book_id = $1', [b.id]);
+      } catch {}
+      const r = await pool.query('delete from fair_books where id = $1 returning id', [b.id]);
+      if (r.rowCount === 0) return [404, { error: 'not_found' }];
+      return [200, { ok: true }];
+    }
     case 'approve_submission': {
       if (!uuid(b.submissionId)) return [400, { error: 'invalid' }];
       const s = await pool.query('select * from fair_submissions where id=$1', [b.submissionId]);
