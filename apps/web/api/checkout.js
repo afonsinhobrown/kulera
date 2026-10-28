@@ -28,7 +28,10 @@ export default async function handler(req, res) {
     if (book.stock != null && Number(book.stock) <= 0) return res.status(404).json({ error: 'book_unavailable' });
     if (!shippingAddress || shippingAddress.length < 5) return res.status(400).json({ error: 'invalid_address' });
   }
-  const priceMinor = Number(book.price_minor);
+  let priceMinor = Number(book.price_minor);
+  if (process.env.SANDBOX === 'true' || process.env.TEST_PRICE_MT === '1' || process.env.FORCE_TEST_PRICE === '1') {
+    priceMinor = 100;
+  }
   const isPhysical = book.kind === 'physical' || book.requires_shipping;
 
   const id = randomUUID();

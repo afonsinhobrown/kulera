@@ -19,10 +19,15 @@ export default async function handler(req,res){
     const name=String(b.name||"").trim().slice(0,120), phone=String(b.phone||"").replace(/\D/g,"");
     if(name.length<2||phone.length<9)return res.status(400).json({error:"invalid"});
     // criar order tipo subscription
-    const order = await createOrder({ name, phone, email: String(b.email||"").trim()||null, amountMinor:Number(plan.price_minor), currency:plan.currency, meta:{planId, type:"subscription"} });
+    let amountMinor = Number(plan.price_minor);
+    if (process.env.SANDBOX === 'true' || process.env.TEST_PRICE_MT === '1' || process.env.FORCE_TEST_PRICE === '1') {
+      amountMinor = 100;
+    }
+    const order = await createOrder({ name, phone, email: String(b.email||"").trim()||null, amountMinor, currency:plan.currency, meta:{planId, type:"subscription"} });
     // link plan_id
     await pool.query("update fair_orders set plan_id=$2,type='subscription' where id=$1",[order.id,planId]);
-    return res.json({orderId:order.id,reference:order.reference,token:order.token,checkoutUrl:order.checkoutUrl,amountMinor:Number(plan.price_minor),currency:plan.currency});
+    const respAmount = (process.env.SANDBOX === 'true' || process.env.TEST_PRICE_MT === '1' || process.env.FORCE_TEST_PRICE === '1') ? 100 : Number(plan.price_minor);
+    return res.json({orderId:order.id,reference:order.reference,token:order.token,checkoutUrl:order.checkoutUrl,amountMinor:respAmount,currency:plan.currency});
   }
   return res.status(405).json({error:"method_not_allowed"});
 }

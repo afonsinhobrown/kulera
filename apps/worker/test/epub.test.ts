@@ -46,10 +46,12 @@ describe('convertToEpub (validações antes de chamar o Pandoc)', () => {
       (e: unknown) => e instanceof ConversionError && e.code === 'invalid_metadata',
     );
   });
-  it('PDF ainda não implementado, com erro claro', async () => {
+  it('PDF agora suportado com conversores disponíveis', async () => {
     await assert.rejects(
       () => convertToEpub({ ...base, sourcePath: 'a.pdf' }),
-      (e: unknown) => e instanceof ConversionError && e.code === 'pdf_not_implemented',
+      (e: unknown) =>
+        e instanceof ConversionError &&
+        (e.code === 'pdf_conversion_unavailable' || e.code === 'converter_missing'),
     );
   });
   it('formato desconhecido', async () => {
