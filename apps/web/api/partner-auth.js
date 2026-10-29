@@ -30,7 +30,7 @@ async function action(b){
       let pr = await pool.query("select id,status from fair_partners where lower(email)=$1 or lower(name)=$2 order by created_at desc limit 1",[mail,name.toLowerCase()]);
       let pid;
       if(pr.rows[0]){ pid = pr.rows[0].id; } else {
-        const r = await pool.query("insert into fair_partners (name,kind,phone,email,status) values ($1,$2,$3,$4,'pending') returning id",[name,kind,phone,mail]);
+        const r = await pool.query("insert into fair_partners (name,kind,phone,email,status) values ($1,$2,$3,$4,'active') returning id",[name,kind,phone,mail]);
         pid = r.rows[0].id;
       }
       const h = makeHash(pass);
