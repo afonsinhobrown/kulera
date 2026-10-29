@@ -66,6 +66,10 @@ create table if not exists fair_books (
 );
 alter table fair_books add column if not exists publication_fee_minor bigint not null default 0;
 alter table fair_books add column if not exists publication_fee_paid_at timestamptz;
+alter table fair_books add column if not exists kind text not null default 'ebook';
+alter table fair_books add column if not exists stock integer;
+alter table fair_books add column if not exists requires_shipping boolean not null default false;
+alter table fair_books add column if not exists shipping_info text;
 alter table fair_orders add column if not exists book_id uuid references fair_books (id);
 alter table fair_orders add column if not exists plan_id uuid;
 alter table fair_orders add column if not exists type text not null default 'book' check (type in ('book','subscription','physical'));

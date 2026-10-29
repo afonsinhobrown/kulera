@@ -116,12 +116,19 @@ async function action(b) {
 }
 
 // Painel da Kulera. Protegido por ADMIN_KEY.
+const MIGRATION_DDL = `
+alter table fair_books add column if not exists kind text not null default 'ebook';
+alter table fair_books add column if not exists stock integer;
+alter table fair_books add column if not exists requires_shipping boolean not null default false;
+alter table fair_books add column if not exists shipping_info text;
+`;
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (!process.env.ADMIN_KEY || !sameKey(req.headers['x-admin-key'], process.env.ADMIN_KEY)) {
     return res.status(401).json({ error: 'unauthorized' });
   }
   try {
+    if (req.query?.migrate === '1') { await pool.query(MIGRATION_DDL); return res.json({ ok: true, migrated: true }); }
     if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
 
   const totals = (await pool.query(
