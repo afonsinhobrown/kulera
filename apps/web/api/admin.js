@@ -40,29 +40,32 @@ async function action(b) {
       const status = ['draft', 'published', 'suspended'].includes(b.status) ? b.status : 'draft';
       const content = typeof b.contentHtml === 'string' && b.contentHtml.trim() ? b.contentHtml.replace(/\u0000/g, '') : null;
       if (content && content.length > 3_500_000) return [413, { error: 'content_too_large' }];
-      const kind = b.kind === 'physical' ? 'physical' : 'ebook';
-      const stock = kind === 'physical' && b.stock !== '' && b.stock != null && !isNaN(Number(b.stock)) ? Number(b.stock) : (kind === 'physical' ? 0 : null);
-      const requiresShipping = kind === 'physical';
-      const args = [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 800000) || null, content, kind, stock, requiresShipping];
+      const hasDigital = b.hasDigital === true || b.hasDigital === 'true' || (b.hasDigital == null && b.kind !== 'physical');
+      const hasPhysical = b.hasPhysical === true || b.hasPhysical === 'true' || (b.hasPhysical == null && b.kind === 'physical');
+      if (!hasDigital && !hasPhysical) return [400, { error: 'invalid_format' }];
+      const kind = hasPhysical && !hasDigital ? 'physical' : 'ebook';
+      const stock = hasPhysical && b.stock !== '' && b.stock != null && !isNaN(Number(b.stock)) ? Number(b.stock) : (hasPhysical ? 0 : null);
+      const requiresShipping = hasPhysical;
+      const args = [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 800000) || null, content, kind, stock, requiresShipping, hasDigital, hasPhysical];
       let id = b.id;
       if (uuid(id)) {
         try {
-          await pool.query('update fair_books set title=$2,author=$3,description=$4,language=$5,price_minor=$6,partner_id=$7,status=$8,cover_url=$9,content_html=coalesce($10,content_html),kind=$11,stock=$12,requires_shipping=$13,updated_at=now() where id=$1', [id, ...args]);
+          await pool.query('update fair_books set title=$2,author=$3,description=$4,language=$5,price_minor=$6,partner_id=$7,status=$8,cover_url=$9,content_html=coalesce($10,content_html),kind=$11,stock=$12,requires_shipping=$13,has_digital=$14,has_physical=$15,updated_at=now() where id=$1', [id, ...args]);
         } catch {
           await pool.query('update fair_books set title=$2,author=$3,description=$4,language=$5,price_minor=$6,partner_id=$7,status=$8,cover_url=$9,content_html=coalesce($10,content_html),updated_at=now() where id=$1', [id, title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 800000) || null, content]);
         }
       }
       else {
         try {
-          id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html,kind,stock,requires_shipping) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning id', args)).rows[0].id;
+          id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html,kind,stock,requires_shipping,has_digital,has_physical) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id', args)).rows[0].id;
         } catch {
           id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id', [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 800000) || null, content])).rows[0].id;
         }
       }
       // Livros de parceiros externos pagam a taxa de publicação (500 MT); livros da Kulera não.
       await pool.query('update fair_books set publication_fee_minor = case when partner_id is null then 0 else greatest(publication_fee_minor, $2) end where id=$1', [id, PUBLICATION_FEE_MINOR]);
-      // Nunca fica publicado um livro sem conteúdo.
-      const revContent = await pool.query("update fair_books set status='draft' where id=$1 and status='published' and (kind is distinct from 'physical') and content_html is null", [id]);
+      // Nunca fica publicado um livro que oferece digital sem conteúdo.
+      const revContent = await pool.query("update fair_books set status='draft' where id=$1 and status='published' and coalesce(has_digital,true) and content_html is null", [id]);
       // Nem um livro de parceiro sem a taxa de publicação paga.
       const revFee = await pool.query("update fair_books set status='draft' where id=$1 and status='published' and partner_id is not null and publication_fee_paid_at is null", [id]);
       const warning = revContent.rowCount ? 'sem_conteudo_ficou_rascunho' : (revFee.rowCount ? 'taxa_publicacao_pendente' : undefined);
@@ -116,12 +119,29 @@ async function action(b) {
 }
 
 // Painel da Kulera. Protegido por ADMIN_KEY.
+const MIGRATION_DDL = `
+alter table fair_books add column if not exists has_digital boolean not null default true;
+alter table fair_books add column if not exists has_physical boolean not null default false;
+update fair_books set has_physical = true where coalesce(kind,'ebook')='physical' or coalesce(requires_shipping,false);
+update fair_books set has_digital = false where coalesce(kind,'ebook')='physical' and content_html is null;
+create table if not exists fair_partner_withdrawals (
+  id uuid primary key default gen_random_uuid(),
+  partner_id uuid not null references fair_partners (id) on delete cascade,
+  amount_minor bigint not null check (amount_minor > 0),
+  method text,
+  details text,
+  status text not null default 'requested' check (status in ('requested','processing','paid','rejected')),
+  created_at timestamptz not null default now(),
+  paid_at timestamptz
+);
+`;
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (!process.env.ADMIN_KEY || !sameKey(req.headers['x-admin-key'], process.env.ADMIN_KEY)) {
     return res.status(401).json({ error: 'unauthorized' });
   }
   try {
+    if (req.query?.migrate === '1') { await pool.query(MIGRATION_DDL); return res.json({ ok: true, migrated: true }); }
     if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
 
   const totals = (await pool.query(
@@ -144,9 +164,9 @@ export default async function handler(req, res) {
   }
   let books;
   try {
-    books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content, kind, stock, publication_fee_minor, publication_fee_paid_at from fair_books order by created_at desc`)).rows;
+    books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content, kind, stock, requires_shipping, has_digital, has_physical, publication_fee_minor, publication_fee_paid_at from fair_books order by created_at desc`)).rows;
   } catch {
-    books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content from fair_books order by created_at desc`)).rows.map(x=>({...x,kind:'ebook',publication_fee_minor:0,publication_fee_paid_at:null}));
+    books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content from fair_books order by created_at desc`)).rows.map(x=>({...x,kind:'ebook',stock:null,requires_shipping:false,has_digital:true,has_physical:false,publication_fee_minor:0,publication_fee_paid_at:null}));
   }
   const partners = (await pool.query('select id, name, kind, phone, email, commission_bps, status from fair_partners order by created_at desc')).rows;
   const payouts = (await pool.query(`select p.name, count(*)::int as sales, sum(s.gross_minor)::bigint as gross, sum(s.partner_minor)::bigint as owed

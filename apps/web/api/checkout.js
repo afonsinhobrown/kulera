@@ -20,11 +20,20 @@ export default async function handler(req, res) {
 
   // Preço, moeda e disponibilidade SEMPRE da base de dados. Nunca se vende um livro sem conteúdo publicado.
   const found = await pool.query(
-    "select id, title, price_minor, currency, kind, requires_shipping, stock, content_html from fair_books where id = $1 and status = 'published'", [bookId]);
+    "select id, title, price_minor, currency, kind, requires_shipping, stock, content_html, coalesce(has_digital,true) as has_digital, coalesce(has_physical,false) as has_physical from fair_books where id = $1 and status = 'published'", [bookId]);
   const book = found.rows[0];
   if (!book) return res.status(404).json({ error: 'book_unavailable' });
-  if ((book.kind === 'ebook' || !book.requires_shipping) && !book.content_html) return res.status(404).json({ error: 'book_unavailable' });
-  if (book.kind === 'physical') {
+  const hasDigital = book.has_digital !== false;
+  const hasPhysical = book.has_physical === true || book.kind === 'physical' || book.requires_shipping === true;
+  if (!hasDigital && !hasPhysical) return res.status(404).json({ error: 'book_unavailable' });
+  const requested = req.body?.format === 'physical' ? 'physical' : req.body?.format === 'digital' ? 'digital' : null;
+  let chosen = requested;
+  if (chosen === 'physical' && !hasPhysical) chosen = null;
+  if (chosen === 'digital' && !hasDigital) chosen = null;
+  if (!chosen) chosen = hasDigital ? 'digital' : 'physical';
+  const isPhysical = chosen === 'physical';
+  if (!isPhysical && !book.content_html) return res.status(404).json({ error: 'book_unavailable' });
+  if (isPhysical) {
     if (book.stock != null && Number(book.stock) <= 0) return res.status(404).json({ error: 'book_unavailable' });
     if (!shippingAddress || shippingAddress.length < 5) return res.status(400).json({ error: 'invalid_address' });
   }
@@ -36,7 +45,6 @@ export default async function handler(req, res) {
       priceMinor = Math.round(Number(process.env.TEST_PRICE_MT_ALL) * 100);
     }
   }
-  const isPhysical = book.kind === 'physical' || book.requires_shipping;
 
   const id = randomUUID();
   const token = randomBytes(32).toString('hex');
@@ -48,7 +56,7 @@ export default async function handler(req, res) {
      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
     [id, token, reference, name, phone, email || null, priceMinor, book.currency, book.id, isPhysical ? 'physical' : 'book', shippingName || name, shippingPhone || phone, shippingAddress || null, shippingCity || null],
   );
-  if (book.kind === 'physical' && book.stock != null) {
+  if (isPhysical && book.stock != null) {
     await pool.query('update fair_books set stock = stock - 1 where id = $1 and stock >= 1', [book.id]);
   }
   try {
@@ -61,10 +69,10 @@ export default async function handler(req, res) {
          status = case when status = 'created' then 'pending' else status end where id = $1`,
       [id, providerPaymentId, checkoutUrl],
     );
-    return res.status(200).json({ checkoutUrl, token });
+    return res.status(200).json({ checkoutUrl, token, format: chosen });
   } catch (error) {
     console.error('checkout.error', String(error));
-    if (book.kind === 'physical' && book.stock != null) {
+    if (isPhysical && book.stock != null) {
       await pool.query('update fair_books set stock = stock + 1 where id = $1', [book.id]);
     }
     await pool.query("update fair_orders set status = 'failed' where id = $1 and status in ('created','pending')", [id]);

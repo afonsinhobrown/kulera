@@ -52,13 +52,14 @@ fetch('/api/books',{cache:'no-store'}).then(r=>r.json()).then(list=>{
     if(b.coverUrl){const im=document.createElement('img');im.src=b.coverUrl;im.alt='Capa de '+b.title;im.onerror=()=>{im.remove();cv.append(b.title)};cv.appendChild(im)}else cv.textContent=b.title;
     const h=document.createElement('h3');h.textContent=b.title;
     const a=document.createElement('p');a.textContent=b.author;
-    const isPhys = (b.kind === 'physical') || b.requiresShipping;
-    const badge = document.createElement('p'); badge.style.fontSize='13px'; badge.style.color = isPhys ? '#7a3b00' : '#0b5c63'; badge.textContent = isPhys ? 'Livro físico • Entrega' : 'E-book • Digital'; c.appendChild(badge);
+    const hasD = b.hasDigital !== false;
+    const hasP = b.hasPhysical === true || b.requiresShipping === true;
+    const badge = document.createElement('p'); badge.style.fontSize='13px'; badge.style.color = hasP ? '#7a3b00' : '#0b5c63';
+    badge.textContent = [hasD?'E-book':null,hasP?'Físico':null].filter(Boolean).join(' + ') + (hasP?' • Entrega':(hasD?' • Digital':'')); c.appendChild(badge);
     const p=document.createElement('p');p.className='p';p.textContent=money(b.priceMinor,b.currency);
     const btn=document.createElement('button');btn.type='button';btn.textContent='Comprar';btn.onclick=()=>choose(b);
     c.append(cv,h,a,p,btn);box.appendChild(c);
   });
-  if(list.length===1)choose(list[0],false);
 }).catch(()=>{$('books').innerHTML='<p class="empty">Não foi possível carregar. Atualize a página.</p>'});
 function choose(b,scroll=true){current=b;$('buy').hidden=false;$('bTitle').textContent=b.title;$('bAuthor').textContent=b.author;$('bDesc').textContent=b.description||'';$('bPrice').textContent=money(b.priceMinor,b.currency);$('goBuy').href='comprar.html?id='+encodeURIComponent(b.id);$('goBuy').textContent='Comprar por '+money(b.priceMinor,b.currency);if(scroll)$('buy').scrollIntoView({behavior:'smooth'})}
 if($('form')) $('form').addEventListener('submit',async(e)=>{e.preventDefault();});

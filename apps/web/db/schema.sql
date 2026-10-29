@@ -70,6 +70,10 @@ alter table fair_books add column if not exists kind text not null default 'eboo
 alter table fair_books add column if not exists stock integer;
 alter table fair_books add column if not exists requires_shipping boolean not null default false;
 alter table fair_books add column if not exists shipping_info text;
+alter table fair_books add column if not exists has_digital boolean not null default true;
+alter table fair_books add column if not exists has_physical boolean not null default false;
+update fair_books set has_physical = true where coalesce(kind,'ebook')='physical' or coalesce(requires_shipping,false);
+update fair_books set has_digital = false where coalesce(kind,'ebook')='physical' and content_html is null;
 alter table fair_orders add column if not exists book_id uuid references fair_books (id);
 alter table fair_orders add column if not exists plan_id uuid;
 alter table fair_orders add column if not exists type text not null default 'book' check (type in ('book','subscription','physical'));
@@ -125,6 +129,18 @@ create table if not exists fair_partner_users (
   password_hash text not null,
   status text not null default 'active' check (status in ('active','suspended')),
   created_at timestamptz not null default now()
+);
+
+-- Saques / pagamentos aos parceiros
+create table if not exists fair_partner_withdrawals (
+  id uuid primary key default gen_random_uuid(),
+  partner_id uuid not null references fair_partners (id) on delete cascade,
+  amount_minor bigint not null check (amount_minor > 0),
+  method text,
+  details text,
+  status text not null default 'requested' check (status in ('requested','processing','paid','rejected')),
+  created_at timestamptz not null default now(),
+  paid_at timestamptz
 );
 
 -- Submissões de manuscritos por parceiros

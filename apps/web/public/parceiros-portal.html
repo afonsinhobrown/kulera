@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Kulera+ | Portal de Parceiros</title>
 <link rel="stylesheet" href="style.css">
-<style>form.f{display:grid;gap:10px;max-width:560px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px}table{border-collapse:collapse;width:100%;font-size:14px;background:#fff}th,td{border:1px solid var(--line);padding:8px;text-align:left}textarea,input,select{font:inherit;padding:8px;border:1.5px solid #9db3b0;border-radius:6px;width:100%}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}h2{font-family:Georgia,serif;margin-top:24px}</style>
+<style>form.f{display:grid;gap:10px;max-width:560px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px}table{border-collapse:collapse;width:100%;font-size:14px;background:#fff}th,td{border:1px solid var(--line);padding:8px;text-align:left}textarea,input,select{font:inherit;padding:8px;border:1.5px solid #9db3b0;border-radius:6px;width:100%}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}h2{font-family:Georgia,serif;margin-top:24px}.kpi{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}.kpi div{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 16px}.kpi b{display:block;font:700 20px Georgia,serif}.kpi span{font-size:13px;color:#5b747c}</style>
 </head>
 <body>
 <div class="top">Kulera<span>+</span> | Portal de Parceiros</div>
@@ -47,6 +47,22 @@
     </form>
     <h2>As minhas submissões</h2>
     <div class="wrap"><table id="subs"></table></div>
+
+    <h2>Relatórios e ganhos</h2>
+    <div class="kpi" id="rkpi"></div>
+    <h3>Livros comprados</h3>
+    <div class="wrap"><table id="rsales"></table></div>
+    <h3>Taxas de publicação</h3>
+    <div class="wrap"><table id="rfees"></table></div>
+    <h3>Saques</h3>
+    <div class="wrap"><table id="rwth"></table></div>
+    <form class="f" id="wform">
+      <b>Pedir saque</b>
+      <label>Valor (MZN)<input name="amount" type="number" min="1" step="0.01" required></label>
+      <div class="row"><label>Método<select name="method"><option value="mpesa">M-Pesa</option><option value="emola">e-Mola</option><option value="bank">Transferência bancária</option></select></label><label>Detalhes (número/conta)<input name="details" maxlength="300"></label></div>
+      <p class="msg" id="wmsg"></p>
+      <button>Pedir saque</button>
+    </form>
   </div>
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -60,8 +76,18 @@ async function call(path,body,headers={}){
 }
 function cell(v){const td=document.createElement('td');td.textContent=v??'';return td;}
 function fill(t,h,rows,m){t.innerHTML='';const tr=document.createElement('tr');h.forEach(x=>{const th=document.createElement('th');th.textContent=x;tr.appendChild(th)});t.appendChild(tr);rows.forEach(r=>t.appendChild(m(r)));}
-async function loadMe(){const {ok,j}=await call('/api/partner-auth');if(!ok)throw 0;$('#pname').textContent=j.name;$('#pstatus').textContent=j.status;$('#auth').hidden=true;$('#app').hidden=false;loadSubs();}
+async function loadMe(){const {ok,j}=await call('/api/partner-auth');if(!ok)throw 0;$('#pname').textContent=j.name;$('#pstatus').textContent=j.status;$('#auth').hidden=true;$('#app').hidden=false;loadSubs();loadReports();}
 async function loadSubs(){const {ok,j}=await call('/api/partner-submit');if(!ok)return;fill($('#subs'),['Título','Autor','Estado','Notas','Criado'],j.submissions||[],s=>{const tr=document.createElement('tr');const st={submitted:'Submetido',in_review:'Em análise',changes_requested:'Alterações pedidas',approved:'Aprovado',rejected:'Rejeitado'}[s.status]||s.status;tr.append(cell(s.title),cell(s.author),cell(st),cell(s.admin_notes),cell(s.created_at?new Date(s.created_at).toLocaleString('pt-MZ'):''));return tr});}
+const money=(m)=>{try{return new Intl.NumberFormat('pt-MZ',{style:'currency',currency:'MZN'}).format(Number(m)/100)}catch{return (Number(m)/100).toFixed(2)+' MZN'}};
+const wst={requested:'Pedido',processing:'Em processamento',paid:'Pago',rejected:'Recusado'};
+async function loadReports(){const {ok,j}=await call('/api/partner-submit?reports=1');if(!ok)return;const s=j.summary||{};
+  const kd=[['Ganhos (líquido)',money(s.earned)],['Vendas',s.salesCount||0],['Disponível p/ saque',money(s.available)],['Bruto vendido',money(s.gross)],['Comissão Kulera',money(s.appTotal)],['Taxa publicação paga',money(s.feesPaid)],['Saques pagos',money(s.withdrawalsPaid)],['Saques em aberto',money(s.withdrawalsOpen)]];
+  const kb=$('#rkpi');kb.innerHTML='';kd.forEach(([l,v])=>{const d=document.createElement('div');d.innerHTML='<b></b><span></span>';d.firstChild.textContent=v;d.lastChild.textContent=l;kb.appendChild(d)});
+  fill($('#rsales'),['Data','Livro','Valor','Comissão','Editores','O meu','Estado'],j.sales||[],x=>{const tr=document.createElement('tr');tr.append(cell(x.created_at?new Date(x.created_at).toLocaleString('pt-MZ'):''),cell(x.title),cell(money(x.gross_minor)),cell(money(x.app_minor)),cell(money(x.editors_minor)),cell(money(x.partner_minor)),cell(x.paid_at?'Pago':(x.status||'')));return tr});
+  fill($('#rfees'),['Data','Valor','Estado'],j.fees||[],x=>{const tr=document.createElement('tr');tr.append(cell(x.created_at?new Date(x.created_at).toLocaleString('pt-MZ'):''),cell(money(x.amount_minor)),cell(x.paid_at?'Paga':'Pendente'));return tr});
+  fill($('#rwth'),['Data','Valor','Método','Detalhes','Estado'],j.withdrawals||[],x=>{const tr=document.createElement('tr');tr.append(cell(x.created_at?new Date(x.created_at).toLocaleString('pt-MZ'):''),cell(money(x.amount_minor)),cell(x.method||''),cell(x.details||''),cell(wst[x.status]||x.status));return tr});
+}
+$('#wform').onsubmit=async e=>{e.preventDefault();const f=e.target,m=$('wmsg');const {ok,j}=await call('/api/partner-submit',{action:'withdraw',amountMinor:Math.round(Number(f.amount.value)*100),method:f.method.value,details:f.details.value});if(ok){m.className='msg';m.textContent='Pedido de saque registado.';f.reset();loadReports();}else{m.className='msg err';m.textContent=j.error==='insufficient_funds'?'Saldo insuficiente para este saque.':'Verifique o valor.';}};
 $('#file').onchange=async e=>{const f=e.target.files[0];contentHtml=null;const m=$('fmsg');m.textContent='A converter...';if(!f){m.textContent='';return;}try{if(/\.docx$/i.test(f.name)){if(!window.mammoth)throw 0;const r=await mammoth.convertToHtml({arrayBuffer:await f.arrayBuffer()});contentHtml=r.value;}else contentHtml=await f.text();m.textContent='Pronto ('+Math.round(contentHtml.length/1000)+'k)';}catch{m.className='msg err';m.textContent='Erro ao ler ficheiro';}};
 $('#reg').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-auth',{action:'register',name:f.name.value,kind:f.kind.value,phone:f.phone.value,email:f.email.value,password:f.password.value});$('rmsg').textContent=ok?'Registo enviado. Já pode entrar.':(j.error==='exists'?'Já existe conta com este email.':'Verifique os dados.');$('rmsg').className=ok?'msg':'msg err';};
 $('#login').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-auth',{action:'login',email:f.email.value,password:f.password.value});if(!ok){$('lmsg').textContent='Credenciais inválidas.';$('lmsg').className='msg err';return;}TOK=j.token;localStorage.setItem('ptok',TOK);loadMe();};
