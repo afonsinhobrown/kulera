@@ -69,6 +69,7 @@
     </form>
 
     <h2>Valores a pagar aos parceiros</h2><div class="wrap"><table id="payouts"></table></div>
+    <h2>Saques de parceiros</h2><div class="wrap"><table id="withdrawals"></table></div>
     <h2>Parceiros interessados</h2><div class="wrap"><table id="leads"></table></div>
     <h2>Últimas vendas</h2><div class="wrap"><table id="orders"></table></div>
   </div>
@@ -89,6 +90,10 @@ async function load(){
   fill($('subs'),['Data','Parceiro','Título','Autor','Estado','Notas',''],j.submissions||[],s=>{const tr=document.createElement('tr');const st={submitted:'Submetido',in_review:'Em análise',changes_requested:'Alterações pedidas',approved:'Aprovado',rejected:'Rejeitado'}[s.status]||s.status;tr.append(cell(new Date(s.created_at).toLocaleString('pt-MZ')),cell(s.partner||''),cell(s.title),cell(s.author),cell(st),cell(s.admin_notes||''),btn('Selecionar',()=>{const f=$('subForm');f.submissionId.value=s.id;f.notes.value=s.admin_notes||'';$('subMsg').textContent='';f.price.focus();f.scrollIntoView({behavior:'smooth'});}));return tr});
   fill($('partners'),['Parceiro','Tipo','Comissão','Contacto','Estado',''],j.partners,p=>{const tr=document.createElement('tr');tr.append(cell(p.name),cell(p.kind==='publisher'?'Editora':'Escritor'),cell((p.commission_bps/100)+'%'),cell([p.phone,p.email].filter(Boolean).join(' · ')),cell(p.status==='active'?'Activo':'Suspenso'),btn('Editar',()=>editPartner(p)));return tr});
   fill($('payouts'),['Parceiro','Vendas','Valor bruto','A pagar ao parceiro'],j.payouts,x=>{const tr=document.createElement('tr');tr.append(cell(x.name),cell(x.sales),cell(fmt(x.gross)),cell(fmt(x.owed)));return tr});
+  fill($('withdrawals'),['Data','Parceiro','Valor','Método','Detalhes','Estado',''],j.withdrawals||[],w=>{const tr=document.createElement('tr');const st={requested:'Pedido',processing:'Em processamento',paid:'Pago',rejected:'Recusado'}[w.status]||w.status;tr.append(cell(new Date(w.created_at).toLocaleString('pt-MZ')),cell(w.partner||''),cell(fmt(w.amount_minor)),cell(w.method||''),cell(w.details||''),cell(st));
+    const actions=document.createElement('td');
+    if(w.status==='requested'||w.status==='processing'){const b=document.createElement('button');b.type='button';b.className='sec mini';b.textContent='Marcar como pago';b.onclick=async()=>{if(!confirm('Marcar saque de '+fmt(w.amount_minor)+' como pago?'))return;const r=await api({action:'withdrawal_status',id:w.id,status:'paid'});if(r.ok)load();else alert('Erro');};actions.appendChild(b);}
+    tr.appendChild(actions);return tr});
   fill($('leads'),['Data','Nome','Tipo','Telemóvel','Livros','Estado'],j.leads,l=>{const tr=document.createElement('tr');tr.append(cell(new Date(l.created_at).toLocaleString('pt-MZ')),cell(l.name+(l.organisation?' · '+l.organisation:'')),cell(l.kind==='publisher'?'Editora':'Escritor'));
     const td=cell(l.phone);const a=document.createElement('a');a.href='https://wa.me/'+l.phone;a.textContent=' WhatsApp';td.appendChild(a);tr.append(td,cell(l.titles_count));
     const s=document.createElement('select');[['new','Novo'],['contacted','Contactado'],['signed','Subscreveu'],['declined','Recusou']].forEach(([v,t])=>s.add(new Option(t,v)));s.value=l.status;s.onchange=()=>api({action:'lead_status',id:l.id,status:s.value});const tds=document.createElement('td');tds.appendChild(s);tr.appendChild(tds);return tr});

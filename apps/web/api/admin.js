@@ -114,6 +114,11 @@ async function action(b) {
       const r = await pool.query('insert into fair_plans (code,name,description,price_minor,currency,interval,status) values ($1,$2,$3,$4,$5,$6,$7,$8) returning id',[code,name,clip(b.description,200)||null,clip(b.currency,3)||'MZN',price,iv,st]);
       return [200,{ok:true,id:r.rows[0].id}];
     }
+    case 'withdrawal_status': {
+      if (!uuid(b.id) || !['requested', 'processing', 'paid', 'rejected'].includes(b.status)) return [400, { error: 'invalid' }];
+      await pool.query("update fair_partner_withdrawals set status=$2, paid_at=case when $2='paid' then coalesce(paid_at, now()) else paid_at end where id=$1", [b.id, b.status]);
+      return [200, { ok: true }];
+    }
     default: return [400, { error: 'invalid_action' }];
   }
 }
@@ -160,6 +165,8 @@ export default async function handler(req, res) {
   try { plans = (await pool.query('select id,code,name,description,price_minor,currency,interval,status from fair_plans order by created_at asc')).rows; } catch {}
   let subs = [];
   try { subs = (await pool.query(`select s.id,s.buyer_name,s.buyer_phone,s.status,s.starts_at,s.ends_at,pl.name as plan from fair_subscriptions s left join fair_plans pl on pl.id=s.plan_id order by s.created_at desc limit 500`)).rows; } catch {}
+  let withdrawals = [];
+  try { withdrawals = (await pool.query(`select w.id, w.amount_minor, w.method, w.details, w.status, w.created_at, w.paid_at, p.name as partner from fair_partner_withdrawals w left join fair_partners p on p.id=w.partner_id order by w.created_at desc limit 500`)).rows; } catch {}
 
   if (req.query?.format === 'csv') {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -168,7 +175,8 @@ export default async function handler(req, res) {
   res.json({ totals: { ...totals, paid_minor: Number(totals.paid_minor), app_minor: Number(split.a), editors_minor: Number(split.e),
       kulera_minor: Number(split.a) + Number(split.e), partners_minor: Number(split.p), fees_minor: Number(publicationFees.f) },
     leads, orders, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor), publication_fee_minor: Number(x.publication_fee_minor || 0) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
-    submissions, plans: plans.map((x)=>({...x,price_minor:Number(x.price_minor)})), subscriptions: subs });
+    submissions, plans: plans.map((x)=>({...x,price_minor:Number(x.price_minor)})), subscriptions: subs,
+    withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})) });
   } catch (e) {
     console.error('admin.error', e?.message || String(e));
     return res.status(500).json({ error: 'internal_error' });
