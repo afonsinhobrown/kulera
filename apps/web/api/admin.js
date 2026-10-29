@@ -124,12 +124,23 @@ async function action(b) {
 }
 
 // Painel da Kulera. Protegido por ADMIN_KEY.
+const MIGRATION_DDL = `
+do $$ declare pid uuid; begin
+  select id into pid from fair_partners where lower(email)='teste-relatorio@kulera.local';
+  if pid is not null then
+    delete from fair_partner_withdrawals where partner_id=pid;
+    delete from fair_partner_users where partner_id=pid;
+    delete from fair_partners where id=pid;
+  end if;
+end $$;
+`;
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (!process.env.ADMIN_KEY || !sameKey(req.headers['x-admin-key'], process.env.ADMIN_KEY)) {
     return res.status(401).json({ error: 'unauthorized' });
   }
   try {
+    if (req.query?.migrate === '1') { await pool.query(MIGRATION_DDL); return res.json({ ok: true, cleanup: true }); }
     if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
 
   const totals = (await pool.query(
