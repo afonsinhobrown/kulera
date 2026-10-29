@@ -119,29 +119,12 @@ async function action(b) {
 }
 
 // Painel da Kulera. Protegido por ADMIN_KEY.
-const MIGRATION_DDL = `
-alter table fair_books add column if not exists has_digital boolean not null default true;
-alter table fair_books add column if not exists has_physical boolean not null default false;
-update fair_books set has_physical = true where coalesce(kind,'ebook')='physical' or coalesce(requires_shipping,false);
-update fair_books set has_digital = false where coalesce(kind,'ebook')='physical' and content_html is null;
-create table if not exists fair_partner_withdrawals (
-  id uuid primary key default gen_random_uuid(),
-  partner_id uuid not null references fair_partners (id) on delete cascade,
-  amount_minor bigint not null check (amount_minor > 0),
-  method text,
-  details text,
-  status text not null default 'requested' check (status in ('requested','processing','paid','rejected')),
-  created_at timestamptz not null default now(),
-  paid_at timestamptz
-);
-`;
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (!process.env.ADMIN_KEY || !sameKey(req.headers['x-admin-key'], process.env.ADMIN_KEY)) {
     return res.status(401).json({ error: 'unauthorized' });
   }
   try {
-    if (req.query?.migrate === '1') { await pool.query(MIGRATION_DDL); return res.json({ ok: true, migrated: true }); }
     if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
 
   const totals = (await pool.query(
