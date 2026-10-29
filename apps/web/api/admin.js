@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { pool } from '../lib/db.js';
+import { PUBLICATION_FEE_MINOR } from '../lib/pricing.js';
 
 const sameKey = (a, b) => {
   const ax = String(a ?? '').trim();
@@ -27,11 +28,10 @@ async function action(b) {
     }
     case 'save_partner': {
       const name = clip(b.name, 120), kind = b.kind === 'author' ? 'author' : 'publisher';
-      const bps = Number(b.commissionBps);
-      if (name.length < 2 || !Number.isInteger(bps) || bps < 0 || bps > 10000) return [400, { error: 'invalid' }];
-      const args = [name, kind, clip(b.phone, 30) || null, clip(b.email, 120) || null, bps, b.status === 'suspended' ? 'suspended' : 'active'];
-      if (uuid(b.id)) { await pool.query('update fair_partners set name=$2,kind=$3,phone=$4,email=$5,commission_bps=$6,status=$7 where id=$1', [b.id, ...args]); return [200, { ok: true, id: b.id }]; }
-      const r = await pool.query('insert into fair_partners (name,kind,phone,email,commission_bps,status) values ($1,$2,$3,$4,$5,$6) returning id', args);
+      if (name.length < 2) return [400, { error: 'invalid' }];
+      const args = [name, kind, clip(b.phone, 30) || null, clip(b.email, 120) || null, b.status === 'suspended' ? 'suspended' : 'active'];
+      if (uuid(b.id)) { await pool.query('update fair_partners set name=$2,kind=$3,phone=$4,email=$5,status=$6 where id=$1', [b.id, ...args]); return [200, { ok: true, id: b.id }]; }
+      const r = await pool.query('insert into fair_partners (name,kind,phone,email,status) values ($1,$2,$3,$4,$5) returning id', args);
       return [200, { ok: true, id: r.rows[0].id }];
     }
     case 'save_book': {
@@ -43,25 +43,30 @@ async function action(b) {
       const kind = b.kind === 'physical' ? 'physical' : 'ebook';
       const stock = kind === 'physical' && b.stock !== '' && b.stock != null && !isNaN(Number(b.stock)) ? Number(b.stock) : (kind === 'physical' ? 0 : null);
       const requiresShipping = kind === 'physical';
-      const args = [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 500) || null, content, kind, stock, requiresShipping];
+      const args = [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 2000) || null, content, kind, stock, requiresShipping];
       let id = b.id;
       if (uuid(id)) {
         try {
           await pool.query('update fair_books set title=$2,author=$3,description=$4,language=$5,price_minor=$6,partner_id=$7,status=$8,cover_url=$9,content_html=coalesce($10,content_html),kind=$11,stock=$12,requires_shipping=$13,updated_at=now() where id=$1', [id, ...args]);
         } catch {
-          await pool.query('update fair_books set title=$2,author=$3,description=$4,language=$5,price_minor=$6,partner_id=$7,status=$8,cover_url=$9,content_html=coalesce($10,content_html),updated_at=now() where id=$1', [id, title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 500) || null, content]);
+          await pool.query('update fair_books set title=$2,author=$3,description=$4,language=$5,price_minor=$6,partner_id=$7,status=$8,cover_url=$9,content_html=coalesce($10,content_html),updated_at=now() where id=$1', [id, title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 2000) || null, content]);
         }
       }
       else {
         try {
           id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html,kind,stock,requires_shipping) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning id', args)).rows[0].id;
         } catch {
-          id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id', [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 500) || null, content])).rows[0].id;
+          id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id', [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 2000) || null, content])).rows[0].id;
         }
       }
+      // Livros de parceiros externos pagam a taxa de publicação (500 MT); livros da Kulera não.
+      await pool.query('update fair_books set publication_fee_minor = case when partner_id is null then 0 else greatest(publication_fee_minor, $2) end where id=$1', [id, PUBLICATION_FEE_MINOR]);
       // Nunca fica publicado um livro sem conteúdo.
-      const rev = await pool.query("update fair_books set status='draft' where id=$1 and status='published' and (kind is distinct from 'physical') and content_html is null", [id]);
-      return [200, { ok: true, id, warning: rev.rowCount ? 'sem_conteudo_ficou_rascunho' : undefined }];
+      const revContent = await pool.query("update fair_books set status='draft' where id=$1 and status='published' and (kind is distinct from 'physical') and content_html is null", [id]);
+      // Nem um livro de parceiro sem a taxa de publicação paga.
+      const revFee = await pool.query("update fair_books set status='draft' where id=$1 and status='published' and partner_id is not null and publication_fee_paid_at is null", [id]);
+      const warning = revContent.rowCount ? 'sem_conteudo_ficou_rascunho' : (revFee.rowCount ? 'taxa_publicacao_pendente' : undefined);
+      return [200, { ok: true, id, warning }];
     }
     case 'delete_book': {
       if (!uuid(b.id)) return [400, { error: 'invalid' }];
@@ -84,10 +89,13 @@ async function action(b) {
       const price = Number(b.priceMinor);
       if (title.length < 1 || author.length < 1 || !Number.isInteger(price) || price <= 0 || price > 100_000_000) return [400, { error: 'invalid' }];
       const pid = uuid(sub.partner_id) ? sub.partner_id : null;
-      const r = await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id',
-        [title, author, clip(sub.description,2000)||null, clip(sub.language,10)||'pt', price, pid, b.status==='published'?'published':'draft', clip(sub.cover_url,500)||null, sub.content_html||null]);
+      // Livro de parceiro externo só publica depois de pagar a taxa de publicação no portal.
+      const status = pid ? 'draft' : (b.status === 'published' ? 'published' : 'draft');
+      const fee = pid ? PUBLICATION_FEE_MINOR : 0;
+      const r = await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html,publication_fee_minor) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id',
+        [title, author, clip(sub.description,2000)||null, clip(sub.language,10)||'pt', price, pid, status, clip(sub.cover_url,500)||null, sub.content_html||null, fee]);
       await pool.query("update fair_submissions set status='approved', reviewed_at=now(), admin_notes=$2 where id=$1", [b.submissionId, clip(b.adminNotes,500)||null]);
-      return [200, { ok: true, bookId: r.rows[0].id }];
+      return [200, { ok: true, bookId: r.rows[0].id, warning: pid ? 'taxa_publicacao_pendente' : undefined }];
     }
     case 'reject_submission': {
       if (!uuid(b.submissionId)) return [400, { error: 'invalid' }];
@@ -116,7 +124,12 @@ export default async function handler(req, res) {
   const totals = (await pool.query(
     `select count(*) filter (where status='paid')::int as paid, coalesce(sum(amount_minor) filter (where status='paid'),0)::bigint as paid_minor,
             count(*) filter (where status in ('created','pending'))::int as open_orders from fair_orders`)).rows[0];
-  const split = (await pool.query('select coalesce(sum(commission_minor),0)::bigint c, coalesce(sum(partner_minor),0)::bigint p from fair_sales')).rows[0];
+  const split = (await pool.query(`select
+      coalesce(sum(coalesce(app_minor, commission_minor)),0)::bigint a,
+      coalesce(sum(coalesce(editors_minor,0)),0)::bigint e,
+      coalesce(sum(partner_minor),0)::bigint p from fair_sales`)).rows[0];
+  let publicationFees = { f: 0 };
+  try { publicationFees = (await pool.query('select coalesce(sum(amount_minor),0)::bigint f from fair_publication_fees where paid_at is not null')).rows[0]; } catch {}
   const leads = (await pool.query('select id, created_at, name, organisation, kind, phone, email, titles_count, message, status from partner_leads order by created_at desc limit 500')).rows;
   let orders;
   try {
@@ -128,9 +141,9 @@ export default async function handler(req, res) {
   }
   let books;
   try {
-    books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content, kind, stock from fair_books order by created_at desc`)).rows;
+    books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content, kind, stock, publication_fee_minor, publication_fee_paid_at from fair_books order by created_at desc`)).rows;
   } catch {
-    books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content from fair_books order by created_at desc`)).rows.map(x=>({...x,kind:'ebook'}));
+    books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content from fair_books order by created_at desc`)).rows.map(x=>({...x,kind:'ebook',publication_fee_minor:0,publication_fee_paid_at:null}));
   }
   const partners = (await pool.query('select id, name, kind, phone, email, commission_bps, status from fair_partners order by created_at desc')).rows;
   const payouts = (await pool.query(`select p.name, count(*)::int as sales, sum(s.gross_minor)::bigint as gross, sum(s.partner_minor)::bigint as owed
@@ -146,8 +159,9 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     return res.send(toCsv(req.query.type === 'orders' ? orders : req.query.type === 'payouts' ? payouts : leads));
   }
-  res.json({ totals: { ...totals, paid_minor: Number(totals.paid_minor), kulera_minor: Number(split.c), partners_minor: Number(split.p) },
-    leads, orders, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
+  res.json({ totals: { ...totals, paid_minor: Number(totals.paid_minor), app_minor: Number(split.a), editors_minor: Number(split.e),
+      kulera_minor: Number(split.a) + Number(split.e), partners_minor: Number(split.p), fees_minor: Number(publicationFees.f) },
+    leads, orders, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor), publication_fee_minor: Number(x.publication_fee_minor || 0) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
     submissions, plans: plans.map((x)=>({...x,price_minor:Number(x.price_minor)})), subscriptions: subs });
   } catch (e) {
     console.error('admin.error', e?.message || String(e));

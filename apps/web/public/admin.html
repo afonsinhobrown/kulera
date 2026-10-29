@@ -36,7 +36,7 @@
       <div class="row"><label>Tipo <select name="kind"><option value="ebook">Digital (e-book)</option><option value="physical">Físico (entrega)</option></select></label><label>Idioma<input name="language" value="pt" maxlength="10"></label></div>
       <div class="row"><label>Preço (MZN)<input name="price" type="number" min="1" step="0.01" inputmode="decimal" required></label><label>Stock <small>(só físico)</small><input name="stock" type="number" min="0" step="1"></label></div>
       <label>Parceiro <select name="partnerId"><option value="">Kulera (livro próprio)</option></select></label>
-      <label>Endereço da capa <small>(opcional, imagem https)</small><input name="coverUrl" maxlength="500"></label>
+      <label>Capa do livro <small>(arraste ou cole uma imagem aqui, ou URL HTTPS)</small><input name="coverUrl" maxlength="500" id="coverUrlInput"></label>
       <label>Ficheiro do livro <small>(Word .docx ou HTML) - apenas para digital</small><input type="file" id="file" accept=".docx,.html,.htm"></label>
       <p class="msg" id="fileMsg"></p>
       <label>Estado <select name="status"><option value="draft">Rascunho</option><option value="published">Publicado</option><option value="suspended">Suspenso</option></select></label>
@@ -101,6 +101,7 @@ $('file').addEventListener('change',async(e)=>{const file=e.target.files[0];cont
   try{if(/\.docx$/i.test(file.name)){if(!window.mammoth)throw new Error('mammoth');const r=await mammoth.convertToHtml({arrayBuffer:await file.arrayBuffer()},{styleMap:["p[style-name='Title'] => h1:fresh","p[style-name='Título'] => h1:fresh","p[style-name='Heading 1'] => h1:fresh","p[style-name='Título 1'] => h1:fresh"]});contentHtml=r.value}else contentHtml=await file.text();
     if(!contentHtml.trim())throw new Error('empty');m.textContent='Pronto: '+Math.round(contentHtml.length/1000)+' mil caracteres. Cada «Título 1» do Word passa a ser um capítulo.'}
   catch{contentHtml=null;m.className='msg err';m.textContent='Não foi possível ler o ficheiro. Se for Word, tente exportar para HTML.'}});
+$('coverUrlInput').addEventListener('paste',e=>{e.preventDefault();const items=e.clipboardData.items;for(const item of items){if(item.type.startsWith('image/')){const file=item.getAsFile();if(!file)continue;const reader=new FileReader();reader.onload=e2=>{$('coverUrlInput').value=e2.target.result;};reader.readAsDataURL(file);return}}});
 $('bookForm').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target,m=$('bookMsg');m.className='msg';m.textContent='A guardar…';
   const {ok,j}=await api({action:'save_book',id:f.id.value||undefined,title:f.title.value,author:f.author.value,description:f.description.value,language:f.language.value,priceMinor:Math.round(Number(f.price.value)*100),partnerId:f.partnerId.value||null,coverUrl:f.coverUrl.value,status:f.status.value,contentHtml});
   if(!ok){m.className='msg err';m.textContent=j.error==='content_too_large'?'O livro é demasiado grande (máximo cerca de 3,5 milhões de caracteres).':'Verifique os campos (título, autor e preço).';return}
