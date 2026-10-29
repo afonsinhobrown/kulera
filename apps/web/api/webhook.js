@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { pool } from '../lib/db.js';
 import { computeSplit } from '../lib/split.js';
+import { APP_BPS, EDITORS_BPS } from '../lib/pricing.js';
 import { EVENT_STATUS, verifySignature } from '../lib/paysuite.js';
 
 export const config = { api: { bodyParser: false } }; // precisamos do corpo bruto para validar a assinatura
@@ -46,16 +47,30 @@ export default async function handler(req, res) {
            provider_payment_id = coalesce(provider_payment_id, $2) where id = $1 and status <> 'paid'`, [order.id, providerId]);
       if (upd.rowCount === 1) { // acabou de passar a «pago»: regista a divisão da receita
         const r = await client.query(
-          `select o.book_id, o.amount_minor, o.plan_id, o.type, b.partner_id, p.commission_bps from fair_orders o
-             left join fair_books b on b.id = o.book_id left join fair_partners p on p.id = b.partner_id where o.id = $1`, [order.id]);
+          `select o.book_id, o.amount_minor, o.plan_id, o.type, b.partner_id, b.kind, b.content_html from fair_orders o
+             left join fair_books b on b.id = o.book_id where o.id = $1`, [order.id]);
         const x = r.rows[0];
-        if (x?.book_id) {
-          const bps = x.partner_id ? x.commission_bps : 10000; // livro da Kulera: 100% Kulera
-          const sp = computeSplit(Number(x.amount_minor), bps);
+        if (x?.type === 'publication' && x?.book_id) {
+          // Taxa de publicação: 100% para a Kulera App; publica o livro se já tiver conteúdo.
           await client.query(
-            `insert into fair_sales (order_id, book_id, partner_id, gross_minor, commission_bps, commission_minor, partner_minor)
-             values ($1,$2,$3,$4,$5,$6,$7) on conflict do nothing`,
-            [order.id, x.book_id, x.partner_id, x.amount_minor, bps, sp.commission, sp.partner]);
+            `insert into fair_publication_fees (order_id, book_id, partner_id, amount_minor, paid_at)
+             values ($1,$2,$3,$4,now()) on conflict (order_id) do update set paid_at = coalesce(fair_publication_fees.paid_at, now())`,
+            [order.id, x.book_id, x.partner_id, x.amount_minor]);
+          await client.query(
+            `update fair_books set publication_fee_paid_at = coalesce(publication_fee_paid_at, now()),
+               status = case when status = 'published' then status
+                             when kind = 'physical' or content_html is not null then 'published'
+                             else status end
+             where id = $1`, [x.book_id]);
+        } else if (x?.book_id) {
+          // Venda: 20% App + 10% Editores + 70% parceiro; livros próprios: 20% App + 80% Editores.
+          const sp = computeSplit(Number(x.amount_minor), !!x.partner_id);
+          const editorsBps = x.partner_id ? EDITORS_BPS : 10000 - APP_BPS;
+          const commissionBps = APP_BPS + editorsBps; // coluna antiga: total que fica na Kulera
+          await client.query(
+            `insert into fair_sales (order_id, book_id, partner_id, gross_minor, commission_bps, commission_minor, partner_minor, app_bps, editors_bps, app_minor, editors_minor)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) on conflict do nothing`,
+            [order.id, x.book_id, x.partner_id, x.amount_minor, commissionBps, sp.app + sp.editors, sp.partner, APP_BPS, editorsBps, sp.app, sp.editors]);
         }
         if (x?.type === 'subscription' && x?.plan_id) {
           const pl = await client.query("select interval from fair_plans where id=$1", [x.plan_id]);
