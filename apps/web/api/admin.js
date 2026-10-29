@@ -116,9 +116,40 @@ async function action(b) {
 }
 
 // Painel da Kulera. Protegido por ADMIN_KEY.
+const MIGRATION_DDL = `
+alter table fair_books add column if not exists publication_fee_minor bigint not null default 0;
+alter table fair_books add column if not exists publication_fee_paid_at timestamptz;
+alter table fair_orders drop constraint if exists fair_orders_type_check;
+alter table fair_orders add constraint fair_orders_type_check check (type in ('book','subscription','physical','publication'));
+alter table fair_sales add column if not exists app_bps int not null default 2000;
+alter table fair_sales add column if not exists editors_bps int not null default 1000;
+alter table fair_sales add column if not exists app_minor bigint;
+alter table fair_sales add column if not exists editors_minor bigint;
+update fair_sales set app_minor = coalesce(app_minor, commission_minor), editors_minor = coalesce(editors_minor, 0);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'fair_sales_three_way_check') then
+    alter table fair_sales add constraint fair_sales_three_way_check
+      check (coalesce(app_minor, 0) + coalesce(editors_minor, 0) + partner_minor = gross_minor);
+  end if;
+end $$;
+create table if not exists fair_publication_fees (
+  order_id uuid primary key references fair_orders (id),
+  book_id uuid not null references fair_books (id) on delete cascade,
+  partner_id uuid references fair_partners (id),
+  amount_minor bigint not null check (amount_minor > 0),
+  paid_at timestamptz,
+  created_at timestamptz not null default now()
+);
+`;
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   try {
+    if (req.query?.migrate === '1') {
+      if (!process.env.ADMIN_KEY || !sameKey(req.headers['x-admin-key'], process.env.ADMIN_KEY)) return res.status(401).json({ error: 'unauthorized' });
+      await pool.query(MIGRATION_DDL);
+      return res.json({ ok: true, migrated: true });
+    }
     if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
 
   const totals = (await pool.query(
