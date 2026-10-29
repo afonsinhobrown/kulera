@@ -118,6 +118,9 @@ async function action(b) {
 // Painel da Kulera. Protegido por ADMIN_KEY.
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
+  if (!process.env.ADMIN_KEY || !sameKey(req.headers['x-admin-key'], process.env.ADMIN_KEY)) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
   try {
     if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
 
