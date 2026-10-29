@@ -16,7 +16,7 @@ const sameKey = (a, b) => {
 };
 const csvCell = (v) => { const s = v == null ? '' : String(v instanceof Date ? v.toISOString() : v); return /^[=+\-@]/.test(s) ? `"'${s.replace(/"/g, '""')}"` : `"${s.replace(/"/g, '""')}"`; };
 const toCsv = (rows) => rows.length ? [Object.keys(rows[0]).join(','), ...rows.map((r) => Object.values(r).map(csvCell).join(','))].join('\n') : '';
-const clip = (v, n) => String(v ?? '').trim().slice(0, n);
+const clip = (v, n) => String(v ?? '').replace(/\u0000/g, '').trim().slice(0, n);
 const uuid = (v) => /^[0-9a-f-]{36}$/.test(String(v));
 
 async function action(b) {
@@ -38,25 +38,25 @@ async function action(b) {
       const title = clip(b.title, 200), author = clip(b.author, 200), price = Number(b.priceMinor);
       if (title.length < 1 || author.length < 1 || !Number.isInteger(price) || price <= 0 || price > 100_000_000) return [400, { error: 'invalid' }];
       const status = ['draft', 'published', 'suspended'].includes(b.status) ? b.status : 'draft';
-      const content = typeof b.contentHtml === 'string' && b.contentHtml.trim() ? b.contentHtml : null;
+      const content = typeof b.contentHtml === 'string' && b.contentHtml.trim() ? b.contentHtml.replace(/\u0000/g, '') : null;
       if (content && content.length > 3_500_000) return [413, { error: 'content_too_large' }];
       const kind = b.kind === 'physical' ? 'physical' : 'ebook';
       const stock = kind === 'physical' && b.stock !== '' && b.stock != null && !isNaN(Number(b.stock)) ? Number(b.stock) : (kind === 'physical' ? 0 : null);
       const requiresShipping = kind === 'physical';
-      const args = [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 2000) || null, content, kind, stock, requiresShipping];
+      const args = [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 800000) || null, content, kind, stock, requiresShipping];
       let id = b.id;
       if (uuid(id)) {
         try {
           await pool.query('update fair_books set title=$2,author=$3,description=$4,language=$5,price_minor=$6,partner_id=$7,status=$8,cover_url=$9,content_html=coalesce($10,content_html),kind=$11,stock=$12,requires_shipping=$13,updated_at=now() where id=$1', [id, ...args]);
         } catch {
-          await pool.query('update fair_books set title=$2,author=$3,description=$4,language=$5,price_minor=$6,partner_id=$7,status=$8,cover_url=$9,content_html=coalesce($10,content_html),updated_at=now() where id=$1', [id, title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 2000) || null, content]);
+          await pool.query('update fair_books set title=$2,author=$3,description=$4,language=$5,price_minor=$6,partner_id=$7,status=$8,cover_url=$9,content_html=coalesce($10,content_html),updated_at=now() where id=$1', [id, title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 800000) || null, content]);
         }
       }
       else {
         try {
           id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html,kind,stock,requires_shipping) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning id', args)).rows[0].id;
         } catch {
-          id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id', [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 2000) || null, content])).rows[0].id;
+          id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id', [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 800000) || null, content])).rows[0].id;
         }
       }
       // Livros de parceiros externos pagam a taxa de publicação (500 MT); livros da Kulera não.
