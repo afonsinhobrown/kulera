@@ -79,3 +79,23 @@ test('o token da PaySuite vem do ambiente e nunca do código', async () => {
   assert.ok(!/\d{4}\|[A-Za-z0-9]{30,}/.test(src), 'lib/paysuite.js não deve conter tokens');
 });
 
+test('retorno do pagamento usa o domínio do pedido (ignora um SITE_URL errado)', async () => {
+  const { resolveSiteUrl } = await import('../lib/payments.js');
+  const prev = process.env.SITE_URL;
+  try {
+    process.env.SITE_URL = 'https://kulera.vercel.app';
+    assert.equal(
+      resolveSiteUrl({ headers: { host: 'kulera.tecnoincubadora.org', 'x-forwarded-proto': 'https' } }),
+      'https://kulera.tecnoincubadora.org',
+    );
+    assert.equal(
+      resolveSiteUrl({ headers: { origin: 'https://kulera.tecnoincubadora.org' } }),
+      'https://kulera.tecnoincubadora.org',
+    );
+    assert.equal(resolveSiteUrl({}), 'https://kulera.vercel.app'); // sem pedido, o SITE_URL é a reserva
+  } finally {
+    if (prev !== undefined) process.env.SITE_URL = prev;
+    else delete process.env.SITE_URL;
+  }
+});
+

@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { pool } from '../lib/db.js';
 import { PUBLICATION_FEE_MINOR } from '../lib/pricing.js';
-import { isSandbox, setSandbox, getAdminKeyFromDb, getPaysuiteTokenFromDb } from '../lib/payments.js';
+import { isSandbox, setSandbox, getAdminKeyFromDb, getPaysuiteTokenFromDb, resolveSiteUrl } from '../lib/payments.js';
 import { createPayment } from '../lib/paysuite.js';
 import { ensurePlanSchema } from '../lib/plans.js';
 
@@ -220,8 +220,8 @@ async function action(b) {
           reference: 'KFTEST' + Date.now(),
           amountMinor: 100,
           description: 'Teste Ligacao Kulera+',
-          returnUrl: 'https://kulera.vercel.app/pagamento.html',
-          callbackUrl: 'https://kulera.vercel.app/api/webhook',
+          returnUrl: `${resolveSiteUrl(req)}/pagamento.html`,
+          callbackUrl: `${resolveSiteUrl(req)}/api/webhook`,
           apiToken: tok,
         });
         return [200, { ok: true, checkoutUrl: res.checkoutUrl, providerPaymentId: res.providerPaymentId }];

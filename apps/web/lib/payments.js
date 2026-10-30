@@ -80,9 +80,8 @@ export async function chargeAmount(listMinor) {
 }
 
 export function resolveSiteUrl(req) {
-  if (process.env.SITE_URL && /^https?:\/\//i.test(process.env.SITE_URL.trim())) {
-    return process.env.SITE_URL.trim().replace(/\/+$/, '');
-  }
+  // O domínio de retorno é o do próprio pedido: quem paga volta para o site onde comprou.
+  // (O SITE_URL fica só como reserva — uma env mal configurada já mandou clientes para outro site.)
   const origin = req?.headers?.origin;
   if (origin && /^https?:\/\//i.test(origin)) {
     return origin.replace(/\/+$/, '');
@@ -92,13 +91,16 @@ export function resolveSiteUrl(req) {
     const proto = req?.headers?.['x-forwarded-proto'] || (String(host).startsWith('localhost') ? 'http' : 'https');
     return `${proto}://${host}`.replace(/\/+$/, '');
   }
+  if (process.env.SITE_URL && /^https?:\/\//i.test(process.env.SITE_URL.trim())) {
+    return process.env.SITE_URL.trim().replace(/\/+$/, '');
+  }
   if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
     return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`.replace(/\/+$/, '');
   }
   if (process.env.VERCEL_URL) {
     return `https://${process.env.VERCEL_URL}`.replace(/\/+$/, '');
   }
-  return 'https://kulera.vercel.app';
+  return 'https://kulera.tecnoincubadora.org';
 }
 
 /**
