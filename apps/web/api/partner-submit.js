@@ -77,7 +77,7 @@ export default async function handler(req,res){
     if(title.length<1||author.length<1)return res.status(400).json({error:"invalid"});
     const content = typeof b.contentHtml==="string"&&b.contentHtml.trim()?b.contentHtml.replace(/\u0000/g,""):null;
     if(content && content.length>3_500_000)return res.status(413).json({error:"content_too_large"});
-    const r = await pool.query("insert into fair_submissions (partner_id,partner_user_id,title,author,description,language,cover_url,content_html) values ($1,$2,$3,$4,$5,$6,$7,$8) returning id",[pid,token,title,author,clip(b.description,2000)||null,clip(b.language,10)||"pt",clip(b.coverUrl,800000)||null,content]);
+    const r = await pool.query("insert into fair_submissions (partner_id,partner_user_id,title,author,description,language,cover_url,content_html) values ($1,$2,$3,$4,$5,$6,$7,$8) returning id",[pid,token,title,author,clip(b.description,2000)||null,clip(b.language,10)||"pt",clip(b.coverUrl,2_500_000)||null,content]);
     return res.json({ok:true,id:r.rows[0].id});
   }
   if(req.method==="DELETE"){

@@ -11,8 +11,9 @@ h1{font:700 clamp(28px,6vw,44px)/1.1 Georgia,"Times New Roman",serif;margin:0 0 
 .author{margin:0 0 18px;color:#44606a;font-size:18px}
 .grid{display:grid;gap:28px}
 @media(min-width:760px){.grid{grid-template-columns:300px 1fr;align-items:start}}
-.cover{position:relative;aspect-ratio:2/3;width:100%;max-width:300px;margin:0 auto;border-radius:8px;background:var(--sea);color:#fff;display:flex;align-items:center;justify-content:center;padding:16px;font:700 24px/1.2 Georgia,serif;box-shadow:0 10px 25px rgba(16,36,43,.18);overflow:hidden;text-align:center}
-.cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;display:block;margin:auto}
+.cover{position:relative;aspect-ratio:2/3;width:100%;max-width:260px;min-height:210px;margin:0 auto;border-radius:8px;background:var(--sea);color:#fff;display:flex;align-items:center;justify-content:center;padding:0;font:700 20px/1.25 Georgia,serif;box-shadow:0 8px 22px rgba(16,36,43,.16);overflow:hidden;text-align:center}
+.cover img{width:100%;height:100%;object-fit:cover;object-position:center;display:block;margin:0}
+.cover-placeholder{padding:18px;text-align:center;font:700 18px/1.35 Georgia,serif;color:#fff;display:flex;align-items:center;justify-content:center;height:100%;width:100%;word-break:break-word}
 .price{font:700 30px Georgia,serif;margin:18px 0 4px}
 .how{color:#44606a;font-size:15px;margin:0 0 18px}
 form{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:18px;display:grid;gap:14px}

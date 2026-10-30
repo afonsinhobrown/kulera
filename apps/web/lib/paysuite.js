@@ -16,8 +16,8 @@ export function resolvePaysuiteCreateUrl() {
   return `${resolvePaysuiteBaseUrl()}/payments`;
 }
 
-export async function createPayment({ reference, amountMinor, description, returnUrl, callbackUrl }) {
-  const token = (process.env.PAYSUITE_API_KEY || process.env.PAYSUITE_TOKEN || '').trim();
+export async function createPayment({ reference, amountMinor, description, returnUrl, callbackUrl, apiToken }) {
+  const token = (apiToken || process.env.PAYSUITE_API_KEY || process.env.PAYSUITE_TOKEN || '').trim();
   if (!token) {
     throw new Error('Token da PaySuite não configurado (PAYSUITE_TOKEN)');
   }
@@ -64,8 +64,8 @@ export async function createPayment({ reference, amountMinor, description, retur
   return { providerPaymentId: String(providerPaymentId), checkoutUrl: String(checkoutUrl) };
 }
 
-export async function getPaymentStatus(providerPaymentId) {
-  const token = (process.env.PAYSUITE_API_KEY || process.env.PAYSUITE_TOKEN || '').trim();
+export async function getPaymentStatus(providerPaymentId, apiToken) {
+  const token = (apiToken || process.env.PAYSUITE_API_KEY || process.env.PAYSUITE_TOKEN || '').trim();
   if (!token || !providerPaymentId || String(providerPaymentId).startsWith('sim_')) return null;
   const endpoint = `${resolvePaysuiteBaseUrl()}/payments/${encodeURIComponent(providerPaymentId)}`;
   try {

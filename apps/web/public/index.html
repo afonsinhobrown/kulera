@@ -9,9 +9,9 @@
 .books{display:grid;gap:24px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));margin:24px 0 36px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:10px;align-content:start;box-shadow:0 2px 8px rgba(0,0,0,0.04);transition:transform .2s ease,box-shadow .2s ease}
 .card:hover{transform:translateY(-3px);box-shadow:0 8px 18px rgba(0,0,0,0.08)}
-.card .cover{position:relative;width:100%;max-width:240px;aspect-ratio:2/3;margin:0 auto 8px;border-radius:8px;overflow:hidden;background:#eef3f2;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.12)}
-.card .cover img{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;object-position:center;display:block}
-.card .cover-placeholder{padding:18px;text-align:center;font:700 18px/1.35 Georgia,serif;color:#184045;display:flex;align-items:center;justify-content:center;height:100%;width:100%}
+.card .cover{position:relative;width:100%;max-width:240px;aspect-ratio:2/3;min-height:240px;margin:0 auto 8px;border-radius:8px;overflow:hidden;background:var(--sea);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.12);padding:0}
+.card .cover img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
+.card .cover-placeholder{padding:18px;text-align:center;font:700 18px/1.35 Georgia,serif;color:#fff;display:flex;align-items:center;justify-content:center;height:100%;width:100%}
 .card .prices{display:grid;gap:2px}
 .card .prices span{display:flex;justify-content:space-between;gap:8px;font-size:14px;color:#44606a}
 .card .prices b{font:700 17px Georgia,serif;color:var(--ink)}
@@ -38,16 +38,40 @@
   </section>
 
   <section class="partner" aria-labelledby="ph">
-    <h2 id="ph">A% editora ou escritor?</h2>
+    <h2 id="ph">É editora ou escritor?</h2>
     <p>Venda os seus livros na Kulera+ e chegue a leitores em Moçambique e na diáspora. Submeta os seus manuscritos pelo portal ou inscreva-se.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn" href="parceiros-portal.html">Portal de Editores</a><a class="btn sec" href="parceiros.html">Formulário de adesão</a></div>
   </section>
 </main>
 <script>
 const $=(id)=>document.getElementById(id);
-const errors={invalid_name:'Escreva o seu nome.',invalid_phone:'Escreva um número de telemóvel válido, só com números.',invalid_email:'O email não parece válido.',book_unavailable:'Este livro já não está disponível.',payment_unavailable:'Não foi possível iniciar o pagamento. Tente novamente dentro de instantes.'};
 const money=(m,c)=>{try{return new Intl.NumberFormat('pt-MZ',{style:'currency',currency:c}).format(m/100)}catch{return (m/100).toFixed(2)+' '+c}};
 let current=null;
+
+function makeCoverElement(book, maxWidth){
+  const cv=document.createElement('div');
+  cv.className='cover';
+  if(maxWidth) cv.style.maxWidth=maxWidth;
+  const setPlaceholder=()=>{
+    cv.innerHTML='';
+    const sp=document.createElement('span');
+    sp.className='cover-placeholder';
+    sp.textContent=book.title||'Livro';
+    cv.appendChild(sp);
+  };
+  if(book.coverUrl && String(book.coverUrl).trim()){
+    const im=document.createElement('img');
+    im.src=String(book.coverUrl).trim();
+    im.alt='Capa de '+(book.title||'livro');
+    im.loading='lazy';
+    im.onerror=()=>setPlaceholder();
+    cv.appendChild(im);
+  } else {
+    setPlaceholder();
+  }
+  return cv;
+}
+
 try{const t=localStorage.getItem('kulera_token');if(t){$('have').hidden=false;$('haveLink').href='/ler.html?t='+t}}catch{}
 fetch('/api/books',{cache:'no-store'}).then(r=>r.json()).then(list=>{
   const box=$('books');box.innerHTML='';
@@ -55,37 +79,40 @@ fetch('/api/books',{cache:'no-store'}).then(r=>r.json()).then(list=>{
   if(!arr.length){box.innerHTML='<p class="empty">Ainda não há livros disponíveis. Volte em breve.</p>';return}
   arr.forEach(b=>{
     const c=document.createElement('div');c.className='card';
-    const cv=document.createElement('div');cv.className='cover';
-    if(b.coverUrl){
-      const im=document.createElement('img');
-      im.src=b.coverUrl;
-      im.alt='Capa de '+b.title;
-      im.onerror=()=>{ im.remove(); cv.innerHTML = '<span class="cover-placeholder">'+b.title+'</span>'; };
-      cv.appendChild(im);
-    } else {
-      cv.innerHTML = '<span class="cover-placeholder">'+b.title+'</span>';
-    }
+    const cv=makeCoverElement(b);
     const h=document.createElement('h3');h.textContent=b.title;
     const a=document.createElement('p');a.textContent=b.author;
     const hasD = b.hasDigital !== false;
     const hasP = b.hasPhysical === true || b.requiresShipping === true;
-    const badge = document.createElement('p'); badge.style.fontSize='13px'; badge.style.color = hasP ? '#7a3b00' : '#0b5c63';
-    badge.textContent = [hasD?'E-book':null,hasP?'Físico':null].filter(Boolean).join(' + ') + (hasP?' • Entrega':(hasD?' • Digital':'')); c.appendChild(badge);
+    const badge = document.createElement('p'); badge.style.fontSize='13px'; badge.style.fontWeight='600'; badge.style.color = hasP ? '#7a3b00' : '#0b5c63';
+    badge.textContent = [hasD?'E-book':null,hasP?'Físico':null].filter(Boolean).join(' + ') + (hasP?' • Entrega':(hasD?' • Digital':''));
     const p=document.createElement('div');p.className='prices';
     const addPrice=(label,v)=>{if(v==null)return;const s=document.createElement('span');s.textContent=label;const bb=document.createElement('b');bb.textContent=money(v,b.currency);s.appendChild(bb);p.appendChild(s)};
     if(hasD)addPrice('Digital',b.digitalPriceMinor??b.priceMinor);
     if(hasP)addPrice('Físico',b.physicalPriceMinor??b.priceMinor);
     const btn=document.createElement('button');btn.type='button';btn.textContent='Comprar';btn.onclick=()=>choose(b);
-    c.append(cv,h,a,p,btn);box.appendChild(c);
+    c.append(cv,badge,h,a,p,btn);box.appendChild(c);
   });
 }).catch(()=>{$('books').innerHTML='<p class="empty">Não foi possível carregar. Atualize a página.</p>'});
-function choose(b,scroll=true){current=b;const hasD=b.hasDigital!==false,hasP=b.hasPhysical===true||b.requiresShipping===true;const parts=[hasD?'Digital: '+money(b.digitalPriceMinor??b.priceMinor,b.currency):null,hasP?'Físico: '+money(b.physicalPriceMinor??b.priceMinor,b.currency):null].filter(Boolean);$('buy').hidden=false;
-  const covBox=$('bCover'); if(covBox){
-    if(b.coverUrl){ covBox.innerHTML='<div class="cover" style="max-width:180px"><img src="'+b.coverUrl+'" alt="Capa"></div>'; }
-    else{ covBox.innerHTML='<div class="cover" style="max-width:180px"><span style="padding:10px;font-size:16px">'+b.title+'</span></div>'; }
+
+function choose(b,scroll=true){
+  current=b;
+  const hasD=b.hasDigital!==false,hasP=b.hasPhysical===true||b.requiresShipping===true;
+  const parts=[hasD?'Digital: '+money(b.digitalPriceMinor??b.priceMinor,b.currency):null,hasP?'Físico: '+money(b.physicalPriceMinor??b.priceMinor,b.currency):null].filter(Boolean);
+  $('buy').hidden=false;
+  const covBox=$('bCover');
+  if(covBox){
+    covBox.innerHTML='';
+    covBox.appendChild(makeCoverElement(b, '180px'));
   }
-  $('bTitle').textContent=b.title;$('bAuthor').textContent=b.author;$('bDesc').textContent=b.description||'';$('bPrice').textContent=parts.join(' · ');$('goBuy').href='comprar.html?id='+encodeURIComponent(b.id);$('goBuy').textContent='Comprar agora';if(scroll)$('buy').scrollIntoView({behavior:'smooth'})}
-if($('form')) $('form').addEventListener('submit',async(e)=>{e.preventDefault();});
+  $('bTitle').textContent=b.title;
+  $('bAuthor').textContent=b.author;
+  $('bDesc').textContent=b.description||'';
+  $('bPrice').textContent=parts.join(' · ');
+  $('goBuy').href='comprar.html?id='+encodeURIComponent(b.id);
+  $('goBuy').textContent='Comprar agora';
+  if(scroll)$('buy').scrollIntoView({behavior:'smooth'});
+}
 </script>
 </body>
 </html>

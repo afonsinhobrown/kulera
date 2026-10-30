@@ -132,6 +132,24 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
         </div>
         <div class="pane-title" style="font-size:20px">Últimas Encomendas Realizadas</div>
         <div class="table-card"><div class="table-wrap"><table id="recentOrders"></table></div></div>
+
+        <div class="form-card" style="margin-bottom:24px">
+          <h3>Configuração & Diagnóstico PaySuite</h3>
+          <p style="font-size:13px;color:#5b747c;margin:0 0 12px">
+            Token em uso: <strong id="psTokenHint">—</strong><br>
+            Se a PaySuite devolver <code>403: API access is only available for company accounts</code>, gere um novo Token na conta empresarial da PaySuite (<em>Settings → API Access</em>) e guarde-o abaixo, ou active o <strong>Modo Sandbox</strong> no topo direito para testar pagamentos com o simulador integrado.
+          </p>
+          <div style="display:grid;gap:10px">
+            <label style="font-size:14px;font-weight:600;display:grid;gap:4px">Novo Token API PaySuite (opcional — substitui o do servidor)
+              <input id="psTokenInput" placeholder="Ex: 2098|..." style="font:inherit;padding:9px 12px;border:1.5px solid #9db3b0;border-radius:6px">
+            </label>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button type="button" id="psSaveBtn" class="btn-primary">Guardar Novo Token</button>
+              <button type="button" id="psTestBtn" class="btn-secondary">Testar Ligação à PaySuite</button>
+            </div>
+            <p class="msg" id="psDiagMsg" style="margin:0"></p>
+          </div>
+        </div>
       </div>
 
       <!-- TAB 2: LIVROS -->
@@ -162,7 +180,20 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
               <label>Quantidade em Stock<input name="stock" type="number" min="0" step="1"></label>
             </div>
             <label>Editora / Parceiro <select name="partnerId"><option value="">Kulera (livro próprio)</option></select></label>
-            <label>Capa do Livro <small>(cole URL ou arraste a imagem)</small><input name="coverUrl" id="coverUrlInput"><div class="coverPreview" id="coverPreview"></div></label>
+            <div style="display:grid;gap:8px">
+              <span style="font-size:14px;font-weight:600;color:#24363b">Capa do Livro <small style="font-weight:400;color:#5b747c">(escolha um ficheiro de imagem, arraste para a área abaixo ou cole um URL)</small></span>
+              <div id="coverDropZone" style="border:2px dashed #9db3b0;border-radius:8px;padding:14px;background:#f8fbfb;text-align:center;cursor:pointer;transition:border-color .2s,background .2s">
+                <input type="file" id="coverFileInput" accept="image/*" style="display:none">
+                <div style="font-size:14px;color:#184045;font-weight:600">🖼️ Clique aqui para escolher uma imagem de capa ou arraste a imagem</div>
+                <div style="font-size:12px;color:#5b747c;margin-top:4px">Formatos aceites: JPG, PNG, WebP (redimensionada automaticamente para proporção de capa)</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input name="coverUrl" id="coverUrlInput" placeholder="Ou cole aqui o link directo (https://...) da imagem da capa" style="flex:1">
+                <button type="button" id="coverClearBtn" class="btn-secondary" style="padding:9px 12px;font-size:13px;white-space:nowrap">Limpar Capa</button>
+              </div>
+              <p class="msg" id="coverMsg" style="margin:0;font-size:13px"></p>
+              <div class="coverPreview" id="coverPreview"></div>
+            </div>
             <label>Ficheiro do Livro <small>(Word .docx ou HTML - para e-book digital)</small><input type="file" id="file" accept=".docx,.html,.htm"></label>
             <p class="msg" id="fileMsg"></p>
             <label>Estado do Livro <select name="status"><option value="draft">Rascunho</option><option value="published">Publicado</option><option value="suspended">Suspenso</option></select></label>
@@ -375,6 +406,7 @@ async function load(){
   const j = await r.json();
   DATA = j;
   renderSandbox(j.sandbox);
+  if($('psTokenHint')) $('psTokenHint').textContent = j.paysuiteTokenHint || 'Não configurado';
 
   // KPIs
   const T = j.totals;
@@ -406,13 +438,27 @@ async function load(){
   $('subBadge').textContent = pendingSubs;
 
   // Books
-  fill($('books'), ['Livro', 'Preço Digital', 'Preço Físico', 'Stock', 'Parceiro', 'Conteúdo', 'Estado', '', ''], j.books, b => {
+  fill($('books'), ['Capa', 'Livro', 'Preço Digital', 'Preço Físico', 'Stock', 'Parceiro', 'Conteúdo', 'Estado', '', ''], j.books, b => {
     const tr = document.createElement('tr');
     const p = j.partners.find(x => x.id === b.partner_id);
     const pDig = b.has_digital ? fmt(b.price_minor) : '—';
     const pFis = b.has_physical ? fmt(b.price_physical_minor ?? b.price_minor) : '—';
     const stockTxt = b.has_physical ? (b.stock != null ? b.stock + ' un.' : '0 un.') : '—';
+    const covTd = document.createElement('td');
+    if (b.cover_url) {
+      const thumb = document.createElement('img');
+      thumb.src = b.cover_url;
+      thumb.alt = 'Capa';
+      thumb.style.cssText = 'width:38px;height:56px;object-fit:cover;border-radius:4px;border:1px solid var(--border-c);display:block;background:#0b5c63';
+      thumb.onerror = () => { covTd.textContent = '⚠️ Erro'; };
+      covTd.appendChild(thumb);
+    } else {
+      covTd.textContent = 'Sem capa';
+      covTd.style.color = '#88999e';
+      covTd.style.fontSize = '12px';
+    }
     tr.append(
+      covTd,
       cell(b.title + ' — ' + b.author),
       cell(pDig),
       cell(pFis),
@@ -666,6 +712,8 @@ function resetBook(){
   syncFormats();
   contentHtml = null;
   $('coverPreview').innerHTML = '';
+  if($('coverMsg')) $('coverMsg').textContent = '';
+  if($('coverFileInput')) $('coverFileInput').value = '';
   $('fileMsg').textContent = '';
   $('bookMsg').textContent = '';
 }
@@ -717,15 +765,90 @@ syncFormats();
 
 function showCoverPreview(){
   const p = $('coverPreview'); p.innerHTML = '';
+  const m = $('coverMsg');
   const v = $('coverUrlInput').value.trim();
-  if(!v) return;
+  if(!v){
+    if(m) m.textContent = '';
+    return;
+  }
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'width:110px;height:165px;border-radius:6px;overflow:hidden;border:1px solid var(--border-c);box-shadow:0 2px 8px rgba(0,0,0,0.1);margin-top:6px;background:#0b5c63;display:flex;align-items:center;justify-content:center';
   const img = document.createElement('img');
   img.src = v;
-  img.style.cssText = 'max-height:120px;border:1px solid var(--border-c);border-radius:4px;margin-top:6px';
-  img.onerror = () => { p.innerHTML = ''; };
-  p.appendChild(img);
+  img.alt = 'Pré-visualização da capa';
+  img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+  img.onload = () => {
+    if(m){ m.className = 'msg'; m.textContent = '✓ Pré-visualização da capa pronta.'; }
+  };
+  img.onerror = () => {
+    p.innerHTML = '';
+    if(m){ m.className = 'msg err'; m.textContent = '⚠️ Não foi possível carregar a imagem deste endereço. Escolha um ficheiro de imagem do computador ou use um link directo (.jpg/.png).'; }
+  };
+  wrap.appendChild(img);
+  p.appendChild(wrap);
 }
+
+async function processCoverFile(file){
+  if(!file || !file.type.startsWith('image/')){
+    if($('coverMsg')){ $('coverMsg').className = 'msg err'; $('coverMsg').textContent = 'Seleccione um ficheiro de imagem válido (JPG, PNG, WebP).'; }
+    return;
+  }
+  if($('coverMsg')){ $('coverMsg').className = 'msg'; $('coverMsg').textContent = 'A optimizar imagem da capa...'; }
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const im = new Image();
+        im.onload = () => {
+          const maxW = 600, maxH = 900;
+          let w = im.width, h = im.height;
+          const ratio = Math.min(maxW / w, maxH / h, 1);
+          w = Math.max(1, Math.round(w * ratio));
+          h = Math.max(1, Math.round(h * ratio));
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(im, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        };
+        im.onerror = reject;
+        im.src = reader.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    $('coverUrlInput').value = dataUrl;
+    showCoverPreview();
+  } catch {
+    if($('coverMsg')){ $('coverMsg').className = 'msg err'; $('coverMsg').textContent = 'Erro ao processar a imagem seleccionada.'; }
+  }
+}
+
 $('coverUrlInput').addEventListener('input', showCoverPreview);
+if($('coverDropZone') && $('coverFileInput')){
+  const dz = $('coverDropZone'), fi = $('coverFileInput');
+  dz.onclick = () => fi.click();
+  fi.onchange = e => { if(e.target.files?.[0]) processCoverFile(e.target.files[0]); };
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.style.borderColor = '#0b5c63'; dz.style.background = '#e8f4f5'; });
+  dz.addEventListener('dragleave', () => { dz.style.borderColor = '#9db3b0'; dz.style.background = '#f8fbfb'; });
+  dz.addEventListener('drop', e => {
+    e.preventDefault();
+    dz.style.borderColor = '#9db3b0';
+    dz.style.background = '#f8fbfb';
+    const file = e.dataTransfer?.files?.[0];
+    if(file) processCoverFile(file);
+  });
+}
+if($('coverClearBtn')){
+  $('coverClearBtn').onclick = () => {
+    $('coverUrlInput').value = '';
+    if($('coverFileInput')) $('coverFileInput').value = '';
+    showCoverPreview();
+  };
+}
 
 $('file').addEventListener('change', async e => {
   const file = e.target.files[0]; contentHtml = null; if(!file) return;
@@ -805,7 +928,7 @@ const gpf = $('grantPlanForm');
 if(gpf){
   gpf.addEventListener('submit', async e => {
     e.preventDefault();
-    const m = $('grantPlanMsg');
+    const m = $('grantMsg');
     m.className = 'msg'; m.textContent = 'A processar atribuição de plano...';
     const res = await api({
       action: 'grant_subscription',
@@ -823,6 +946,33 @@ if(gpf){
     setTimeout(() => { m.textContent = ''; }, 4000);
     load();
   });
+}
+
+if($('psSaveBtn')){
+  $('psSaveBtn').onclick = async () => {
+    const tok = ($('psTokenInput').value || '').trim();
+    const m = $('psDiagMsg');
+    m.className = 'msg'; m.textContent = 'A guardar token...';
+    const { ok } = await api({ action: 'save_paysuite_token', token: tok });
+    m.className = ok ? 'msg' : 'msg err';
+    m.textContent = ok ? (tok ? 'Novo token PaySuite guardado na base de dados!' : 'Token reposto para a variável de ambiente do servidor.') : 'Erro ao guardar token.';
+    if(ok){ $('psTokenInput').value = ''; load(); }
+  };
+}
+if($('psTestBtn')){
+  $('psTestBtn').onclick = async () => {
+    const tok = ($('psTokenInput').value || '').trim();
+    const m = $('psDiagMsg');
+    m.className = 'msg'; m.textContent = 'A testar ligação real com https://paysuite.tech/api/v1/payments...';
+    const { ok, j } = await api({ action: 'test_paysuite', token: tok || undefined });
+    if(ok && j.ok){
+      m.className = 'msg';
+      m.textContent = '✓ Ligação PaySuite OK! Checkout gerado com sucesso (' + j.providerPaymentId + ').';
+    } else {
+      m.className = 'msg err';
+      m.textContent = '✗ Resposta da PaySuite: ' + (j.detail || 'Erro desconhecido');
+    }
+  };
 }
 
 // Submission action

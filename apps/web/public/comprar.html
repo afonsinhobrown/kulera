@@ -47,15 +47,38 @@ async function load(){
   const hasD=b.hasDigital!==false, hasP=b.hasPhysical===true||b.requiresShipping===true;
   fmt=hasD?'digital':'physical';
   const badge=[hasD?'E-book':null,hasP?'Físico':null].filter(Boolean).join(' + ');
-  let coverHtml = '';
-  if(b.coverUrl){
-    coverHtml = '<div class="cover" style="max-width:160px;margin:12px auto 16px"><img src="'+b.coverUrl+'" alt="Capa"></div>';
+  const info=$('info');
+  info.innerHTML='';
+  const cv=document.createElement('div');
+  cv.className='cover';
+  cv.style.cssText='max-width:160px;min-height:220px;margin:12px auto 16px';
+  const showFallback=()=>{
+    cv.innerHTML='';
+    const sp=document.createElement('span');
+    sp.className='cover-placeholder';
+    sp.style.fontSize='15px';
+    sp.textContent=b.title;
+    cv.appendChild(sp);
+  };
+  if(b.coverUrl && String(b.coverUrl).trim()){
+    const im=document.createElement('img');
+    im.src=String(b.coverUrl).trim();
+    im.alt='Capa de '+b.title;
+    im.onerror=()=>showFallback();
+    cv.appendChild(im);
   } else {
-    coverHtml = '<div class="cover" style="max-width:160px;margin:12px auto 16px"><span style="font-size:15px;padding:8px">'+b.title+'</span></div>';
+    showFallback();
   }
-  let html=coverHtml+'<p style="margin:4px 0"><b>'+b.title+'</b><br><span style="color:#557077">'+b.author+'</span><br><small style="color:var(--sea);font-weight:600">'+badge+'</small><br><span class="price" id="fmtPrice" style="font-size:24px;display:inline-block;margin:10px 0 4px"></span></p>';
+  info.appendChild(cv);
+
+  const meta=document.createElement('div');
+  let html='<p style="margin:4px 0"><b id="bTitleText"></b><br><span style="color:#557077" id="bAuthorText"></span><br><small style="color:var(--sea);font-weight:600">'+badge+'</small><br><span class="price" id="fmtPrice" style="font-size:24px;display:inline-block;margin:10px 0 4px"></span></p>';
   if(hasD&&hasP){html+='<p style="margin:10px 0"><b>Formato:</b> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400"><input type="radio" name="fmt" value="digital" checked style="width:auto"> E-book (digital) — '+money(priceFor('digital'),b.currency)+'</label> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400"><input type="radio" name="fmt" value="physical" style="width:auto"> Físico (entrega) — '+money(priceFor('physical'),b.currency)+'</label></p>';}
-  $('info').innerHTML=html;
+  meta.innerHTML=html;
+  info.appendChild(meta);
+  $('bTitleText').textContent=b.title;
+  $('bAuthorText').textContent=b.author;
+
   document.querySelectorAll('[name=fmt]').forEach(x=>x.onchange=()=>{fmt=x.value;applyFmt();});
   const f=$('form'); f.name.oninput=()=>{if(fmt==='physical')f.shippingName.value=f.name.value}; f.phone.oninput=()=>{if(fmt==='physical')f.shippingPhone.value=f.phone.value};
   applyFmt();

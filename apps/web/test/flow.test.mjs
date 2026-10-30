@@ -95,6 +95,7 @@ S.books.push(
     price_minor: 70000,
     currency: 'MZN',
     status: 'published',
+    cover_url: 'data:image/jpeg;base64,' + 'A'.repeat(2000),
     content_html: '<h1>Cap Um</h1><p>a</p><h1>Cap Dois</h1><p>b</p>',
   },
   {
@@ -121,9 +122,10 @@ S.books.push(
   },
 );
 
-// 1. Catálogo: só publicados com conteúdo
+// 1. Catálogo: só publicados com conteúdo e capa preservada
 const cat = await call(books, { method: 'GET' });
 assert.deepEqual(cat.body.map((b) => b.title).sort(), ['Livro Kulera', 'Livro Parceiro']);
+assert.ok(cat.body.find((b) => b.title === 'Livro Parceiro').coverUrl.startsWith('data:image/jpeg;base64,'));
 
 // 2. Compra de e-book de parceiro: preço vem do catálogo
 const body = { bookId: U + '11', name: 'Ana Silva', phone: '84 123 4567', email: '', amount: 1 };

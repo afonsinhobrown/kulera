@@ -57,6 +57,15 @@ export async function setSandbox(on) {
   );
 }
 
+export async function getPaysuiteTokenFromDb() {
+  await ensurePaymentSchema();
+  try {
+    const r = await pool.query("select value from fair_settings where key='paysuite_token'");
+    if (r.rows[0]?.value && r.rows[0].value.trim()) return r.rows[0].value.trim();
+  } catch {}
+  return (process.env.PAYSUITE_API_KEY || process.env.PAYSUITE_TOKEN || '').trim();
+}
+
 export async function getAdminKeyFromDb() {
   await ensurePaymentSchema();
   await pool.query("insert into fair_settings (key,value,updated_at) values ('admin_key','kulera',now()) on conflict (key) do nothing");
@@ -106,6 +115,7 @@ export async function startPayment({ type, listAmountMinor, currency = 'MZN', na
   const vals = [id, token, reference, name, phone, email || null, amountMinor, Number(listAmountMinor), sandbox, currency, type, ...Object.values(extra)];
   await pool.query(`insert into fair_orders (${cols.join(',')}) values (${cols.map((_, i) => '$' + (i + 1)).join(',')})`, vals);
   const site = resolveSiteUrl(req);
+  const apiToken = await getPaysuiteTokenFromDb();
   try {
     const { providerPaymentId, checkoutUrl } = await createPayment({
       reference,
@@ -113,6 +123,7 @@ export async function startPayment({ type, listAmountMinor, currency = 'MZN', na
       description: `${sandbox ? '[SANDBOX] ' : ''}${description}`.slice(0, 120),
       returnUrl: `${site}/pagamento.html?t=${token}`,
       callbackUrl: `${site}/api/webhook`,
+      apiToken,
     });
     await pool.query(
       `update fair_orders set provider_payment_id=$2, checkout_url=$3,
@@ -123,7 +134,7 @@ export async function startPayment({ type, listAmountMinor, currency = 'MZN', na
   } catch (error) {
     const detail = String(error?.message || error);
     console.error('payment.error', detail);
-    // Se estiver em modo Sandbox e a conta PaySuite ainda não tiver acesso à API de empresa (403)
+    // Se estiver em modo Sandbox e a conta PaySuite devolver 403 (company accounts)
     // ou não tiver token configurado, permite testar o fluxo completo via simulador local em /pagamento.html.
     if (sandbox && (/company accounts|403|Token da PaySuite/i.test(detail) || process.env.SANDBOX_SIMULATE === 'true')) {
       const simId = `sim_${id.replaceAll('-', '').slice(0, 16)}`;

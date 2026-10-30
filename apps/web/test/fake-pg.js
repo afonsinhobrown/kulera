@@ -37,6 +37,9 @@ async function q(sql, p = []) {
   if (/^select value from fair_settings where key='admin_key'/i.test(s)) {
     return rows([{ value: S.settings.admin_key || 'kulera' }]);
   }
+  if (/^select value from fair_settings where key='paysuite_token'/i.test(s)) {
+    return S.settings.paysuite_token ? rows([{ value: S.settings.paysuite_token }]) : rows([]);
+  }
   if (/^insert into fair_plans/i.test(s)) {
     const [code, name, description, price_minor, max_publications, showcase_priority] = p;
     if (!S.plans.find((x) => x.code === code)) {

@@ -51,8 +51,10 @@
       <label>Título<input name="title" required maxlength="200"></label>
       <label>Autor<input name="author" required maxlength="200"></label>
       <label>Sinopse<textarea name="description" rows="3" maxlength="2000"></textarea></label>
-      <div class="row"><label>Idioma<input name="language" value="pt"></label><label>Capa (URL)<input name="coverUrl"></label></div>
-      <label>Ficheiro (.docx ou HTML)<input type="file" id="file" accept=".docx,.html,.htm"></label>
+      <div class="row"><label>Idioma<input name="language" value="pt"></label><label>Capa (Imagem)<input type="file" id="coverFile" accept="image/*"></label></div>
+      <label>Ou Link da Capa (URL opcional)<input name="coverUrl" id="pCoverUrl" placeholder="https://..."></label>
+      <div id="pCoverPreview"></div>
+      <label>Ficheiro do Livro (.docx ou HTML)<input type="file" id="file" accept=".docx,.html,.htm"></label>
       <p class="msg" id="fmsg"></p>
       <p class="msg" id="smsg"></p>
       <button>Submeter</button>
@@ -79,7 +81,7 @@
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script>
-const $=id=>document.getElementById(id); let TOK=localStorage.getItem('ptok')||'',contentHtml=null;
+const $=id=>document.getElementById(String(id).replace(/^#/,'')); let TOK=localStorage.getItem('ptok')||'',contentHtml=null;
 async function call(path,body,headers={}){
   const h={'Content-Type':'application/json',...headers};
   if(TOK) h['x-partner-token']=TOK;
@@ -132,10 +134,36 @@ async function loadReports(){const {ok,j}=await call('/api/partner-submit?report
 }
 $('#wform').onsubmit=async e=>{e.preventDefault();const f=e.target,m=$('wmsg');const {ok,j}=await call('/api/partner-submit',{action:'withdraw',amountMinor:Math.round(Number(f.amount.value)*100),method:f.method.value,details:f.details.value});if(ok){m.className='msg';m.textContent='Pedido de saque registado.';f.reset();loadReports();}else{m.className='msg err';m.textContent=j.error==='insufficient_funds'?'Saldo insuficiente para este saque.':'Verifique o valor.';}};
 $('#file').onchange=async e=>{const f=e.target.files[0];contentHtml=null;const m=$('fmsg');m.textContent='A converter...';if(!f){m.textContent='';return;}try{if(/\.docx$/i.test(f.name)){if(!window.mammoth)throw 0;const r=await mammoth.convertToHtml({arrayBuffer:await f.arrayBuffer()});contentHtml=r.value;}else contentHtml=await f.text();m.textContent='Pronto ('+Math.round(contentHtml.length/1000)+'k)';}catch{m.className='msg err';m.textContent='Erro ao ler ficheiro';}};
+function renderPartnerCoverPreview(){
+  const box=$('pCoverPreview'); if(!box) return; box.innerHTML='';
+  const v=($('pCoverUrl')?.value||'').trim(); if(!v) return;
+  const im=document.createElement('img'); im.src=v; im.alt='Capa';
+  im.style.cssText='width:90px;height:135px;object-fit:cover;border-radius:6px;border:1px solid #9db3b0;display:block';
+  im.onerror=()=>{box.innerHTML='<small style="color:#a3261f">Não foi possível pré-visualizar a imagem deste link.</small>';};
+  box.appendChild(im);
+}
+if($('pCoverUrl')) $('pCoverUrl').oninput=renderPartnerCoverPreview;
+if($('coverFile')) $('coverFile').onchange=e=>{
+  const file=e.target.files?.[0]; if(!file||!file.type.startsWith('image/'))return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const im=new Image();
+    im.onload=()=>{
+      const ratio=Math.min(600/im.width,900/im.height,1);
+      const w=Math.max(1,Math.round(im.width*ratio)),h=Math.max(1,Math.round(im.height*ratio));
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h); ctx.drawImage(im,0,0,w,h);
+      $('pCoverUrl').value=c.toDataURL('image/jpeg',0.85);
+      renderPartnerCoverPreview();
+    };
+    im.src=reader.result;
+  };
+  reader.readAsDataURL(file);
+};
 $('#reg').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-auth',{action:'register',name:f.name.value,kind:f.kind.value,phone:f.phone.value,email:f.email.value,password:f.password.value});$('rmsg').textContent=ok?'Registo enviado. Já pode entrar.':(j.error==='exists'?'Já existe conta com este email.':'Verifique os dados.');$('rmsg').className=ok?'msg':'msg err';};
 $('#login').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-auth',{action:'login',email:f.email.value,password:f.password.value});if(!ok){$('lmsg').textContent='Credenciais inválidas.';$('lmsg').className='msg err';return;}TOK=j.token;localStorage.setItem('ptok',TOK);loadMe();};
 $('#sub').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-submit',{title:f.title.value,author:f.author.value,description:f.description.value,language:f.language.value,coverUrl:f.coverUrl.value,contentHtml});
-  if(ok){ $('smsg').textContent='Submetido com sucesso.'; $('smsg').className='msg'; f.reset(); contentHtml=null; $('#fmsg').textContent=''; loadSubs(); loadReports(); }
+  if(ok){ $('smsg').textContent='Submetido com sucesso.'; $('smsg').className='msg'; f.reset(); contentHtml=null; $('#fmsg').textContent=''; if($('pCoverPreview'))$('pCoverPreview').innerHTML=''; loadSubs(); loadReports(); }
   else {
     $('smsg').className='msg err';
     if(j.error==='no_plan') $('smsg').innerHTML='Necessita de um plano activo para submeter manuscritos. <a href="planos.html" style="color:#a00">Subscrever plano</a>.';
