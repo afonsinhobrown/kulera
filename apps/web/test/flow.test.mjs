@@ -379,26 +379,48 @@ assert.equal(rec.body.ok, true);
 assert.ok(rec.body.paid >= 1);
 assert.equal(S.orders.find((o) => o.token === c11.body.token).status, 'paid');
 
-// 12. PDF não é servido no leitor (só HTML/Word): mensagem clara, nunca o ficheiro
+// 12. Livro em PDF: desenhado pelo leitor da plataforma (pdf.js), com marca de água, atrás do token
 const PDF_B64 = 'JVBERi0xLjQKJcfsj6IKMSAwIG9iago8PC9UeXBlL0NhdGFsb2c+PgplbmRvYmoKdHJhaWxlcgo8PC9Sb290IDEgMCBSPj4KJSVFT0YK';
-for (const [suffix, content] of [['22', 'data:application/pdf;base64,' + PDF_B64], ['23', '%PDF-1.4\nconteudo antigo']]) {
-  S.books.push({
-    id: U + suffix,
-    title: 'Livro PDF ' + suffix,
-    author: 'Autor',
-    price_minor: 1000,
-    currency: 'MZN',
-    status: 'published',
-    has_digital: true,
-    content_html: content,
-  });
-  const cPDF = await call(checkout, { method: 'POST', body: { ...body, bookId: U + suffix } });
-  assert.equal(cPDF.code, 200);
-  const oPDF = S.orders.find((o) => o.token === cPDF.body.token);
-  await hook('payment.success', { id: oPDF.provider_payment_id });
-  const chPDF = await call(chapter, { query: { t: cPDF.body.token } });
-  assert.equal(chPDF.code, 409);
-  assert.equal(chPDF.body.error, 'pdf_not_supported');
-}
+S.books.push({
+  id: U + '22',
+  title: 'Livro PDF',
+  author: 'Autor',
+  price_minor: 1000,
+  currency: 'MZN',
+  status: 'published',
+  has_digital: true,
+  content_html: 'data:application/pdf;base64,' + PDF_B64,
+});
+const c12 = await call(checkout, { method: 'POST', body: { ...body, bookId: U + '22' } });
+assert.equal(c12.code, 200);
+const o12 = S.orders.find((o) => o.token === c12.body.token);
+await hook('payment.success', { id: o12.provider_payment_id });
+const pdfMeta = await call(chapter, { query: { t: c12.body.token } });
+assert.equal(pdfMeta.code, 200);
+assert.equal(pdfMeta.body.pdf, true);
+assert.equal(pdfMeta.body.pdfUrl, '/api/chapter?t=' + c12.body.token + '&pdf=1');
+assert.ok(String(pdfMeta.body.watermark).includes('Exemplar de'));
+const pdfBytes = await call(chapter, { query: { t: c12.body.token, pdf: '1' } });
+assert.equal(pdfBytes.code, 200);
+assert.ok(String(pdfBytes.h['Content-Type']).includes('application/pdf'));
+assert.ok(Buffer.isBuffer(pdfBytes.body) && pdfBytes.body.length > 10);
+
+// 13. Livro antigo carregado como PDF em texto: mensagem clara, nunca o código do PDF
+S.books.push({
+  id: U + '23',
+  title: 'PDF Antigo',
+  author: 'Autor',
+  price_minor: 1000,
+  currency: 'MZN',
+  status: 'published',
+  has_digital: true,
+  content_html: '%PDF-1.4\nconteudo antigo',
+});
+const c13 = await call(checkout, { method: 'POST', body: { ...body, bookId: U + '23' } });
+const o13 = S.orders.find((o) => o.token === c13.body.token);
+await hook('payment.success', { id: o13.provider_payment_id });
+const pdfLegacy = await call(chapter, { query: { t: c13.body.token } });
+assert.equal(pdfLegacy.code, 409);
+assert.equal(pdfLegacy.body.error, 'pdf_not_supported');
 
 console.log('fluxo completo OK');

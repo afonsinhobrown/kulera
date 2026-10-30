@@ -2,10 +2,9 @@ import { pool } from '../lib/db.js';
 import { escapeHtml, splitChapters } from '../lib/content.js';
 
 // O livro só sai daqui para quem tem um pagamento confirmado. Nunca há ficheiro nem link público.
-// O leitor da plataforma lê HTML/Word (com capítulos, marca de água e sem download).
-// PDF não é servido: o visualizador do browser mostraria sempre download/impressão e tiraria
-// o livro do controlo da plataforma.
-const PDF_LIKE = /^\s*%PDF-|^data:application\/pdf;base64,/i;
+// Livros em PDF são desenhados pelo leitor da plataforma (pdf.js), página a página, com marca de
+// água — e não pelo visualizador do browser (que teria sempre download/impressão).
+const PDF_DATA = /^data:application\/pdf;base64,([\s\S]+)$/i;
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -18,9 +17,30 @@ export default async function handler(req, res) {
   const book = rows[0];
   if (book.kind === 'physical') return res.status(403).json({ error: 'forbidden' });
 
+  const mark = `Exemplar de ${escapeHtml(rows[0].buyer_name)} · ${escapeHtml(rows[0].buyer_phone)}`; // marca de água
   const raw = String(book.content_html ?? '');
-  // Livros antigos carregados em PDF: mensagem clara em vez de mostrar o código do ficheiro.
-  if (PDF_LIKE.test(raw)) return res.status(409).json({ error: 'pdf_not_supported' });
+
+  // Livro em PDF: metadados para o leitor e, a pedido do leitor, os bytes do documento.
+  const pdf = PDF_DATA.exec(raw);
+  if (pdf) {
+    if (String(req.query?.pdf ?? '') === '1') {
+      let bytes;
+      try {
+        bytes = Buffer.from(pdf[1], 'base64');
+      } catch {
+        return res.status(503).json({ error: 'content_unavailable' });
+      }
+      if (!bytes.length) return res.status(503).json({ error: 'content_unavailable' });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.status(200).send(bytes);
+    }
+    return res.json({ title: book.title, pdf: true, pdfUrl: `/api/chapter?t=${t}&pdf=1`, watermark: mark });
+  }
+
+  // Livros antigos carregados como PDF em texto (sem conversão): mensagem clara em vez de código.
+  if (/^\s*%PDF-/.test(raw)) return res.status(409).json({ error: 'pdf_not_supported' });
 
   const chapters = splitChapters(raw);
   if (!chapters.length) return res.status(503).json({ error: 'content_unavailable' });
@@ -28,7 +48,6 @@ export default async function handler(req, res) {
   const i = Number(req.query?.i ?? 0);
   if (!Number.isInteger(i) || i < 0 || i >= chapters.length) return res.status(400).json({ error: 'invalid_chapter', toc });
 
-  const mark = `Exemplar de ${escapeHtml(rows[0].buyer_name)} · ${escapeHtml(rows[0].buyer_phone)}`; // marca de água
   res.json({ title: book.title, index: i, total: chapters.length, toc,
     html: `${chapters[i].html}<p class="wm">${mark}</p>` });
 }

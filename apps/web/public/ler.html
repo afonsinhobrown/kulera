@@ -6,6 +6,13 @@
 <meta name="robots" content="noindex">
 <title>A ler · Kulera+</title>
 <link rel="stylesheet" href="style.css">
+<style>
+.page.pdf{padding:0;max-width:none}
+.pdf-wrap{position:relative;display:flex;justify-content:center;margin:0 auto}
+.pdf-wrap canvas{max-width:100%;height:auto;display:block;background:#fff;box-shadow:0 8px 22px rgba(16,36,43,.16)}
+.pdf-wm{position:absolute;right:10px;bottom:10px;font:12px system-ui;color:rgba(0,0,0,.55);background:rgba(255,255,255,.8);padding:4px 8px;border-radius:6px}
+.pdf-count{position:absolute;left:10px;bottom:10px;font:12px system-ui;color:rgba(0,0,0,.55);background:rgba(255,255,255,.8);padding:4px 8px;border-radius:6px}
+</style>
 </head>
 <body class="reader">
 <div class="bar">
@@ -16,10 +23,14 @@
 </div>
 <article class="page" id="page"><p>A abrir o livro…</p></article>
 <nav class="pager"><button id="prev">Anterior</button><button id="next">Seguinte</button></nav>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
 const $=(id)=>document.getElementById(id);
 const t=new URLSearchParams(location.search).get('t')||'';
 let i=0,total=1,size=19;
+// Leitor de PDF próprio (pdf.js): sem o visualizador do browser, logo sem botão de download.
+if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let pdfDoc=null,pdfPage=1,pdfTotal=0,pdfZoom=1,pdfTitle='',pdfMark='';
 try{ i=Number(localStorage.getItem('kulera_ch_'+t))||0; size=Number(localStorage.getItem('kulera_fs'))||19; if(localStorage.getItem('kulera_dark')==='1') document.body.classList.add('dark'); }catch{}
 document.addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('copy',e=>e.preventDefault());
@@ -30,6 +41,41 @@ async function getSupport(){
     return String(c.supportWhatsApp||'').replace(/\D/g,'');
   }catch{ return ''; }
 }
+async function openPdf(j){
+  pdfTitle=j.title||'Livro'; pdfMark=j.watermark||'';
+  $('page').classList.add('pdf');
+  $('page').innerHTML='<p style="padding:20px">A carregar o documento…</p>';
+  try{
+    pdfDoc=await pdfjsLib.getDocument({url:j.pdfUrl}).promise;
+    pdfTotal=pdfDoc.numPages;
+    let saved=0; try{ saved=Number(localStorage.getItem('kulera_pg_'+t))||0 }catch{}
+    pdfPage=Math.min(Math.max(1,saved||1),pdfTotal);
+    const toc=$('toc'); toc.innerHTML=''; toc.add(new Option('Documento',0)); toc.disabled=true;
+    document.title=pdfTitle+' · Kulera+';
+    await renderPdf();
+  }catch{
+    $('page').innerHTML='<p>Não foi possível abrir o documento. Atualize a página.</p>';
+  }
+}
+async function renderPdf(){
+  const pg=await pdfDoc.getPage(pdfPage);
+  const host=$('page');
+  const base=pg.getViewport({scale:1});
+  const maxW=Math.min(Math.max(host.clientWidth||680,320),900);
+  const vp=pg.getViewport({scale:(maxW/base.width)*pdfZoom});
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.round(vp.width); canvas.height=Math.round(vp.height);
+  const wrap=document.createElement('div'); wrap.className='pdf-wrap';
+  wrap.appendChild(canvas);
+  if(pdfMark){ const w=document.createElement('div'); w.className='pdf-wm'; w.textContent=pdfMark; wrap.appendChild(w); }
+  const cnt=document.createElement('div'); cnt.className='pdf-count'; cnt.textContent=pdfPage+' / '+pdfTotal; wrap.appendChild(cnt);
+  host.innerHTML=''; host.appendChild(wrap);
+  await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+  $('prev').disabled=pdfPage<=1; $('next').disabled=pdfPage>=pdfTotal;
+  try{localStorage.setItem('kulera_pg_'+t,pdfPage)}catch{}
+  window.scrollTo(0,0);
+}
+function pdfGo(n){ if(!pdfDoc) return; pdfPage=Math.min(Math.max(1,n),pdfTotal); renderPdf(); }
 async function load(n){
   try{
     const r=await fetch('/api/chapter?t='+encodeURIComponent(t)+'&i='+n);
@@ -37,24 +83,29 @@ async function load(n){
     const j=await r.json();
     if(r.status===409&&j.error==='pdf_not_supported'){
       const sp=await getSupport();
-      $('page').innerHTML='<h1>Este livro está a ser preparado</h1><p>O ficheiro deste livro está em PDF e o leitor da Kulera+ lê livros em Word/HTML. O seu acesso está registado — peça ajuda e enviamos o livro.</p>'+
+      $('page').innerHTML='<h1>Este livro está a ser preparado</h1><p>O ficheiro deste livro foi carregado como PDF antigo, sem conversão. O seu acesso está registado — peça ajuda e enviamos o livro.</p>'+
         (sp?'<p><a class="btn" href="https://wa.me/'+sp+'" target="_blank" rel="noopener">Pedir ajuda no WhatsApp</a></p>':'')+
         '<p class="note">Já pagou? Não precisa de pagar outra vez.</p>';
       return;
     }
     if(!r.ok){ if(j.error==='invalid_chapter'&&n!==0) return load(0); throw new Error(j.error); }
+    if(j.pdf) return openPdf(j);
+    pdfDoc=null; $('page').classList.remove('pdf');
     i=j.index; total=j.total; document.title=j.title+' · Kulera+';
     $('page').innerHTML=j.html;
-    const toc=$('toc'); if(!toc.options.length) j.toc.forEach((x,k)=>toc.add(new Option(x,k)));
+    const toc=$('toc'); toc.disabled=false; if(!toc.options.length) j.toc.forEach((x,k)=>toc.add(new Option(x,k)));
     toc.value=i; $('prev').disabled=i===0; $('next').disabled=i===total-1;
     try{localStorage.setItem('kulera_ch_'+t,i)}catch{}
     window.scrollTo(0,0);
   }catch{ $('page').innerHTML='<p>Não foi possível abrir o livro agora. Atualize a página.</p>'; }
 }
-$('toc').onchange=e=>load(Number(e.target.value));
-$('prev').onclick=()=>load(i-1); $('next').onclick=()=>load(i+1);
-$('smaller').onclick=()=>{size=Math.max(15,size-1);setSize()}; $('bigger').onclick=()=>{size=Math.min(28,size+1);setSize()};
+$('toc').onchange=e=>{ if(pdfDoc) return; load(Number(e.target.value)); };
+$('prev').onclick=()=>{ if(pdfDoc) return pdfGo(pdfPage-1); load(i-1); };
+$('next').onclick=()=>{ if(pdfDoc) return pdfGo(pdfPage+1); load(i+1); };
+$('smaller').onclick=()=>{ if(pdfDoc){ pdfZoom=Math.max(0.5,pdfZoom-0.15); renderPdf(); return; } size=Math.max(15,size-1);setSize() };
+$('bigger').onclick=()=>{ if(pdfDoc){ pdfZoom=Math.min(2.5,pdfZoom+0.15); renderPdf(); return; } size=Math.min(28,size+1);setSize() };
 $('theme').onclick=()=>{const d=document.body.classList.toggle('dark');try{localStorage.setItem('kulera_dark',d?'1':'0')}catch{}};
+let rt=0; window.addEventListener('resize',()=>{ if(!pdfDoc) return; clearTimeout(rt); rt=setTimeout(()=>renderPdf(),250); });
 setSize(); load(i);
 </script>
 </body>
