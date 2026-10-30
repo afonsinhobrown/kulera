@@ -3,9 +3,12 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 // ATENÇÃO: confirmar com a implementação PaySuite que já usas noutros projectos:
 // campos do pedido, campos da resposta, nomes dos eventos e formato da assinatura.
 export async function createPayment({ reference, amountMinor, description, returnUrl, callbackUrl }) {
-  const res = await fetch(process.env.PAYSUITE_CREATE_URL, {
+  const token = process.env.PAYSUITE_API_KEY || process.env.PAYSUITE_TOKEN;
+  const endpoint = process.env.PAYSUITE_CREATE_URL || (process.env.PAYSUITE_BASE_URL ? `${process.env.PAYSUITE_BASE_URL.replace(/\/$/, '')}/payments` : 'https://api.paysuite.tech/v1/payments');
+
+  const res = await fetch(endpoint, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.PAYSUITE_TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
       amount: (amountMinor / 100).toFixed(2),
       reference,
@@ -18,7 +21,8 @@ export async function createPayment({ reference, amountMinor, description, retur
   if (!res.ok) throw new Error(`PaySuite HTTP ${res.status}`); // nunca registar token nem corpo
   const json = await res.json();
   const d = json.data ?? json;
-  const providerPaymentId = d.id, checkoutUrl = d.checkout_url ?? d.checkoutUrl ?? d.url;
+  const providerPaymentId = d.id ?? d.payment_id ?? d.reference;
+  const checkoutUrl = d.checkout_url ?? d.checkoutUrl ?? d.payment_url ?? d.url;
   if (!providerPaymentId || !checkoutUrl) throw new Error('Resposta inesperada da PaySuite');
   return { providerPaymentId: String(providerPaymentId), checkoutUrl };
 }

@@ -15,6 +15,7 @@ export default async function handler(req, res) {
            left join fair_subscriptions s on s.partner_id = b.partner_id and s.status = 'active' and s.ends_at > now()
            left join fair_plans p on p.id = s.plan_id
           where b.status = 'published'
+            and (b.partner_id is null or s.id is not null)
           group by b.id
           order by priority desc, b.created_at desc limit 200`);
       rows = r.rows;

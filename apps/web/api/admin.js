@@ -1,6 +1,7 @@
+import { timingSafeEqual } from 'node:crypto';
 import { pool } from '../lib/db.js';
 import { PUBLICATION_FEE_MINOR } from '../lib/pricing.js';
-import { isSandbox, setSandbox } from '../lib/payments.js';
+import { isSandbox, setSandbox, getAdminKeyFromDb } from '../lib/payments.js';
 import { ensurePlanSchema } from '../lib/plans.js';
 
 const sameKey = (a, b) => {
@@ -143,14 +144,61 @@ async function action(b) {
       await pool.query("update fair_partner_withdrawals set status=$2, paid_at=case when $2='paid' then coalesce(paid_at, now()) else paid_at end where id=$1", [b.id, b.status]);
       return [200, { ok: true }];
     }
+    case 'subscription_status': {
+      if (!uuid(b.id)) return [400, { error: 'invalid' }];
+      const actionType = String(b.actionType || '');
+      if (actionType === 'block') {
+        await pool.query("update fair_subscriptions set status='cancelled' where id=$1", [b.id]);
+        return [200, { ok: true }];
+      }
+      if (actionType === 'unblock') {
+        await pool.query("update fair_subscriptions set status='active' where id=$1", [b.id]);
+        return [200, { ok: true }];
+      }
+      if (actionType === 'renew') {
+        const days = Number(b.days) || 30;
+        await pool.query(
+          `update fair_subscriptions
+              set status='active',
+                  ends_at = greatest(coalesce(ends_at, now()), now()) + ($2 || ' days')::interval
+            where id=$1`, [b.id, days]);
+        return [200, { ok: true }];
+      }
+      return [400, { error: 'invalid_subscription_action' }];
+    }
+    case 'grant_subscription': {
+      // Admin atribui ou renova plano manualmente para um parceiro
+      if (!uuid(b.partnerId) || !uuid(b.planId)) return [400, { error: 'invalid' }];
+      const days = Number(b.days) || 30;
+      const pr = (await pool.query("select name,phone,email from fair_partners where id=$1", [b.partnerId])).rows[0];
+      if (!pr) return [404, { error: 'partner_not_found' }];
+      await pool.query('alter table fair_subscriptions add column if not exists partner_id uuid');
+      const cur = await pool.query("select max(ends_at) e from fair_subscriptions where partner_id=$1 and status='active' and ends_at>now()", [b.partnerId]);
+      const start = cur.rows[0]?.e || null;
+      await pool.query(
+        `insert into fair_subscriptions (buyer_name,buyer_phone,buyer_email,plan_id,status,starts_at,ends_at,partner_id)
+         values ($1,$2,$3,$4,'active',coalesce($5::timestamptz,now()),coalesce($5::timestamptz,now())+($6||' days')::interval,$7)`,
+        [pr.name, pr.phone || '000000000', pr.email, b.planId, start, days, b.partnerId]);
+      return [200, { ok: true }];
+    }
+    case 'change_admin_key': {
+      const newKey = clip(b.newKey, 64);
+      if (!newKey || newKey.length < 3) return [400, { error: 'key_too_short' }];
+      await pool.query(
+        `insert into fair_settings (key,value,updated_at) values ('admin_key',$1,now())
+         on conflict (key) do update set value=excluded.value, updated_at=now()`, [newKey]);
+      return [200, { ok: true }];
+    }
     default: return [400, { error: 'invalid_action' }];
   }
 }
 
-// Painel da Kulera. Protegido por ADMIN_KEY.
+// Painel da Kulera. A chave é lida da base de dados (tabela fair_settings, chave 'admin_key', default: 'kulera').
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  if (!process.env.ADMIN_KEY || !sameKey(req.headers['x-admin-key'], process.env.ADMIN_KEY)) {
+  const expectedKey = await getAdminKeyFromDb();
+  const provided = req.headers['x-admin-key'];
+  if (!sameKey(provided, expectedKey)) {
     return res.status(401).json({ error: 'unauthorized' });
   }
   try {
@@ -192,7 +240,14 @@ export default async function handler(req, res) {
   } catch {}
   const sandbox = await isSandbox();
   let subs = [];
-  try { subs = (await pool.query(`select s.id,s.buyer_name,s.buyer_phone,s.status,s.starts_at,s.ends_at,pl.name as plan from fair_subscriptions s left join fair_plans pl on pl.id=s.plan_id order by s.created_at desc limit 500`)).rows; } catch {}
+  try {
+    subs = (await pool.query(`select s.id,s.buyer_name,s.buyer_phone,s.status,s.starts_at,s.ends_at,s.partner_id,pl.name as plan, p.name as partner_name,
+        case when s.ends_at < now() then true else false end as is_expired
+        from fair_subscriptions s
+        left join fair_plans pl on pl.id=s.plan_id
+        left join fair_partners p on p.id=s.partner_id
+        order by s.created_at desc limit 500`)).rows;
+  } catch {}
   let withdrawals = [];
   try { withdrawals = (await pool.query(`select w.id, w.amount_minor, w.method, w.details, w.status, w.created_at, w.paid_at, p.name as partner from fair_partner_withdrawals w left join fair_partners p on p.id=w.partner_id order by w.created_at desc limit 500`)).rows; } catch {}
 

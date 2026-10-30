@@ -8,9 +8,9 @@
 <style>
 .books{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));margin:18px 0 30px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;display:grid;gap:8px;align-content:start}
-.card .cover{display:flex;align-items:center;justify-content:center;text-align:center;aspect-ratio:2/3;width:100%;margin:0 auto;overflow:hidden;border-radius:6px;background:#eef3f2;font:700 18px/1.2 Georgia,serif;padding:12px;box-sizing:border-box}
-.card .cover:has(img){padding:0}
-.card .cover img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
+.card .cover{position:relative;width:100%;aspect-ratio:2/3;margin:0 auto 4px;border-radius:6px;overflow:hidden;background:#eef3f2;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 8px rgba(0,0,0,0.08)}
+.card .cover img{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;object-position:center;display:block}
+.card .cover-placeholder{padding:16px;text-align:center;font:700 16px/1.3 Georgia,serif;color:#184045;display:flex;align-items:center;justify-content:center;height:100%;width:100%}
 .card .prices{display:grid;gap:2px}
 .card .prices span{display:flex;justify-content:space-between;gap:8px;font-size:14px;color:#44606a}
 .card .prices b{font:700 17px Georgia,serif;color:var(--ink)}
@@ -54,7 +54,15 @@ fetch('/api/books',{cache:'no-store'}).then(r=>r.json()).then(list=>{
   arr.forEach(b=>{
     const c=document.createElement('div');c.className='card';
     const cv=document.createElement('div');cv.className='cover';
-    if(b.coverUrl){const im=document.createElement('img');im.src=b.coverUrl;im.alt='Capa de '+b.title;im.onerror=()=>{im.remove();cv.append(b.title)};cv.appendChild(im)}else cv.textContent=b.title;
+    if(b.coverUrl){
+      const im=document.createElement('img');
+      im.src=b.coverUrl;
+      im.alt='Capa de '+b.title;
+      im.onerror=()=>{ im.remove(); cv.innerHTML = '<span class="cover-placeholder">'+b.title+'</span>'; };
+      cv.appendChild(im);
+    } else {
+      cv.innerHTML = '<span class="cover-placeholder">'+b.title+'</span>';
+    }
     const h=document.createElement('h3');h.textContent=b.title;
     const a=document.createElement('p');a.textContent=b.author;
     const hasD = b.hasDigital !== false;

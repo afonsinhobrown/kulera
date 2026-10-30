@@ -18,10 +18,19 @@ export default async function handler(req, res) {
   const shippingCity = String(req.body?.shippingCity ?? '').trim();
 
   // Preço, moeda e disponibilidade SEMPRE da base de dados. Nunca se vende um livro sem conteúdo publicado.
+  // Planos expirados do parceiro impedem novas compras de livros desse autor/editora.
   const found = await pool.query(
-    "select id, title, price_minor, currency, kind, requires_shipping, stock, content_html, coalesce(has_digital,true) as has_digital, coalesce(has_physical,false) as has_physical, (to_jsonb(fair_books)->>'price_physical_minor')::bigint as price_physical_minor from fair_books where id = $1 and status = 'published'", [bookId]);
+    `select b.id, b.title, b.price_minor, b.currency, b.kind, b.requires_shipping, b.stock, b.content_html,
+            coalesce(b.has_digital,true) as has_digital, coalesce(b.has_physical,false) as has_physical,
+            (to_jsonb(b)->>'price_physical_minor')::bigint as price_physical_minor,
+            b.partner_id,
+            case when b.partner_id is null then true
+                 when exists (select 1 from fair_subscriptions s where s.partner_id = b.partner_id and s.status = 'active' and s.ends_at > now()) then true
+                 else false end as can_sell
+       from fair_books b
+      where b.id = $1 and b.status = 'published'`, [bookId]);
   const book = found.rows[0];
-  if (!book) return res.status(404).json({ error: 'book_unavailable' });
+  if (!book || !book.can_sell) return res.status(404).json({ error: 'book_unavailable' });
   const hasDigital = book.has_digital !== false;
   const hasPhysical = book.has_physical === true || book.kind === 'physical' || book.requires_shipping === true;
   if (!hasDigital && !hasPhysical) return res.status(404).json({ error: 'book_unavailable' });

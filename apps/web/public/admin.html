@@ -219,8 +219,33 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
           </form>
         </div>
 
-        <div class="pane-title" style="font-size:20px;margin-top:32px">Subscrições de Parceiros Activas</div>
+        <div class="pane-title" style="font-size:20px;margin-top:32px">Subscrições de Parceiros</div>
         <div class="table-card"><div class="table-wrap"><table id="subsList"></table></div></div>
+
+        <div class="form-card" style="margin-top:16px">
+          <h3>Atribuir / Renovar Plano a um Parceiro Manualmente</h3>
+          <form class="f" id="grantPlanForm">
+            <div class="row">
+              <label>Parceiro / Editora
+                <select name="partnerId" id="grantPartnerSelect" required>
+                  <option value="">Selecione o parceiro...</option>
+                </select>
+              </label>
+              <label>Plano a Atribuir
+                <select name="planId" id="grantPlanSelect" required>
+                  <option value="">Selecione o plano...</option>
+                </select>
+              </label>
+            </div>
+            <div class="row">
+              <label>Duração (Dias)<input name="days" type="number" min="1" value="30" required></label>
+              <span style="display:flex;align-items:flex-end">
+                <button type="submit" class="btn-primary" style="width:100%">Atribuir / Renovar</button>
+              </span>
+            </div>
+            <p class="msg" id="grantMsg"></p>
+          </form>
+        </div>
       </div>
 
       <!-- TAB 5: PARCEIROS -->
@@ -445,17 +470,73 @@ async function load(){
     return tr;
   });
 
+  // Popular selects de atribuição manual de planos
+  const gpSel = $('grantPartnerSelect');
+  if(gpSel){
+    const curP = gpSel.value; gpSel.length = 1;
+    j.partners.forEach(p => gpSel.add(new Option(p.name, p.id)));
+    gpSel.value = curP;
+  }
+  const gplSel = $('grantPlanSelect');
+  if(gplSel){
+    const curPl = gplSel.value; gplSel.length = 1;
+    (j.plans || []).forEach(p => gplSel.add(new Option(`${p.name} (${fmt(p.price_minor)})`, p.id)));
+    gplSel.value = curPl;
+  }
+
   // Subscriptions list
-  fill($('subsList'), ['Comprador', 'Telefone', 'Plano', 'Início', 'Término', 'Estado'], j.subscriptions || [], s => {
+  fill($('subsList'), ['Parceiro / Titular', 'Telefone', 'Plano', 'Início', 'Término', 'Estado', 'Ações'], j.subscriptions || [], s => {
     const tr = document.createElement('tr');
+    const isExp = s.is_expired;
+    let stText = s.status === 'active' ? (isExp ? '⚠️ Expirado' : '✓ Activo') : (s.status === 'cancelled' ? '⛔ Bloqueado' : s.status);
     tr.append(
-      cell(s.buyer_name),
+      cell(s.partner_name || s.buyer_name),
       cell(s.buyer_phone),
       cell(s.plan || 'Plano'),
       cell(new Date(s.starts_at).toLocaleDateString('pt-MZ')),
       cell(new Date(s.ends_at).toLocaleDateString('pt-MZ')),
-      cell(s.status === 'active' ? 'Activa' : s.status)
+      cell(stText)
     );
+    const actionsTd = document.createElement('td');
+    actionsTd.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap';
+
+    // Botão Renovar (+30 dias)
+    const btnRenew = document.createElement('button');
+    btnRenew.type = 'button'; btnRenew.className = 'btn-action';
+    btnRenew.textContent = 'Renovar (+30d)';
+    btnRenew.onclick = async () => {
+      if(!confirm(`Renovar o plano de "${s.partner_name || s.buyer_name}" por mais 30 dias?`)) return;
+      btnRenew.disabled = true;
+      const res = await api({ action: 'subscription_status', id: s.id, actionType: 'renew', days: 30 });
+      if(res.ok) load(); else alert('Erro ao renovar plano.');
+    };
+    actionsTd.appendChild(btnRenew);
+
+    // Botão Bloquear / Desbloquear
+    if(s.status === 'active'){
+      const btnBlock = document.createElement('button');
+      btnBlock.type = 'button'; btnBlock.className = 'btn-action';
+      btnBlock.style.color = '#a00';
+      btnBlock.textContent = 'Bloquear';
+      btnBlock.onclick = async () => {
+        if(!confirm(`Bloquear o plano de "${s.partner_name || s.buyer_name}"?`)) return;
+        btnBlock.disabled = true;
+        const res = await api({ action: 'subscription_status', id: s.id, actionType: 'block' });
+        if(res.ok) load(); else alert('Erro ao bloquear plano.');
+      };
+      actionsTd.appendChild(btnBlock);
+    } else {
+      const btnUnblock = document.createElement('button');
+      btnUnblock.type = 'button'; btnUnblock.className = 'btn-action';
+      btnUnblock.textContent = 'Desbloquear';
+      btnUnblock.onclick = async () => {
+        const res = await api({ action: 'subscription_status', id: s.id, actionType: 'unblock' });
+        if(res.ok) load(); else alert('Erro ao desbloquear plano.');
+      };
+      actionsTd.appendChild(btnUnBlock);
+    }
+
+    tr.appendChild(actionsTd);
     return tr;
   });
 
@@ -719,6 +800,31 @@ $('planForm').addEventListener('submit', async e => {
   if(ok) load();
 });
 
+// Manual plan grant / renewal submit
+const gpf = $('grantPlanForm');
+if(gpf){
+  gpf.addEventListener('submit', async e => {
+    e.preventDefault();
+    const m = $('grantPlanMsg');
+    m.className = 'msg'; m.textContent = 'A processar atribuição de plano...';
+    const res = await api({
+      action: 'grant_subscription',
+      partnerId: gpf.partnerId.value,
+      planId: gpf.planId.value,
+      days: Number(gpf.days.value) || 30
+    });
+    if(!res.ok){
+      m.className = 'msg err';
+      m.textContent = 'Erro ao atribuir plano ao parceiro.';
+      return;
+    }
+    m.className = 'msg';
+    m.textContent = 'Plano atribuído/renovado com sucesso!';
+    setTimeout(() => { m.textContent = ''; }, 4000);
+    load();
+  });
+}
+
 // Submission action
 $('subForm').addEventListener('submit', async e => {
   e.preventDefault(); const f = e.target, m = $('subMsg');
@@ -778,19 +884,26 @@ $('csvL').onclick = () => csv('leads');
 $('csvO').onclick = () => csv('orders');
 $('csvP').onclick = () => csv('payouts');
 
-if(KEY){
-  $('login').hidden = true;
-  $('app').hidden = false;
-  load().catch(err => {
-    $('login').hidden = false;
-    $('app').hidden = true;
-    if(err?.message === 'auth'){ sessionStorage.removeItem('kulera_admin_key'); KEY = ''; }
-  });
-  if(LOAD_INTERVAL) clearInterval(LOAD_INTERVAL);
-  LOAD_INTERVAL = setInterval(() => {
-    if(!document.activeElement || !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) load().catch(()=>{});
-  }, 30000);
+// Tenta carregar directamente. Se não houver ADMIN_KEY configurada no servidor, entra logo sem login.
+async function tryInit(){
+  try {
+    await load();
+    $('login').hidden = true;
+    $('app').hidden = false;
+    if(LOAD_INTERVAL) clearInterval(LOAD_INTERVAL);
+    LOAD_INTERVAL = setInterval(() => {
+      if(!document.activeElement || !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) load().catch(()=>{});
+    }, 30000);
+  } catch(err){
+    if(err?.message === 'auth'){
+      $('login').hidden = false;
+      $('app').hidden = true;
+      sessionStorage.removeItem('kulera_admin_key');
+      KEY = '';
+    }
+  }
 }
+tryInit();
 </script>
 </body>
 </html>

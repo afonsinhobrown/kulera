@@ -28,6 +28,14 @@ export async function setSandbox(on) {
      on conflict (key) do update set value=excluded.value, updated_at=now()`, [on ? 'true' : 'false']);
 }
 
+export async function getAdminKeyFromDb() {
+  await ensurePaymentSchema();
+  // Garante a chave inicial 'kulera' caso ainda não exista na base de dados
+  await pool.query("insert into fair_settings (key,value,updated_at) values ('admin_key','kulera',now()) on conflict (key) do nothing");
+  const r = await pool.query("select value from fair_settings where key='admin_key'");
+  return r.rows[0]?.value || 'kulera';
+}
+
 /** Valor efectivamente cobrado (10 MT em sandbox). */
 export async function chargeAmount(listMinor) {
   return (await isSandbox()) ? SANDBOX_AMOUNT_MINOR : Number(listMinor);
