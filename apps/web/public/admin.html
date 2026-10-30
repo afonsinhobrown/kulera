@@ -127,6 +127,8 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
         <div class="kpi-grid" id="kpi"></div>
         <div style="display:flex;gap:10px;margin-bottom:24px">
           <button id="csvO" class="btn-secondary" style="font-size:13px">Exportar Vendas (CSV)</button>
+        <button id="reconcileBtn" class="btn-secondary" style="font-size:13px;margin-left:8px">🔄 Verificar pagamentos pendentes</button>
+        <span id="reconcileMsg" style="font-size:13px;margin-left:10px;color:#557077"></span>
           <button id="csvP" class="btn-secondary" style="font-size:13px">Exportar Payouts Parceiros (CSV)</button>
           <button id="csvL" class="btn-secondary" style="font-size:13px">Exportar Leads (CSV)</button>
         </div>
@@ -1041,6 +1043,18 @@ async function csv(t){
 }
 $('csvL').onclick = () => csv('leads');
 $('csvO').onclick = () => csv('orders');
+// A PaySuite só tem um webhook por conta (partilhado). Aqui confirmamos os pendentes perguntando à PaySuite.
+$('reconcileBtn').onclick = async () => {
+  const btn = $('reconcileBtn'), msg = $('reconcileMsg'), label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'A verificar...'; msg.textContent = '';
+  try {
+    const { ok, j } = await api({ action: 'reconcile_payments' });
+    if (!ok) { msg.textContent = 'Falhou: ' + (j.error || 'erro'); return; }
+    msg.textContent = `✅ ${j.paid} confirmado(s) · ${j.checked} verificado(s) · ${j.open} pendente(s)`;
+    if (j.paid > 0 || j.closed > 0) await load();
+  } catch { msg.textContent = 'Erro de ligação.'; }
+  finally { btn.disabled = false; btn.textContent = label; }
+};
 $('csvP').onclick = () => csv('payouts');
 
 // Tenta carregar directamente. Se não houver ADMIN_KEY configurada no servidor, entra logo sem login.

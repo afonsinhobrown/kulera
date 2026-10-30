@@ -1,5 +1,5 @@
 import { pool } from '../lib/db.js';
-import { isSandbox, settleOrderPaid } from '../lib/payments.js';
+import { isSandbox, settleOrderPaid, getPaysuiteTokenFromDb } from '../lib/payments.js';
 import { getPaymentStatus } from '../lib/paysuite.js';
 
 export default async function handler(req, res) {
@@ -48,7 +48,7 @@ export default async function handler(req, res) {
 
   // Verificação activa na PaySuite caso o webhook ainda não tenha chegado.
   if (order.status === 'pending' && order.id && order.provider_payment_id && !String(order.provider_payment_id).startsWith('sim_')) {
-    const remoteStatus = await getPaymentStatus(order.provider_payment_id);
+    const remoteStatus = await getPaymentStatus(order.provider_payment_id, await getPaysuiteTokenFromDb());
     if (remoteStatus === 'paid') {
       const client = await pool.connect();
       try {

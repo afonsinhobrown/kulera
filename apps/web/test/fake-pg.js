@@ -230,6 +230,13 @@ async function q(sql, p = []) {
     if (o && (o.status === 'created' || o.status === 'pending')) o.status = p[1];
     return rows([]);
   }
+  if (s.startsWith("select id, provider_payment_id from fair_orders where status in ('created','pending')")) {
+    return rows(
+      S.orders
+        .filter((o) => (o.status === 'created' || o.status === 'pending') && o.provider_payment_id && !String(o.provider_payment_id).startsWith('sim_'))
+        .map((o) => ({ id: o.id, provider_payment_id: o.provider_payment_id })),
+    );
+  }
   if (s.startsWith('select o.book_id, o.amount_minor')) {
     const o = S.orders.find((x) => x.id === p[0]);
     const b = S.books.find((x) => x.id === o?.book_id);

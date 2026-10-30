@@ -363,4 +363,20 @@ assert.equal((await call(livroPage, { query: { id: U + '99' } })).code, 404);
 assert.equal((await call(livroPage, { query: { id: 'x' } })).code, 404);
 assert.ok((await call(livroPage, { query: { id: U + '99' } })).body.includes('Ver todos os livros'));
 
+// 11. Reconciliação: confirma pedidos pendentes junto da PaySuite (o webhook da conta é partilhado com outros sistemas)
+const c11 = await call(checkout, { method: 'POST', body: { ...body, bookId: U + '12' } });
+assert.equal(c11.code, 200);
+const order11 = S.orders.find((o) => o.token === c11.body.token);
+assert.equal(order11.status, 'pending');
+remotePaidIds.add(order11.provider_payment_id);
+const rec = await call(admin, {
+  method: 'POST',
+  headers: { 'x-admin-key': 'kulera' },
+  body: { action: 'reconcile_payments' },
+});
+assert.equal(rec.code, 200);
+assert.equal(rec.body.ok, true);
+assert.ok(rec.body.paid >= 1);
+assert.equal(S.orders.find((o) => o.token === c11.body.token).status, 'paid');
+
 console.log('fluxo completo OK');

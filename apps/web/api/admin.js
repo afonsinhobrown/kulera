@@ -1,8 +1,8 @@
 import { timingSafeEqual } from 'node:crypto';
 import { pool } from '../lib/db.js';
 import { PUBLICATION_FEE_MINOR } from '../lib/pricing.js';
-import { isSandbox, setSandbox, getAdminKeyFromDb, getPaysuiteTokenFromDb, resolveSiteUrl } from '../lib/payments.js';
-import { createPayment } from '../lib/paysuite.js';
+import { isSandbox, setSandbox, getAdminKeyFromDb, getPaysuiteTokenFromDb, resolveSiteUrl, settleOrderPaid } from '../lib/payments.js';
+import { createPayment, getPaymentStatus } from '../lib/paysuite.js';
 import { ensurePlanSchema } from '../lib/plans.js';
 
 const sameKey = (a, b) => {
@@ -156,6 +156,32 @@ async function action(b) {
     case 'set_sandbox': {
       await setSandbox(b.enabled === true || b.enabled === 'true');
       return [200, { ok: true, sandbox: await isSandbox() }];
+    }
+    case 'reconcile_payments': {
+      // A PaySuite só aceita um webhook por conta (partilhado com outros sistemas), por isso
+      // confirmamos os pedidos pendentes perguntando directamente à PaySuite.
+      const pend = await pool.query(
+        `select id, provider_payment_id from fair_orders
+          where status in ('created','pending')
+            and provider_payment_id is not null
+            and provider_payment_id not like 'sim_%'
+            and created_at > now() - interval '14 days'
+          order by created_at desc limit 200`,
+      );
+      const apiToken = await getPaysuiteTokenFromDb();
+      let checked = 0, paid = 0, closed = 0;
+      for (const o of pend.rows) {
+        const remoteStatus = await getPaymentStatus(o.provider_payment_id, apiToken);
+        if (!remoteStatus) continue;
+        checked++;
+        if (remoteStatus === 'paid') {
+          if (await settleOrderPaid(pool, o.id, o.provider_payment_id)) paid++;
+        } else if (remoteStatus === 'failed' || remoteStatus === 'cancelled') {
+          await pool.query("update fair_orders set status = $2 where id = $1 and status in ('created','pending')", [o.id, remoteStatus]).catch(() => {});
+          closed++;
+        }
+      }
+      return [200, { ok: true, open: pend.rows.length, checked, paid, closed }];
     }
     case 'withdrawal_status': {
       if (!uuid(b.id) || !['requested', 'processing', 'paid', 'rejected'].includes(b.status)) return [400, { error: 'invalid' }];
