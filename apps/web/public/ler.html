@@ -6,6 +6,10 @@
 <meta name="robots" content="noindex">
 <title>A ler · Kulera+</title>
 <link rel="stylesheet" href="style.css">
+<style>
+.page.pdf{padding:0;max-width:none}
+.pdf-frame{display:block;width:100%;height:calc(100dvh - 70px);min-height:520px;border:0;background:#fff}
+</style>
 </head>
 <body class="reader">
 <div class="bar">
@@ -24,13 +28,38 @@ try{ i=Number(localStorage.getItem('kulera_ch_'+t))||0; size=Number(localStorage
 document.addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('copy',e=>e.preventDefault());
 function setSize(){ document.documentElement.style.setProperty('--fs',size+'px'); try{localStorage.setItem('kulera_fs',size)}catch{} }
+async function getSupport(){
+  try{
+    const c=await (await fetch('/api/book')).json();
+    return String(c.supportWhatsApp||'').replace(/\D/g,'');
+  }catch{ return ''; }
+}
 async function load(n){
   try{
     const r=await fetch('/api/chapter?t='+encodeURIComponent(t)+'&i='+n);
     if(r.status===403) return $('page').innerHTML='<h1>Sem acesso</h1><p>Não encontrámos um pagamento confirmado para esta ligação. Abra o endereço que recebeu depois da compra.</p><p><a href="/">Voltar ao início</a></p>';
     const j=await r.json();
+    if(r.status===409&&j.error==='pdf_legacy'){
+      const sp=await getSupport();
+      $('page').innerHTML='<h1>Este livro está a ser preparado</h1><p>O ficheiro deste livro foi carregado num formato que o leitor ainda não consegue mostrar. O seu acesso está registado — peça ajuda e enviamos o livro.</p>'+
+        (sp?'<p><a class="btn" href="https://wa.me/'+sp+'" target="_blank" rel="noopener">Pedir ajuda no WhatsApp</a></p>':'')+
+        '<p class="note">Já pagou? Não precisa de pagar outra vez.</p>';
+      return;
+    }
     if(!r.ok){ if(j.error==='invalid_chapter'&&n!==0) return load(0); throw new Error(j.error); }
     i=j.index; total=j.total; document.title=j.title+' · Kulera+';
+    if(j.pdfUrl){
+      $('page').classList.add('pdf');
+      $('page').innerHTML='';
+      const f=document.createElement('iframe');
+      f.className='pdf-frame'; f.src=j.pdfUrl; f.title=j.title||'Livro'; f.loading='eager';
+      $('page').appendChild(f);
+      const toc=$('toc'); toc.innerHTML=''; toc.add(new Option('Documento',0)); toc.value=0;
+      $('prev').disabled=true; $('next').disabled=true;
+      window.scrollTo(0,0);
+      return;
+    }
+    $('page').classList.remove('pdf');
     $('page').innerHTML=j.html;
     const toc=$('toc'); if(!toc.options.length) j.toc.forEach((x,k)=>toc.add(new Option(x,k)));
     toc.value=i; $('prev').disabled=i===0; $('next').disabled=i===total-1;
