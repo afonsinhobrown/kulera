@@ -4,8 +4,8 @@ import { createPayment, resolvePaysuiteToken } from './paysuite.js';
 import { computeSplit } from './split.js';
 import { APP_BPS, EDITORS_BPS } from './pricing.js';
 
-// Em modo sandbox TODOS os pagamentos cobram 1 MT (100 minor).
-export const SANDBOX_AMOUNT_MINOR = 100;
+// Em modo sandbox TODOS os pagamentos cobram 10 MT (1000 minor, = 10,00 MZN).
+export const SANDBOX_AMOUNT_MINOR = 1000;
 
 let ensured = false;
 export async function ensurePaymentSchema() {
@@ -74,7 +74,7 @@ export async function getAdminKeyFromDb() {
   return r.rows[0]?.value || 'kulera';
 }
 
-/** Valor efectivamente cobrado (1 MT em sandbox). */
+/** Valor efectivamente cobrado (10 MT em sandbox). */
 export async function chargeAmount(listMinor) {
   return (await isSandbox()) ? SANDBOX_AMOUNT_MINOR : Number(listMinor);
 }

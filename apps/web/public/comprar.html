@@ -11,6 +11,7 @@
 <main>
   <section class="panel" style="max-width:520px">
     <h1 style="font-size:28px">Finalizar compra</h1>
+    <p id="sandboxNote" hidden style="background:#fff3cd;border:1px solid #ffeeba;color:#856404;padding:10px 14px;border-radius:8px;font-size:14px;margin:0 0 12px;text-align:center">🧪 <b>Modo de teste activo:</b> este pagamento é cobrado a <b id="sandboxAmount"></b>.</p>
     <div id="info" style="text-align:center"></div>
     <div id="shareBox" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:8px 0 12px" hidden>
       <button type="button" id="shareNative" style="background:#e8f4f5;color:#0b5c63;border:1px solid #b8dce0;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer;width:auto">🔗 Partilhar livro</button>
@@ -47,6 +48,7 @@ const params=new URLSearchParams(location.search);
 const id=params.get('id');
 const requestedFmt=params.get('fmt');
 let b=null,fmt='digital';
+let sandbox={on:false,amountMinor:null};
 function priceFor(f){return f==='physical'?(b.physicalPriceMinor??b.priceMinor):(b.digitalPriceMinor??b.priceMinor)}
 function applyFmt(){
   const physical=fmt==='physical';
@@ -67,7 +69,15 @@ function applyFmt(){
   }
   const pe=$('fmtPrice');
   if(pe)pe.textContent=money(priceFor(fmt),b.currency);
-  $('go').textContent=(physical?'Pagar (entrega) ':'Pagar ')+money(priceFor(fmt),b.currency);
+  // Em modo de teste o botão mostra o valor que a PaySuite vai cobrar (10 MT), não o preço de tabela.
+  const charged=sandbox.on&&sandbox.amountMinor!=null?sandbox.amountMinor:priceFor(fmt);
+  $('go').textContent=(physical?'Pagar (entrega) ':'Pagar ')+money(charged,b.currency);
+}
+function showSandbox(){
+  if(!sandbox.on||!b)return;
+  const note=$('sandboxNote');
+  if(note)note.hidden=false;
+  $('sandboxAmount').textContent=money(sandbox.amountMinor,b.currency);
 }
 async function load(){
   const r=await fetch('/api/books?_='+Date.now(),{cache:'no-store'}); const list=await r.json();
@@ -143,6 +153,11 @@ async function load(){
   document.querySelectorAll('[name=fmt]').forEach(x=>x.onchange=()=>{fmt=x.value;applyFmt();});
   const f=$('form'); f.name.oninput=()=>{if(fmt==='physical')f.shippingName.value=f.name.value}; f.phone.oninput=()=>{if(fmt==='physical')f.shippingPhone.value=f.phone.value};
   applyFmt();
+  // Estado do modo de teste: em sandbox a PaySuite cobra 10 MT, não o preço de tabela.
+  try{
+    const cfg=await fetch('/api/book?_='+Date.now(),{cache:'no-store'}).then(r=>r.json());
+    if(cfg&&cfg.sandbox){sandbox={on:true,amountMinor:Number(cfg.sandboxPriceMinor)||0};showSandbox();applyFmt();}
+  }catch{}
   f.onsubmit=async e=>{
     e.preventDefault();const fd=new FormData(e.target),msg=$('msg'),btn=$('go');
     msg.className='msg';msg.textContent='';

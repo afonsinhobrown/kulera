@@ -44,6 +44,7 @@ const { default: webhook } = await import('../api/webhook.js');
 const { default: chapter } = await import('../api/chapter.js');
 const { default: status } = await import('../api/status.js');
 const { default: books } = await import('../api/books.js');
+const { default: bookCfg } = await import('../api/book.js');
 const { default: lead } = await import('../api/lead.js');
 const { default: subscriptions } = await import('../api/subscriptions.js');
 const { default: partnerSubmit } = await import('../api/partner-submit.js');
@@ -215,8 +216,13 @@ const cSim = await call(checkout, { method: 'POST', body: { ...body, bookId: U +
 assert.equal(cSim.code, 200);
 assert.equal(cSim.body.sandbox, true);
 assert.equal(cSim.body.simulated, true);
-assert.equal(cSim.body.amountMinor, 100); // 1 MT em sandbox
+assert.equal(cSim.body.amountMinor, 1000); // 10 MT em sandbox
 assert.ok(cSim.body.checkoutUrl.includes('/pagamento.html?t=') && cSim.body.checkoutUrl.includes('sim=1'));
+
+// O catálogo/configuração pública diz se o modo de teste está activo e qual o valor cobrado
+const cfgSandbox = await call(bookCfg, { method: 'GET' });
+assert.equal(cfgSandbox.body.sandbox, true);
+assert.equal(cfgSandbox.body.sandboxPriceMinor, 1000);
 
 const simConfirm = await call(status, {
   method: 'POST',
@@ -226,6 +232,7 @@ assert.equal(simConfirm.code, 200);
 assert.equal(simConfirm.body.status, 'paid');
 failWithCompanyError = false;
 await setSandbox(false);
+assert.equal((await call(bookCfg, { method: 'GET' })).body.sandbox, false);
 
 // 8. Modificar capa do livro no Admin actualiza imediatamente a montra (/api/books sem cache antigo) e venda física exige endereço
 const newCover = 'data:image/jpeg;base64,' + 'B'.repeat(2500);
