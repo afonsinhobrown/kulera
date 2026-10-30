@@ -1,12 +1,14 @@
 import { pool } from '../lib/db.js';
-// Catálogo público
+// Catálogo público (sem cache para reflectir alterações de capa/preço imediatamente)
 export default async function handler(req, res) {
-  res.setHeader('Cache-Control', 'public, max-age=30');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   try {
     let rows = [];
     try {
       const r = await pool.query(
-        `select b.id, b.title, b.author, b.description, b.language, b.price_minor, b.currency, b.cover_url,
+        `select b.id, b.title, b.author, b.description, b.language, b.price_minor, b.currency, b.cover_url, b.updated_at,
                 coalesce(b.kind,'ebook') as kind, b.requires_shipping, b.stock, coalesce(b.has_digital,true) as has_digital,
                 coalesce(b.has_physical,false) as has_physical, b.content_html is not null as has_content,
                 (to_jsonb(b)->>'price_physical_minor')::bigint as price_physical_minor,
@@ -52,6 +54,7 @@ export default async function handler(req, res) {
               : null,
           currency: b.currency,
           coverUrl: b.cover_url,
+          updatedAt: b.updated_at ? new Date(b.updated_at).getTime() : null,
           kind: b.kind || 'ebook',
           requiresShipping: b.requires_shipping || b.kind === 'physical',
           stock: b.stock,

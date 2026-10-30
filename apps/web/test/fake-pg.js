@@ -133,9 +133,44 @@ async function q(sql, p = []) {
           has_physical: b.has_physical ?? (b.kind === 'physical' || Boolean(b.requires_shipping)),
           has_content: b.content_html != null,
           price_physical_minor: b.price_physical_minor ?? null,
+          updated_at: b.updated_at ?? null,
           priority: b.partner_id ? 1 : 99,
         })),
     );
+  }
+  if (s.startsWith('update fair_books set title=$2')) {
+    const b = S.books.find((x) => x.id === p[0]);
+    if (b) {
+      b.title = p[1];
+      b.author = p[2];
+      b.description = p[3];
+      b.language = p[4];
+      b.price_minor = p[5];
+      b.partner_id = p[6];
+      b.status = p[7];
+      b.cover_url = p[8];
+      if (p[9]) b.content_html = p[9];
+      if (p.length > 10) {
+        b.kind = p[10];
+        b.stock = p[11];
+        b.requires_shipping = p[12];
+        b.has_digital = p[13];
+        b.has_physical = p[14];
+      }
+      b.updated_at = new Date().toISOString();
+    }
+    return rows([]);
+  }
+  if (s.startsWith('update fair_books set price_physical_minor=$2')) {
+    const b = S.books.find((x) => x.id === p[0]);
+    if (b) b.price_physical_minor = p[1];
+    return rows([]);
+  }
+  if (s.startsWith('update fair_books set publication_fee_minor = case')) {
+    return rows([]);
+  }
+  if (s.startsWith("update fair_books set status='draft' where id=$1")) {
+    return rows([]);
   }
   if (s.startsWith('insert into fair_orders')) {
     const colMatch = s.match(/insert into fair_orders \(([^)]+)\)/i);

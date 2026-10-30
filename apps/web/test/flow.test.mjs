@@ -47,6 +47,7 @@ const { default: books } = await import('../api/books.js');
 const { default: lead } = await import('../api/lead.js');
 const { default: subscriptions } = await import('../api/subscriptions.js');
 const { default: partnerSubmit } = await import('../api/partner-submit.js');
+const { default: admin } = await import('../api/admin.js');
 const { setSandbox } = await import('../lib/payments.js');
 
 const res = () => {
@@ -222,7 +223,63 @@ assert.equal(simConfirm.body.status, 'paid');
 failWithCompanyError = false;
 await setSandbox(false);
 
-// 8. Validações e protecções de catálogo
+// 8. Modificar capa do livro no Admin actualiza imediatamente a montra (/api/books sem cache antigo) e venda física exige endereço
+const newCover = 'data:image/jpeg;base64,' + 'B'.repeat(2500);
+const admSave = await call(admin, {
+  method: 'POST',
+  headers: { 'x-admin-key': 'kulera' },
+  body: {
+    action: 'save_book',
+    id: U + '11',
+    title: 'Livro Parceiro',
+    author: 'Autor Sol',
+    priceMinor: 70000,
+    pricePhysicalMinor: 120000,
+    hasDigital: true,
+    hasPhysical: true,
+    stock: 5,
+    partnerId: U + '01',
+    status: 'published',
+    coverUrl: newCover,
+  },
+});
+assert.equal(admSave.code, 200);
+const catAfter = await call(books, { method: 'GET' });
+assert.ok(String(catAfter.h['Cache-Control']).includes('no-store'));
+const updatedBook = catAfter.body.find((b) => b.id === U + '11');
+assert.equal(updatedBook.coverUrl, newCover);
+assert.equal(updatedBook.hasPhysical, true);
+assert.equal(updatedBook.physicalPriceMinor, 120000);
+
+// Venda física sem endereço deve falhar com 400 invalid_address
+const physNoAddr = await call(checkout, {
+  method: 'POST',
+  body: { bookId: U + '11', format: 'physical', name: 'Carlos', phone: '841234567' },
+});
+assert.equal(physNoAddr.code, 400);
+assert.equal(physNoAddr.body.error, 'invalid_address');
+
+// Venda física com endereço válido guarda morada e desconta stock
+const physOk = await call(checkout, {
+  method: 'POST',
+  body: {
+    bookId: U + '11',
+    format: 'physical',
+    name: 'Carlos',
+    phone: '841234567',
+    shippingAddress: 'Av. Julius Nyerere 123, Polana',
+    shippingCity: 'Maputo',
+  },
+});
+assert.equal(physOk.code, 200);
+assert.equal(physOk.body.format, 'physical');
+assert.equal(S.books.find((b) => b.id === U + '11').stock, 4);
+const lastOrder = S.orders[S.orders.length - 1];
+assert.equal(lastOrder.type, 'physical');
+assert.equal(lastOrder.shipping_address, 'Av. Julius Nyerere 123, Polana');
+assert.equal(lastOrder.shipping_city, 'Maputo');
+
+// 9. Validações e protecções de catálogo
 for (const id of [U + '13', U + '14', U + '99']) {
   assert.equal((await call(checkout, { method: 'POST', body: { ...body, bookId: id } })).code, 404);
 }

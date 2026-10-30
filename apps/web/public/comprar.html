@@ -12,20 +12,27 @@
   <section class="panel" style="max-width:520px">
     <h1 style="font-size:28px">Finalizar compra</h1>
     <div id="info" style="text-align:center"></div>
-    <div style="background:#e8f4f5;border:1px solid #c2e2e5;border-radius:8px;padding:12px 14px;margin:12px 0;font-size:14px;color:#18454b;line-height:1.45;display:flex;gap:10px;align-items:flex-start">
-      <span style="font-size:18px">📖</span>
-      <div><b>Como vai ler o seu livro?</b><br>Não precisa de criar conta. Assim que o pagamento for concluído, o seu livro abre automaticamente aqui e recebe o link de acesso no telemóvel/email para ler quando quiser.</div>
+    <div id="shareBox" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:8px 0 12px" hidden>
+      <button type="button" id="shareNative" style="background:#e8f4f5;color:#0b5c63;border:1px solid #b8dce0;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer;width:auto">🔗 Partilhar livro</button>
+      <a id="shareWa" href="#" target="_blank" rel="noopener" style="background:#e8f4f5;color:#0b5c63;border:1px solid #b8dce0;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center">💬 WhatsApp</a>
+      <button type="button" id="shareCopy" style="background:#e8f4f5;color:#0b5c63;border:1px solid #b8dce0;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer;width:auto">📋 Copiar link</button>
+    </div>
+    <p id="shareMsg" style="text-align:center;font-size:13px;color:#0b5c63;font-weight:600;margin:4px 0" hidden></p>
+    <div id="modeNotice" style="background:#e8f4f5;border:1px solid #c2e2e5;border-radius:8px;padding:12px 14px;margin:12px 0;font-size:14px;color:#18454b;line-height:1.45;display:flex;gap:10px;align-items:flex-start">
+      <span id="modeIcon" style="font-size:18px">📖</span>
+      <div id="modeText"><b>Como vai ler o seu livro?</b><br>Não precisa de criar conta. Assim que o pagamento for concluído, o seu livro abre automaticamente aqui e recebe o link de acesso no telemóvel/email para ler quando quiser.</div>
     </div>
     <form id="form" novalidate>
       <label>Nome completo<input name="name" autocomplete="name" required maxlength="80"></label>
       <label>Telefone (M-Pesa / e-Mola)<input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="84 000 0000" required></label>
       <label>Email <small>(opcional)</small><input name="email" type="email" autocomplete="email"></label>
-      <div id="ship" hidden>
-        <h2 style="font:700 20px Georgia,serif;margin:8px 0">Dados de entrega</h2>
-        <label>Nome para entrega<input name="shippingName"></label>
-        <label>Telefone para entrega<input name="shippingPhone"></label>
-        <label>Morada completa<input name="shippingAddress" required></label>
-        <label>Cidade/Província<input name="shippingCity"></label>
+      <div id="ship" hidden style="background:#fffdf7;border:1.5px solid #e0a800;border-radius:10px;padding:14px;margin:10px 0;display:grid;gap:10px">
+        <h2 style="font:700 18px Georgia,serif;margin:0;color:#5a3e00">📦 Endereço para Entrega (Obrigatório para livro físico)</h2>
+        <p style="margin:0;font-size:13px;color:#6b5211">Preencha os dados abaixo para enviarmos o exemplar físico até si.</p>
+        <label>Nome do destinatário<input name="shippingName" placeholder="Quem vai receber o livro"></label>
+        <label>Telefone de contacto na entrega<input name="shippingPhone" type="tel" inputmode="tel" placeholder="84 000 0000"></label>
+        <label>Endereço / Morada completa para entrega *<input name="shippingAddress" placeholder="Bairro, Avenida/Rua, Nº da casa ou ponto de referência"></label>
+        <label>Cidade / Província *<input name="shippingCity" placeholder="Ex: Maputo, Matola, Beira, Nampula..."></label>
       </div>
       <p class="msg" id="msg" role="alert"></p>
       <button id="go" type="submit">Ir para pagamento</button>
@@ -34,18 +41,42 @@
 </main>
 <script>
 const $=id=>document.getElementById(id);
-const errors={invalid_name:'Escreva o seu nome.',invalid_phone:'Escreva um número de telemóvel válido, só com números.',invalid_email:'O email não parece válido.',book_unavailable:'Este livro já não está disponível.',payment_unavailable:'Não foi possível iniciar o pagamento.',invalid_address:'Indique a morada para entrega.',invalid_format:'Escolha um formato válido.'};
+const errors={invalid_name:'Escreva o seu nome.',invalid_phone:'Escreva um número de telemóvel válido, só com números.',invalid_email:'O email não parece válido.',book_unavailable:'Este livro já não está disponível.',payment_unavailable:'Não foi possível iniciar o pagamento.',invalid_address:'Indique o endereço completo (morada e cidade) para a entrega do livro físico.',invalid_format:'Escolha um formato válido.'};
 const money=(m,c)=>{try{return new Intl.NumberFormat('pt-MZ',{style:'currency',currency:c}).format(m/100)}catch{return (m/100).toFixed(2)+' '+c}};
-const id=new URLSearchParams(location.search).get('id');
+const params=new URLSearchParams(location.search);
+const id=params.get('id');
+const requestedFmt=params.get('fmt');
 let b=null,fmt='digital';
 function priceFor(f){return f==='physical'?(b.physicalPriceMinor??b.priceMinor):(b.digitalPriceMinor??b.priceMinor)}
-function applyFmt(){const physical=fmt==='physical';$('ship').hidden=!physical;const f=$('form');if(physical){if(!f.shippingName.value)f.shippingName.value=f.name.value||'';if(!f.shippingPhone.value)f.shippingPhone.value=f.phone.value||'';}const pe=$('fmtPrice');if(pe)pe.textContent=money(priceFor(fmt),b.currency);$('go').textContent=(physical?'Pagar (entrega) ':'Pagar ')+money(priceFor(fmt),b.currency);}
+function applyFmt(){
+  const physical=fmt==='physical';
+  const shipEl=$('ship');
+  shipEl.hidden=!physical;
+  shipEl.style.display=physical?'grid':'none';
+  const f=$('form');
+  f.shippingAddress.required=physical;
+  f.shippingCity.required=physical;
+  if(physical){
+    if(!f.shippingName.value)f.shippingName.value=f.name.value||'';
+    if(!f.shippingPhone.value)f.shippingPhone.value=f.phone.value||'';
+    $('modeIcon').textContent='📦';
+    $('modeText').innerHTML='<b>Entrega de Livro Físico</b><br>Na compra de livro físico é obrigatório indicar o <b>endereço completo de entrega</b>. Após a confirmação do pagamento, a nossa equipa entrará em contacto para a entrega no endereço indicado.';
+  } else {
+    $('modeIcon').textContent='📖';
+    $('modeText').innerHTML='<b>Como vai ler o seu livro?</b><br>Não precisa de criar conta. Assim que o pagamento for concluído, o seu livro abre automaticamente aqui e recebe o link de acesso no telemóvel/email para ler quando quiser.';
+  }
+  const pe=$('fmtPrice');
+  if(pe)pe.textContent=money(priceFor(fmt),b.currency);
+  $('go').textContent=(physical?'Pagar (entrega) ':'Pagar ')+money(priceFor(fmt),b.currency);
+}
 async function load(){
-  const r=await fetch('/api/books'); const list=await r.json();
+  const r=await fetch('/api/books?_='+Date.now(),{cache:'no-store'}); const list=await r.json();
   b=(list||[]).find(x=>x.id===id);
   if(!b){$('info').innerHTML='<p class="msg err">Livro não encontrado.</p>'; $('form').hidden=true; return;}
   const hasD=b.hasDigital!==false, hasP=b.hasPhysical===true||b.requiresShipping===true;
-  fmt=hasD?'digital':'physical';
+  if(requestedFmt==='physical' && hasP) fmt='physical';
+  else if(requestedFmt==='digital' && hasD) fmt='digital';
+  else fmt=hasD?'digital':'physical';
   const badge=[hasD?'E-book':null,hasP?'Físico':null].filter(Boolean).join(' + ');
   const info=$('info');
   info.innerHTML='';
@@ -61,8 +92,12 @@ async function load(){
     cv.appendChild(sp);
   };
   if(b.coverUrl && String(b.coverUrl).trim()){
+    let src=String(b.coverUrl).trim();
+    if(/^https?:\/\//i.test(src) && b.updatedAt){
+      src += (src.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(String(b.updatedAt));
+    }
     const im=document.createElement('img');
-    im.src=String(b.coverUrl).trim();
+    im.src=src;
     im.alt='Capa de '+b.title;
     im.onerror=()=>showFallback();
     cv.appendChild(im);
@@ -73,21 +108,63 @@ async function load(){
 
   const meta=document.createElement('div');
   let html='<p style="margin:4px 0"><b id="bTitleText"></b><br><span style="color:#557077" id="bAuthorText"></span><br><small style="color:var(--sea);font-weight:600">'+badge+'</small><br><span class="price" id="fmtPrice" style="font-size:24px;display:inline-block;margin:10px 0 4px"></span></p>';
-  if(hasD&&hasP){html+='<p style="margin:10px 0"><b>Formato:</b> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400"><input type="radio" name="fmt" value="digital" checked style="width:auto"> E-book (digital) — '+money(priceFor('digital'),b.currency)+'</label> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400"><input type="radio" name="fmt" value="physical" style="width:auto"> Físico (entrega) — '+money(priceFor('physical'),b.currency)+'</label></p>';}
+  if(hasD&&hasP){html+='<p style="margin:10px 0"><b>Escolha o formato:</b><br><label style="display:inline-flex;gap:6px;align-items:center;font-weight:400;margin:4px 8px"><input type="radio" name="fmt" value="digital" '+(fmt==='digital'?'checked':'')+' style="width:auto"> 📱 E-book (digital) — '+money(priceFor('digital'),b.currency)+'</label> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400;margin:4px 8px"><input type="radio" name="fmt" value="physical" '+(fmt==='physical'?'checked':'')+' style="width:auto"> 📦 Físico (entrega) — '+money(priceFor('physical'),b.currency)+'</label></p>';}
   meta.innerHTML=html;
   info.appendChild(meta);
   $('bTitleText').textContent=b.title;
   $('bAuthorText').textContent=b.author;
+
+  // Configurar botões de partilha
+  const shareUrl = location.origin + '/comprar.html?id=' + encodeURIComponent(b.id);
+  const shareTxt = `📖 "${b.title}" de ${b.author} disponível na Kulera+! Compre aqui: ${shareUrl}`;
+  $('shareBox').hidden = false;
+  $('shareWa').href = 'https://wa.me/?text=' + encodeURIComponent(shareTxt);
+  $('shareNative').onclick = async () => {
+    if(navigator.share){
+      try { await navigator.share({ title: b.title + ' · Kulera+', text: `📖 "${b.title}" de ${b.author} na Kulera+`, url: shareUrl }); return; } catch {}
+    }
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      $('shareMsg').textContent = '✓ Link copiado!';
+      $('shareMsg').hidden = false;
+      setTimeout(() => { $('shareMsg').hidden = true; }, 3500);
+    } catch { prompt('Copie o link do livro:', shareUrl); }
+  };
+  $('shareCopy').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      $('shareMsg').textContent = '✓ Link copiado: ' + shareUrl;
+      $('shareMsg').hidden = false;
+      setTimeout(() => { $('shareMsg').hidden = true; }, 3500);
+    } catch { prompt('Copie o link do livro:', shareUrl); }
+  };
 
   document.querySelectorAll('[name=fmt]').forEach(x=>x.onchange=()=>{fmt=x.value;applyFmt();});
   const f=$('form'); f.name.oninput=()=>{if(fmt==='physical')f.shippingName.value=f.name.value}; f.phone.oninput=()=>{if(fmt==='physical')f.shippingPhone.value=f.phone.value};
   applyFmt();
   f.onsubmit=async e=>{
     e.preventDefault();const fd=new FormData(e.target),msg=$('msg'),btn=$('go');
-    msg.className='msg';msg.textContent='';btn.disabled=true;const label=btn.textContent;btn.textContent='A abrir pagamento...';
+    msg.className='msg';msg.textContent='';
+    if(fmt==='physical'){
+      const addr=String(fd.get('shippingAddress')||'').trim();
+      const city=String(fd.get('shippingCity')||'').trim();
+      if(addr.length<5){
+        msg.className='msg err';
+        msg.textContent='Na compra de livro físico é obrigatório indicar o endereço/morada completa para entrega.';
+        f.shippingAddress.focus();
+        return;
+      }
+      if(city.length<2){
+        msg.className='msg err';
+        msg.textContent='Por favor, indique a Cidade / Província para a entrega.';
+        f.shippingCity.focus();
+        return;
+      }
+    }
+    btn.disabled=true;const label=btn.textContent;btn.textContent='A abrir pagamento...';
     try{
       const body={bookId:b.id,format:fmt,name:fd.get('name'),phone:fd.get('phone'),email:fd.get('email')};
-      if(fmt==='physical'){body.shippingName=fd.get('shippingName');body.shippingPhone=fd.get('shippingPhone');body.shippingAddress=fd.get('shippingAddress');body.shippingCity=fd.get('shippingCity');}
+      if(fmt==='physical'){body.shippingName=fd.get('shippingName')||fd.get('name');body.shippingPhone=fd.get('shippingPhone')||fd.get('phone');body.shippingAddress=fd.get('shippingAddress');body.shippingCity=fd.get('shippingCity');}
       const rr=await fetch('/api/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const j=await rr.json();
       if(!rr.ok){const er=new Error(j.error||'payment_unavailable');er.detail=j.detail;throw er;}
