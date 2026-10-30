@@ -10,12 +10,15 @@ export default async function handler(req, res) {
                 coalesce(b.kind,'ebook') as kind, b.requires_shipping, b.stock, coalesce(b.has_digital,true) as has_digital,
                 coalesce(b.has_physical,false) as has_physical, b.content_html is not null as has_content,
                 (to_jsonb(b)->>'price_physical_minor')::bigint as price_physical_minor,
-                coalesce(max(p.showcase_priority), case when b.partner_id is null then 99 else 0 end) as priority
+                coalesce(max(p.showcase_priority), case when b.partner_id is null then 99 else 1 end) as priority
            from fair_books b
            left join fair_subscriptions s on s.partner_id = b.partner_id and s.status = 'active' and s.ends_at > now()
            left join fair_plans p on p.id = s.plan_id
           where b.status = 'published'
-            and (b.partner_id is null or s.id is not null)
+            and (coalesce(b.kind,'ebook') = 'physical' or coalesce(b.has_physical,false) = true or b.content_html is not null)
+            and (b.partner_id is null
+                 or s.id is not null
+                 or not exists (select 1 from fair_subscriptions sx where sx.partner_id = b.partner_id))
           group by b.id
           order by priority desc, b.created_at desc limit 200`);
       rows = r.rows;
@@ -23,10 +26,42 @@ export default async function handler(req, res) {
       const r = await pool.query(
         `select id, title, author, description, language, price_minor, currency, cover_url
            from fair_books where status = 'published' order by created_at desc limit 200`);
-      rows = r.rows.map(x=>({...x, kind:'ebook', requires_shipping:false, stock:null, has_digital:true, has_physical:false, has_content:null}));
+      rows = r.rows.map((x) => ({
+        ...x,
+        kind: 'ebook',
+        requires_shipping: false,
+        stock: null,
+        has_digital: true,
+        has_physical: false,
+        has_content: null,
+      }));
     }
-    res.json(rows.map((b) => ({ id: b.id, title: b.title, author: b.author, description: b.description, language: b.language,
-      priceMinor: Number(b.price_minor), digitalPriceMinor: b.has_digital !== false ? Number(b.price_minor) : null, physicalPriceMinor: (b.has_physical === true || b.kind==='physical') ? Number(b.price_physical_minor ?? b.price_minor) : null, currency: b.currency, coverUrl: b.cover_url, kind: b.kind || 'ebook', requiresShipping: b.requires_shipping || b.kind==='physical', stock: b.stock, hasDigital: b.has_digital !== false, hasPhysical: b.has_physical === true || b.kind==='physical', hasContent: b.has_content })));
+    res.json(
+      rows.map((b) => {
+        const out = {
+          id: b.id,
+          title: b.title,
+          author: b.author,
+          description: b.description,
+          language: b.language,
+          priceMinor: Number(b.price_minor),
+          digitalPriceMinor: b.has_digital !== false ? Number(b.price_minor) : null,
+          physicalPriceMinor:
+            b.has_physical === true || b.kind === 'physical'
+              ? Number(b.price_physical_minor ?? b.price_minor)
+              : null,
+          currency: b.currency,
+          coverUrl: b.cover_url,
+          kind: b.kind || 'ebook',
+          requiresShipping: b.requires_shipping || b.kind === 'physical',
+          stock: b.stock,
+          hasDigital: b.has_digital !== false,
+          hasPhysical: b.has_physical === true || b.kind === 'physical',
+          hasContent: b.has_content,
+        };
+        return out;
+      }),
+    );
   } catch (e) {
     console.error('books.error', e?.message || String(e));
     res.status(500).json({ error: 'internal_error' });

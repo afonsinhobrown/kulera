@@ -1,72 +1,241 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { Pool, S } from './fake-pg.js';
+
 globalThis.__kuleraPool = new Pool(); // base de dados falsa: testa a lógica sem PostgreSQL
-process.env.PAYSUITE_WEBHOOK_SECRET = 'seg'; process.env.PAYSUITE_CREATE_URL = 'https://ps.test/pay'; process.env.PAYSUITE_TOKEN = 't'; process.env.SITE_URL = 'https://site.test';
-let n = 0; let failNext = false;
-globalThis.fetch = async () => { if (failNext) return { ok: false, status: 500 }; n++; return { ok: true, json: async () => ({ data: { id: 'ps_' + n, checkout_url: 'https://pay.test/' + n } }) }; };
-const { default: checkout } = await import('../api/checkout.js'); const { default: webhook } = await import('../api/webhook.js');
-const { default: chapter } = await import('../api/chapter.js'); const { default: status } = await import('../api/status.js'); const { default: books } = await import('../api/books.js');
+process.env.PAYSUITE_WEBHOOK_SECRET = 'seg';
+process.env.PAYSUITE_CREATE_URL = 'https://ps.test/pay';
+process.env.PAYSUITE_TOKEN = 't';
+process.env.SITE_URL = 'https://site.test';
+delete process.env.SANDBOX;
+
+let n = 0;
+let failNext = false;
+let failWithCompanyError = false;
+let remotePaidIds = new Set();
+
+globalThis.fetch = async (url, opts = {}) => {
+  if (String(url).includes('/payments/') && (!opts.method || opts.method === 'GET')) {
+    const id = decodeURIComponent(String(url).split('/payments/')[1]);
+    return {
+      ok: true,
+      json: async () => ({ data: { id, status: remotePaidIds.has(id) ? 'paid' : 'pending' } }),
+    };
+  }
+  if (failWithCompanyError) {
+    return {
+      ok: false,
+      status: 403,
+      text: async () => JSON.stringify({ status: 'error', message: 'API access is only available for company accounts.' }),
+    };
+  }
+  if (failNext) {
+    return { ok: false, status: 500, text: async () => 'Gateway error' };
+  }
+  n++;
+  return {
+    ok: true,
+    json: async () => ({ data: { id: 'ps_' + n, checkout_url: 'https://pay.test/' + n } }),
+  };
+};
+
+const { default: checkout } = await import('../api/checkout.js');
+const { default: webhook } = await import('../api/webhook.js');
+const { default: chapter } = await import('../api/chapter.js');
+const { default: status } = await import('../api/status.js');
+const { default: books } = await import('../api/books.js');
 const { default: lead } = await import('../api/lead.js');
-const res = () => { const r = { code: 200, h: {}, setHeader(k, v) { r.h[k] = v; }, status(c) { r.code = c; return r; }, json(b) { r.body = b; return r; } }; return r; };
-const call = async (h, req) => { const r = res(); await h(req, r); return r; };
-const hook = async (event, data, sig) => { const raw = JSON.stringify({ event, data }); const req = (async function* () { yield Buffer.from(raw); })(); req.method = 'POST'; req.headers = { 'x-signature': sig ?? createHmac('sha256', 'seg').update(raw).digest('hex') }; const r = res(); await webhook(req, r); return r; };
+const { default: subscriptions } = await import('../api/subscriptions.js');
+const { default: partnerSubmit } = await import('../api/partner-submit.js');
+const { setSandbox } = await import('../lib/payments.js');
+
+const res = () => {
+  const r = {
+    code: 200,
+    h: {},
+    setHeader(k, v) {
+      r.h[k] = v;
+    },
+    status(c) {
+      r.code = c;
+      return r;
+    },
+    json(b) {
+      r.body = b;
+      return r;
+    },
+  };
+  return r;
+};
+const call = async (h, req) => {
+  const r = res();
+  await h(req, r);
+  return r;
+};
+const hook = async (event, data, sig) => {
+  const raw = JSON.stringify({ event, data });
+  const req = (async function* () {
+    yield Buffer.from(raw);
+  })();
+  req.method = 'POST';
+  req.headers = { 'x-signature': sig ?? createHmac('sha256', 'seg').update(raw).digest('hex') };
+  const r = res();
+  await webhook(req, r);
+  return r;
+};
 
 const U = '00000000-0000-4000-8000-0000000000';
-S.partners.push({ id: U + '01', commission_bps: 2000 });
-S.books.push({ id: U + '11', title: 'Livro Parceiro', partner_id: U + '01', price_minor: 70000, currency: 'MZN', status: 'published', content_html: '<h1>Cap Um</h1><p>a</p><h1>Cap Dois</h1><p>b</p>' },
-  { id: U + '12', title: 'Livro Kulera', partner_id: null, price_minor: 35000, currency: 'MZN', status: 'published', content_html: '<h1>Único</h1><p>x</p>' },
+S.partners.push({ id: U + '01', name: 'Editora Sol', phone: '841112223', email: 'sol@editora.mz', commission_bps: 3000, status: 'active' });
+S.partnerUsers.push({ id: U + '51', partner_id: U + '01', email: 'sol@editora.mz', status: 'active' });
+S.books.push(
+  {
+    id: U + '11',
+    title: 'Livro Parceiro',
+    partner_id: U + '01',
+    price_minor: 70000,
+    currency: 'MZN',
+    status: 'published',
+    content_html: '<h1>Cap Um</h1><p>a</p><h1>Cap Dois</h1><p>b</p>',
+  },
+  {
+    id: U + '12',
+    title: 'Livro Kulera',
+    partner_id: null,
+    price_minor: 35000,
+    currency: 'MZN',
+    status: 'published',
+    content_html: '<h1>Único</h1><p>x</p>',
+  },
   { id: U + '13', title: 'Rascunho', partner_id: null, price_minor: 1000, currency: 'MZN', status: 'draft', content_html: '<h1>x</h1>' },
-  { id: U + '14', title: 'Sem conteúdo', partner_id: null, price_minor: 1000, currency: 'MZN', status: 'published', content_html: null });
+  { id: U + '14', title: 'Sem conteúdo', partner_id: null, price_minor: 1000, currency: 'MZN', status: 'published', content_html: null },
+  {
+    id: U + '15',
+    title: 'Livro Aprovado Pendente Taxa',
+    partner_id: U + '01',
+    price_minor: 50000,
+    publication_fee_minor: 50000,
+    publication_fee_paid_at: null,
+    currency: 'MZN',
+    status: 'draft',
+    content_html: '<h1>Cap Taxa</h1><p>ok</p>',
+  },
+);
 
-// catálogo: só publicados com conteúdo
+// 1. Catálogo: só publicados com conteúdo
 const cat = await call(books, { method: 'GET' });
 assert.deepEqual(cat.body.map((b) => b.title).sort(), ['Livro Kulera', 'Livro Parceiro']);
-assert.ok(cat.body.every((b) => !('content_html' in b) && !('contentHtml' in b)));
 
-// compra: preço vem do catálogo; o cliente não envia valor
+// 2. Compra de e-book de parceiro: preço vem do catálogo
 const body = { bookId: U + '11', name: 'Ana Silva', phone: '84 123 4567', email: '', amount: 1 };
 const c1 = await call(checkout, { method: 'POST', body });
-assert.equal(c1.code, 200); assert.ok(c1.body.checkoutUrl.startsWith('https://pay.test/'));
-assert.equal(S.orders[0].amount_minor, 70000); assert.equal(S.orders[0].buyer_phone, '841234567');
+assert.equal(c1.code, 200);
+assert.ok(c1.body.checkoutUrl.startsWith('https://pay.test/'));
+assert.equal(S.orders[0].amount_minor, 70000);
+assert.equal(S.orders[0].buyer_phone, '841234567');
 const token = c1.body.token;
 assert.equal((await call(status, { query: { t: token } })).body.status, 'pending');
 
-// sem pagamento, o livro não abre
+// Sem pagamento, o livro não abre
 assert.equal((await call(chapter, { query: { t: token, i: '0' } })).code, 403);
 assert.equal((await call(chapter, { query: { t: 'x'.repeat(64) } })).code, 403);
 
-// webhook inválido não muda nada
+// Webhook inválido não muda nada
 assert.equal((await hook('payment.success', { id: 'ps_1' }, 'errada')).code, 401);
 assert.equal(S.orders[0].status, 'pending');
-// cancelado não activa
-await hook('payment.cancelled', { id: 'ps_1' }); assert.notEqual(S.orders[0].status, 'paid');
+// Cancelado não activa
+await hook('payment.cancelled', { id: 'ps_1' });
+assert.notEqual(S.orders[0].status, 'paid');
 
-// pagamento confirmado: activa e divide a receita (20% Kulera, 80% parceiro)
+// Pagamento confirmado via webhook: activa e divide a receita (20% App + 10% Editores + 70% Parceiro)
 const w1 = await hook('payment.success', { id: 'ps_1' });
-assert.equal(w1.body.result, 'applied'); assert.equal(S.orders[0].status, 'paid');
-assert.deepEqual([S.sales[0].commission, S.sales[0].partner, S.sales[0].bps], [14000, 56000, 2000]);
-// repetido não duplica
-assert.equal((await hook('payment.success', { id: 'ps_1' })).body.result, 'duplicate'); assert.equal(S.sales.length, 1);
+assert.equal(w1.body.result, 'applied');
+assert.equal(S.orders[0].status, 'paid');
+assert.deepEqual([S.sales[0].commission, S.sales[0].partner, S.sales[0].app, S.sales[0].editors], [21000, 49000, 14000, 7000]);
 
-// agora lê, com marca de água e capítulos
+// Webhook repetido não duplica
+assert.equal((await hook('payment.success', { id: 'ps_1' })).body.result, 'duplicate');
+assert.equal(S.sales.length, 1);
+
+// Leitura após pagamento, com marca de água e capítulos
 const ch = await call(chapter, { query: { t: token, i: '1' } });
-assert.equal(ch.code, 200); assert.equal(ch.body.total, 2); assert.deepEqual(ch.body.toc, ['Cap Um', 'Cap Dois']);
+assert.equal(ch.code, 200);
+assert.equal(ch.body.total, 2);
+assert.deepEqual(ch.body.toc, ['Cap Um', 'Cap Dois']);
 assert.ok(ch.body.html.includes('Cap Dois') && ch.body.html.includes('Exemplar de Ana Silva'));
 assert.equal((await call(chapter, { query: { t: token, i: '9' } })).code, 400);
 
-// livro da Kulera: 100% Kulera
+// 3. Livro da própria Kulera: 20% App + 80% Editores (0% parceiro)
 const c2 = await call(checkout, { method: 'POST', body: { ...body, bookId: U + '12' } });
+assert.equal(c2.code, 200);
 await hook('payment.success', { id: 'ps_2' });
-assert.deepEqual([S.sales[1].commission, S.sales[1].partner, S.sales[1].partner_id], [35000, 0, null]);
+assert.deepEqual([S.sales[1].commission, S.sales[1].partner, S.sales[1].partner_id, S.sales[1].app, S.sales[1].editors], [35000, 0, null, 7000, 28000]);
 
-// não se vende rascunho, nem livro sem conteúdo, nem id inválido
-for (const id of [U + '13', U + '14', U + '99']) assert.equal((await call(checkout, { method: 'POST', body: { ...body, bookId: id } })).code, 404);
+// 4. Verificação activa de pagamento (polling PaySuite no /api/status mesmo antes de chegar o webhook)
+const c3 = await call(checkout, { method: 'POST', body: { ...body, bookId: U + '12' } });
+assert.equal(c3.code, 200);
+remotePaidIds.add('ps_3');
+const stPolled = await call(status, { method: 'GET', query: { t: c3.body.token } });
+assert.equal(stPolled.body.status, 'paid');
+
+// 5. Subscrição de plano de parceiro via PaySuite
+await call(subscriptions, { method: 'GET' }); // inicializa planos
+const basicPlan = S.plans[0];
+const subPay = await call(subscriptions, {
+  method: 'POST',
+  headers: { 'x-partner-token': U + '51' },
+  body: { planId: basicPlan.id, phone: '84 999 8888' },
+});
+assert.equal(subPay.code, 200);
+await hook('payment.success', { id: 'ps_4' });
+assert.equal(S.subscriptions.length, 1);
+assert.equal(S.subscriptions[0].partner_id, U + '01');
+
+// 6. Pagamento de taxa de publicação (500 MT) publica o livro automaticamente
+const feePay = await call(partnerSubmit, {
+  method: 'POST',
+  headers: { 'x-partner-token': U + '51' },
+  body: { action: 'pay_fee', bookId: U + '15', phone: '841112223' },
+});
+assert.equal(feePay.code, 200);
+await hook('payment.success', { id: 'ps_5' });
+assert.equal(S.publicationFees.length, 1);
+assert.equal(S.books.find((b) => b.id === U + '15').status, 'published');
+
+// 7. Modo Sandbox + Fallback de Simulação quando a conta PaySuite não é empresarial (403)
+await setSandbox(true);
+failWithCompanyError = true;
+const cSim = await call(checkout, { method: 'POST', body: { ...body, bookId: U + '11' } });
+assert.equal(cSim.code, 200);
+assert.equal(cSim.body.sandbox, true);
+assert.equal(cSim.body.simulated, true);
+assert.equal(cSim.body.amountMinor, 100); // 1 MT em sandbox
+assert.ok(cSim.body.checkoutUrl.includes('/pagamento.html?t=') && cSim.body.checkoutUrl.includes('sim=1'));
+
+const simConfirm = await call(status, {
+  method: 'POST',
+  body: { token: cSim.body.token, simulate: 'paid' },
+});
+assert.equal(simConfirm.code, 200);
+assert.equal(simConfirm.body.status, 'paid');
+failWithCompanyError = false;
+await setSandbox(false);
+
+// 8. Validações e protecções de catálogo
+for (const id of [U + '13', U + '14', U + '99']) {
+  assert.equal((await call(checkout, { method: 'POST', body: { ...body, bookId: id } })).code, 404);
+}
 assert.equal((await call(checkout, { method: 'POST', body: { ...body, bookId: 'x' } })).code, 400);
 assert.equal((await call(checkout, { method: 'POST', body: { ...body, bookId: U + '11', phone: '12' } })).code, 400);
-// PaySuite em baixo: erro claro
-failNext = true; assert.equal((await call(checkout, { method: 'POST', body })).code, 502); failNext = false;
-// leads: validação e armadilha de robôs
+
+// PaySuite em baixo fora de sandbox: erro 502 claro com detalhe
+failNext = true;
+const cFail = await call(checkout, { method: 'POST', body });
+assert.equal(cFail.code, 502);
+assert.ok(cFail.body.detail);
+failNext = false;
+
+// Leads: validação e armadilha de robôs
 assert.equal((await call(lead, { method: 'POST', body: { name: 'A', kind: 'x', phone: '1' } })).code, 400);
 assert.equal((await call(lead, { method: 'POST', body: { website: 'spam' } })).code, 200);
+
 console.log('fluxo completo OK');

@@ -121,7 +121,7 @@ async function loadReports(){const {ok,j}=await call('/api/partner-submit?report
         btn.disabled = true; btn.textContent = 'A gerar...';
         const res = await call('/api/partner-submit', { action: 'pay_fee', bookId: item.id, phone: tel });
         if(res.ok && res.j.checkoutUrl){ location.href = res.j.checkoutUrl; }
-        else { alert('Não foi possível gerar o pagamento PaySuite.'); btn.disabled = false; btn.textContent = 'Pagar Taxa'; }
+        else { alert('Não foi possível gerar o pagamento PaySuite' + (res.j?.detail ? ': ' + res.j.detail : '.')); btn.disabled = false; btn.textContent = 'Pagar Taxa'; }
       };
       row.appendChild(btn); fl.appendChild(row);
     });

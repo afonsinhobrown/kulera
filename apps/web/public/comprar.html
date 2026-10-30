@@ -34,7 +34,7 @@
 </main>
 <script>
 const $=id=>document.getElementById(id);
-const errors={invalid_name:'Escreva o seu nome.',invalid_phone:'Escreva um número de telemóvel válido, só com números.',invalid_email:'O email não parece válido.',book_unavailable:'Este livro já não está disponível.',payment_unavailable:'Não foi possível iniciar o pagamento. Tente novamente.',invalid_address:'Indique a morada para entrega.',invalid_format:'Escolha um formato válido.'};
+const errors={invalid_name:'Escreva o seu nome.',invalid_phone:'Escreva um número de telemóvel válido, só com números.',invalid_email:'O email não parece válido.',book_unavailable:'Este livro já não está disponível.',payment_unavailable:'Não foi possível iniciar o pagamento.',invalid_address:'Indique a morada para entrega.',invalid_format:'Escolha um formato válido.'};
 const money=(m,c)=>{try{return new Intl.NumberFormat('pt-MZ',{style:'currency',currency:c}).format(m/100)}catch{return (m/100).toFixed(2)+' '+c}};
 const id=new URLSearchParams(location.search).get('id');
 let b=null,fmt='digital';
@@ -66,10 +66,16 @@ async function load(){
       const body={bookId:b.id,format:fmt,name:fd.get('name'),phone:fd.get('phone'),email:fd.get('email')};
       if(fmt==='physical'){body.shippingName=fd.get('shippingName');body.shippingPhone=fd.get('shippingPhone');body.shippingAddress=fd.get('shippingAddress');body.shippingCity=fd.get('shippingCity');}
       const rr=await fetch('/api/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      const j=await rr.json();if(!rr.ok)throw new Error(j.error);
+      const j=await rr.json();
+      if(!rr.ok){const er=new Error(j.error||'payment_unavailable');er.detail=j.detail;throw er;}
       try{localStorage.setItem('kulera_token',j.token)}catch{}
       location.href=j.checkoutUrl;
-    }catch(err){msg.className='msg err';msg.textContent=errors[err.message]||'Algo correu mal. Tente novamente.';btn.disabled=false;btn.textContent=label}
+    }catch(err){
+      const base=errors[err.message]||'Algo correu mal. Tente novamente.';
+      msg.className='msg err';
+      msg.textContent=err.detail?`${base} (${err.detail})`:base;
+      btn.disabled=false;btn.textContent=label;
+    }
   };
 }
 load();

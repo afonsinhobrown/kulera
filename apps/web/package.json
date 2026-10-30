@@ -10,6 +10,6 @@
     "pg": "^8.13.0"
   },
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test test/flow.test.mjs test/lib.test.mjs"
   }
 }

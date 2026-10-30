@@ -533,7 +533,7 @@ async function load(){
         const res = await api({ action: 'subscription_status', id: s.id, actionType: 'unblock' });
         if(res.ok) load(); else alert('Erro ao desbloquear plano.');
       };
-      actionsTd.appendChild(btnUnBlock);
+      actionsTd.appendChild(btnUnblock);
     }
 
     tr.appendChild(actionsTd);

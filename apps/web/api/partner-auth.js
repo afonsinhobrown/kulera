@@ -1,4 +1,4 @@
-﻿import { timingSafeEqual, pbkdf2Sync, randomBytes } from "node:crypto";
+import { timingSafeEqual, pbkdf2Sync, randomBytes } from "node:crypto";
 import { pool } from "../lib/db.js";
 
 const sameKey = (a,b)=>{
@@ -57,7 +57,7 @@ export default async function handler(req,res){
     const [status,body]=await action(req.body??{});
     return res.status(status).json(body);
   }
-  const token = String(req.headers["x-partner-token"]??"");
+  const token = String(req.headers?.["x-partner-token"]??"");
   if(!/^[0-9a-f-]{36}$/.test(token))return res.status(401).json({error:"unauthorized"});
   const r = await pool.query("select u.partner_id,u.email,p.name,p.kind,p.status from fair_partner_users u join fair_partners p on p.id=u.partner_id where u.id=$1 and u.status='active'",[token]);
   if(!r.rows[0])return res.status(401).json({error:"unauthorized"});

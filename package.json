@@ -12,8 +12,8 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "test": "node --test apps/web/test/ && npx tsx --test apps/api/test/domain.test.ts apps/api/test/payments.test.ts apps/api/test/server.test.ts",
-    "test:web": "node --test apps/web/test/",
+    "test": "node --test apps/web/test/flow.test.mjs apps/web/test/lib.test.mjs && npx tsx --test apps/api/test/domain.test.ts apps/api/test/payments.test.ts apps/api/test/server.test.ts",
+    "test:web": "node --test apps/web/test/flow.test.mjs apps/web/test/lib.test.mjs",
     "test:api": "npx tsx --test apps/api/test/domain.test.ts apps/api/test/payments.test.ts apps/api/test/server.test.ts",
     "dev:api": "npx tsx apps/api/src/server.ts"
   },

@@ -1,3 +1,4 @@
+
 create table if not exists fair_orders (
   id uuid primary key default gen_random_uuid(),
   token text not null unique,

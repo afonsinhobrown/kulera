@@ -18,47 +18,89 @@ export default async function handler(req, res) {
   const shippingCity = String(req.body?.shippingCity ?? '').trim();
 
   // Preço, moeda e disponibilidade SEMPRE da base de dados. Nunca se vende um livro sem conteúdo publicado.
-  // Planos expirados do parceiro impedem novas compras de livros desse autor/editora.
-  const found = await pool.query(
-    `select b.id, b.title, b.price_minor, b.currency, b.kind, b.requires_shipping, b.stock, b.content_html,
-            coalesce(b.has_digital,true) as has_digital, coalesce(b.has_physical,false) as has_physical,
-            (to_jsonb(b)->>'price_physical_minor')::bigint as price_physical_minor,
-            b.partner_id,
-            case when b.partner_id is null then true
-                 when exists (select 1 from fair_subscriptions s where s.partner_id = b.partner_id and s.status = 'active' and s.ends_at > now()) then true
-                 else false end as can_sell
-       from fair_books b
-      where b.id = $1 and b.status = 'published'`, [bookId]);
-  const book = found.rows[0];
-  if (!book || !book.can_sell) return res.status(404).json({ error: 'book_unavailable' });
-  const hasDigital = book.has_digital !== false;
+  // Planos expirados/bloqueados do parceiro impedem novas compras de livros desse autor/editora.
+  let book;
+  try {
+    const found = await pool.query(
+      `select b.id, b.title, b.price_minor, b.currency, b.kind, b.requires_shipping, b.stock, b.content_html,
+              coalesce(b.has_digital,true) as has_digital, coalesce(b.has_physical,false) as has_physical,
+              (to_jsonb(b)->>'price_physical_minor')::bigint as price_physical_minor,
+              b.partner_id,
+              case when b.partner_id is null then true
+                   when exists (select 1 from fair_subscriptions s where s.partner_id = b.partner_id and s.status = 'active' and s.ends_at > now()) then true
+                   when not exists (select 1 from fair_subscriptions s where s.partner_id = b.partner_id) then true
+                   else false end as can_sell
+         from fair_books b
+        where b.id = $1 and b.status = 'published'`,
+      [bookId],
+    );
+    book = found.rows[0];
+  } catch {
+    const found = await pool.query(
+      'select id, title, price_minor, currency, kind, requires_shipping, stock, content_html from fair_books where id = $1 and status = $2',
+      [bookId, 'published'],
+    );
+    book = found.rows[0] ? { ...found.rows[0], can_sell: true } : null;
+  }
+
+  if (!book || book.can_sell === false) return res.status(404).json({ error: 'book_unavailable' });
+  const hasDigital = book.has_digital !== false && (book.kind !== 'physical' || book.content_html != null);
   const hasPhysical = book.has_physical === true || book.kind === 'physical' || book.requires_shipping === true;
   if (!hasDigital && !hasPhysical) return res.status(404).json({ error: 'book_unavailable' });
+
   const requested = req.body?.format === 'physical' ? 'physical' : req.body?.format === 'digital' ? 'digital' : null;
   let chosen = requested;
   if (chosen === 'physical' && !hasPhysical) chosen = null;
   if (chosen === 'digital' && !hasDigital) chosen = null;
   if (!chosen) chosen = hasDigital ? 'digital' : 'physical';
   const isPhysical = chosen === 'physical';
+
   if (!isPhysical && !book.content_html) return res.status(404).json({ error: 'book_unavailable' });
   if (isPhysical) {
     if (book.stock != null && Number(book.stock) <= 0) return res.status(404).json({ error: 'book_unavailable' });
     if (!shippingAddress || shippingAddress.length < 5) return res.status(400).json({ error: 'invalid_address' });
   }
-  // Preço de tabela do formato escolhido; em modo sandbox startPayment cobra 10 MT.
+
   const listMinor = isPhysical ? Number(book.price_physical_minor ?? book.price_minor) : Number(book.price_minor);
   if (isPhysical && book.stock != null) {
     await pool.query('update fair_books set stock = stock - 1 where id = $1 and stock >= 1', [book.id]);
   }
-  const pay = await startPayment({
-    type: isPhysical ? 'physical' : 'book', listAmountMinor: listMinor, currency: book.currency, name, phone, email,
-    description: `${isPhysical ? 'Kulera+: Livro físico' : 'Kulera+'}: ${book.title}`,
-    extra: { book_id: book.id, shipping_name: shippingName || name, shipping_phone: shippingPhone || phone, shipping_address: shippingAddress || null, shipping_city: shippingCity || null },
-  });
-  if (!pay.ok) {
-    if (isPhysical && book.stock != null) await pool.query('update fair_books set stock = stock + 1 where id = $1', [book.id]);
-    return res.status(502).json({ error: 'payment_unavailable' });
-  }
-  return res.status(200).json({ checkoutUrl: pay.checkoutUrl, token: pay.token, format: chosen, amountMinor: pay.amountMinor, sandbox: pay.sandbox });
-}
 
+  const pay = await startPayment({
+    type: isPhysical ? 'physical' : 'book',
+    listAmountMinor: listMinor,
+    currency: book.currency,
+    name,
+    phone,
+    email,
+    description: `${isPhysical ? 'Kulera+: Livro físico' : 'Kulera+'}: ${book.title}`,
+    extra: {
+      book_id: book.id,
+      shipping_name: shippingName || name,
+      shipping_phone: shippingPhone || phone,
+      shipping_address: shippingAddress || null,
+      shipping_city: shippingCity || null,
+    },
+    req,
+  });
+
+  if (!pay.ok) {
+    if (isPhysical && book.stock != null) {
+      await pool.query('update fair_books set stock = stock + 1 where id = $1', [book.id]);
+    }
+    return res.status(502).json({
+      error: 'payment_unavailable',
+      detail: pay.errorDetail || 'Falha na comunicação com o gateway PaySuite',
+    });
+  }
+
+  return res.status(200).json({
+    checkoutUrl: pay.checkoutUrl,
+    token: pay.token,
+    format: chosen,
+    amountMinor: pay.amountMinor,
+    sandbox: pay.sandbox,
+    simulated: Boolean(pay.simulated),
+    providerWarning: pay.providerWarning,
+  });
+}

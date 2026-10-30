@@ -7,30 +7,127 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="top">Kulera<span>+</span></div>
+<div class="top"><a href="index.html" style="color:#fff;text-decoration:none">Kulera<span>+</span></a></div>
 <main>
-  <div class="panel" id="panel" aria-live="polite"><div class="spinner"></div><h1>A confirmar o pagamento…</h1><p>Não feche esta página. Normalmente demora poucos segundos.</p></div>
+  <div class="panel" id="panel" aria-live="polite">
+    <div class="spinner"></div>
+    <h1>A confirmar o pagamento…</h1>
+    <p>Não feche esta página. Normalmente demora poucos segundos.</p>
+    <div id="sandboxBox" hidden style="margin-top:20px;padding:16px;background:#fff8e6;border:1.5px solid #e0a800;border-radius:10px;text-align:left">
+      <strong style="color:#7a4b00;display:block;margin-bottom:6px">🧪 Modo Sandbox / Teste Activo</strong>
+      <p style="font-size:13px;color:#5a3700;margin:0 0 12px;line-height:1.45">
+        Esta encomenda está em modo de teste. Pode simular a confirmação imediata do pagamento abaixo para validar todo o fluxo (leitura, subscrição ou publicação):
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button type="button" id="simPayBtn" class="btn" style="background:#0b5c63;color:#fff;border:0;cursor:pointer;padding:10px 16px;border-radius:6px;font-weight:700">✓ Simular Pagamento Confirmado</button>
+        <button type="button" id="simFailBtn" class="btn sec" style="background:#f2dede;color:#842029;border:1px solid #f5c2c7;cursor:pointer;padding:10px 16px;border-radius:6px;font-weight:600">✗ Simular Cancelamento</button>
+      </div>
+      <p id="simMsg" style="font-size:13px;margin:8px 0 0;color:#7a4b00"></p>
+    </div>
+  </div>
 </main>
 <script>
-const t=new URLSearchParams(location.search).get('t')||'';
-const panel=document.getElementById('panel');
-const read='/ler.html?t='+encodeURIComponent(t);
-let tries=0, support='';
-fetch('/api/book').then(r=>r.json()).then(b=>support=b.supportWhatsApp||'').catch(()=>{});
-try{ if(/^[a-f0-9]{64}$/.test(t)) localStorage.setItem('kulera_token',t); }catch{}
-function show(html){ panel.innerHTML=html; }
-function paid(){ show('<h1 class="ok">Pagamento confirmado</h1><p>Obrigado! O seu livro já está disponível.</p><a class="btn" href="'+read+'">Ler agora</a><p class="note">Guarde este endereço para voltar a ler noutro dispositivo:<br><span style="word-break:break-all">'+location.origin+read+'</span></p>'); }
-function failed(){ show('<h1>O pagamento não foi concluído</h1><p>Nada foi cobrado. Pode tentar novamente.</p><a class="btn" href="/">Tentar novamente</a>'); }
-function late(){ show('<h1>Ainda sem confirmação</h1><p>Se já pagou, a confirmação pode demorar alguns minutos. Volte a abrir esta página mais tarde.</p><a class="btn sec" href="'+location.href+'">Verificar outra vez</a>'+(support?'<p class="note">Precisa de ajuda? <a href="https://wa.me/'+support+'">Fale connosco no WhatsApp</a>.</p>':'')); }
-async function check(){
-  if(!/^[a-f0-9]{64}$/.test(t)) return show('<h1>Ligação inválida</h1><a class="btn" href="/">Voltar ao início</a>');
-  try{
-    const r=await fetch('/api/status?t='+t); const j=await r.json();
-    if(j.status==='paid') return paid();
-    if(j.status==='failed'||j.status==='cancelled') return failed();
-  }catch{}
-  if(++tries>=100) return late();
-  setTimeout(check,3000);
+const params = new URLSearchParams(location.search);
+const t = params.get('t') || '';
+const isSimUrl = params.get('sim') === '1';
+const panel = document.getElementById('panel');
+const read = '/ler.html?t=' + encodeURIComponent(t);
+let tries = 0, support = '', stopped = false;
+
+fetch('/api/book').then(r => r.json()).then(b => support = b.supportWhatsApp || '').catch(() => {});
+try { if (/^[a-f0-9]{64}$/.test(t)) localStorage.setItem('kulera_token', t); } catch {}
+
+function show(html) { panel.innerHTML = html; }
+
+function paid(type) {
+  stopped = true;
+  if (type === 'subscription') {
+    return show(
+      '<h1 class="ok">Subscrição activada!</h1>' +
+      '<p>Obrigado! O seu plano mensal de parceiro já se encontra activo.</p>' +
+      '<a class="btn" href="/parceiros-portal.html">Ir para o Portal de Parceiros</a>'
+    );
+  }
+  if (type === 'publication') {
+    return show(
+      '<h1 class="ok">Taxa de publicação confirmada!</h1>' +
+      '<p>Obrigado! O seu livro já foi activado e publicado na montra da Kulera+.</p>' +
+      '<a class="btn" href="/parceiros-portal.html">Voltar ao Portal de Parceiros</a>'
+    );
+  }
+  if (type === 'physical') {
+    return show(
+      '<h1 class="ok">Encomenda confirmada!</h1>' +
+      '<p>Obrigado! O pagamento do seu livro físico foi confirmado. Entraremos em contacto pelo número indicado para a entrega.</p>' +
+      '<a class="btn" href="/">Voltar à loja</a>'
+    );
+  }
+  show(
+    '<h1 class="ok">Pagamento confirmado</h1>' +
+    '<p>Obrigado! O seu livro já está disponível.</p>' +
+    '<a class="btn" href="' + read + '">Ler agora</a>' +
+    '<p class="note">Guarde este endereço para voltar a ler noutro dispositivo:<br><span style="word-break:break-all">' + location.origin + read + '</span></p>'
+  );
+}
+
+function failed() {
+  stopped = true;
+  show('<h1>O pagamento não foi concluído</h1><p>Nada foi cobrado. Pode tentar novamente.</p><a class="btn" href="/">Tentar novamente</a>');
+}
+
+function late() {
+  stopped = true;
+  show('<h1>Ainda sem confirmação</h1><p>Se já pagou, a confirmação pode demorar alguns minutos. Volte a abrir esta página mais tarde.</p><a class="btn sec" href="' + location.href + '">Verificar outra vez</a>' + (support ? '<p class="note">Precisa de ajuda? <a href="https://wa.me/' + support + '">Fale connosco no WhatsApp</a>.</p>' : ''));
+}
+
+async function simulate(target) {
+  const payBtn = document.getElementById('simPayBtn');
+  const failBtn = document.getElementById('simFailBtn');
+  const msg = document.getElementById('simMsg');
+  if (payBtn) payBtn.disabled = true;
+  if (failBtn) failBtn.disabled = true;
+  if (msg) msg.textContent = 'A processar simulação...';
+  try {
+    const r = await fetch('/api/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: t, simulate: target })
+    });
+    const j = await r.json();
+    if (j.status === 'paid') return paid(j.type);
+    if (j.status === 'failed' || j.status === 'cancelled') return failed();
+    if (msg) msg.textContent = 'Não foi possível simular (' + (j.error || 'erro') + ').';
+  } catch {
+    if (msg) msg.textContent = 'Erro de ligação ao simular.';
+  }
+  if (payBtn) payBtn.disabled = false;
+  if (failBtn) failBtn.disabled = false;
+}
+
+const simPayBtn = document.getElementById('simPayBtn');
+const simFailBtn = document.getElementById('simFailBtn');
+if (simPayBtn) simPayBtn.onclick = () => simulate('paid');
+if (simFailBtn) simFailBtn.onclick = () => simulate('failed');
+if (isSimUrl) {
+  const sb = document.getElementById('sandboxBox');
+  if (sb) sb.hidden = false;
+}
+
+async function check() {
+  if (stopped) return;
+  if (!/^[a-f0-9]{64}$/.test(t)) return show('<h1>Ligação inválida</h1><a class="btn" href="/">Voltar ao início</a>');
+  try {
+    const r = await fetch('/api/status?t=' + t, { cache: 'no-store' });
+    const j = await r.json();
+    if (j.sandbox) {
+      const sb = document.getElementById('sandboxBox');
+      if (sb) sb.hidden = false;
+    }
+    if (j.status === 'paid') return paid(j.type);
+    if (j.status === 'failed' || j.status === 'cancelled') return failed();
+  } catch {}
+  if (++tries >= 100) return late();
+  setTimeout(check, 3000);
 }
 check();
 </script>

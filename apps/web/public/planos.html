@@ -123,7 +123,10 @@ $('buy').onsubmit = async e => {
     const j = await r.json();
     if(!r.ok){
       $('bmsg').className = 'msg err';
-      $('bmsg').textContent = j.error === 'login_required' ? 'Sessão expirada. Volte a entrar no portal.' : 'Verifique o número de telefone.';
+      if(j.error === 'login_required') $('bmsg').textContent = 'Sessão expirada. Volte a entrar no portal.';
+      else if(j.error === 'invalid_phone') $('bmsg').textContent = 'Verifique o número de telefone (mínimo 9 dígitos).';
+      else if(j.error === 'payment_unavailable') $('bmsg').textContent = 'Não foi possível iniciar o pagamento' + (j.detail ? ` (${j.detail})` : '. Tente novamente.');
+      else $('bmsg').textContent = j.detail || 'Não foi possível processar o pedido.';
       btn.disabled = false;
       return;
     }

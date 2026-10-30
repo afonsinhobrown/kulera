@@ -8,7 +8,7 @@ const num = (v)=>Number(v??0);
 
 export default async function handler(req,res){
   res.setHeader("Cache-Control","no-store");
-  const token = String(req.headers["x-partner-token"]??"");
+  const token = String(req.headers?.["x-partner-token"]??"");
   if(!/^[0-9a-f-]{36}$/.test(token))return res.status(401).json({error:"unauthorized"});
   const pu = await pool.query("select partner_id,status from fair_partner_users where id=$1 and status='active'",[token]);
   if(!pu.rows[0])return res.status(401).json({error:"unauthorized"});
@@ -65,9 +65,9 @@ export default async function handler(req,res){
       const phone = String(b.phone||pr.phone||"").replace(/\D/g,"");
       if(phone.length<9)return res.status(400).json({error:"invalid_phone"});
       const pay = await startPayment({ type:"publication", listAmountMinor:Number(bk.publication_fee_minor), name:pr.name||"Parceiro", phone, email:pr.email,
-        description:`Kulera+: Taxa de publicação - ${bk.title}`, extra:{ book_id:bk.id, partner_id:pid } });
-      if(!pay.ok)return res.status(502).json({error:"payment_unavailable"});
-      return res.json({ok:true,checkoutUrl:pay.checkoutUrl,amountMinor:pay.amountMinor,sandbox:pay.sandbox});
+        description:`Kulera+: Taxa de publicação - ${bk.title}`, extra:{ book_id:bk.id, partner_id:pid }, req });
+      if(!pay.ok)return res.status(502).json({error:"payment_unavailable", detail: pay.errorDetail});
+      return res.json({ok:true,checkoutUrl:pay.checkoutUrl,amountMinor:pay.amountMinor,sandbox:pay.sandbox,simulated:Boolean(pay.simulated)});
     }
     // Publicar exige plano activo e respeita o limite mensal do plano.
     const plan = await activePlan(pid);
