@@ -196,7 +196,7 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
               <p class="msg" id="coverMsg" style="margin:0;font-size:13px"></p>
               <div class="coverPreview" id="coverPreview"></div>
             </div>
-            <label>Ficheiro do Livro <small>(Word .docx, HTML ou PDF até 2,5 MB — para e-book digital)</small><input type="file" id="file" accept=".docx,.html,.htm,.pdf"></label>
+            <label>Ficheiro do Livro <small>(Word .docx ou HTML — o PDF não é aceite: o livro é lido no leitor da plataforma)</small><input type="file" id="file" accept=".docx,.html,.htm"></label>
             <p class="msg" id="fileMsg"></p>
             <label>Estado do Livro <select name="status"><option value="draft">Rascunho</option><option value="published">Publicado</option><option value="suspended">Suspenso</option></select></label>
             <p class="msg" id="bookMsg" role="alert"></p>
@@ -865,17 +865,7 @@ $('file').addEventListener('change', async e => {
   const file = e.target.files[0]; contentHtml = null; if(!file) return;
   const m = $('fileMsg'); m.className = 'msg'; m.textContent = 'A converter manuscrito...';
   try {
-    if(/\.pdf$/i.test(file.name)){
-      if(file.size > 2_500_000) throw new Error('pdf-pequeno');
-      contentHtml = await new Promise((resolve, reject) => {
-        const fr = new FileReader();
-        fr.onload = () => resolve(String(fr.result || ''));
-        fr.onerror = () => reject(new Error('pdf'));
-        fr.readAsDataURL(file);
-      });
-      if(!/^data:application\/pdf;base64,/i.test(contentHtml)) throw new Error('pdf');
-      m.textContent = 'PDF pronto: ' + (file.size/1_000_000).toFixed(1) + ' MB (mostrado no leitor, protegido pelo link de compra).';
-    } else if(/\.docx$/i.test(file.name)){
+    if(/\.docx$/i.test(file.name)){
       if(!window.mammoth) throw new Error('mammoth');
       const r = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() }, { styleMap: ["p[style-name='Title'] => h1:fresh","p[style-name='Heading 1'] => h1:fresh"] });
       contentHtml = r.value;
@@ -886,11 +876,8 @@ $('file').addEventListener('change', async e => {
       if(!contentHtml.trim()) throw new Error('empty');
       m.textContent = 'Pronto: ' + Math.round(contentHtml.length/1000) + ' mil caracteres lidos.';
     }
-  } catch (err) {
-    contentHtml = null; m.className = 'msg err';
-    m.textContent = err && err.message === 'pdf-pequeno'
-      ? 'PDF demasiado grande (máximo 2,5 MB). Comprima o PDF ou carregue em Word/HTML.'
-      : 'Não foi possível ler o ficheiro. Use Word (.docx), HTML ou PDF até 2,5 MB.';
+  } catch {
+    contentHtml = null; m.className = 'msg err'; m.textContent = 'Não foi possível ler o ficheiro. Use Word (.docx) ou HTML.';
   }
 });
 
