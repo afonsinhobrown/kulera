@@ -1,13 +1,10 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const DEFAULT_BASE_URL = 'https://paysuite.tech/api/v1';
-const FALLBACK_COMPANY_TOKEN = '2677|NLo5LQbk4Un8e3RkHz1GtjLC1bUjPLseHEbwNx9Tc14eaf98';
 
+// O token NUNCA vive no código: vem do ambiente da Vercel ou do painel (tabela fair_settings).
 export function resolvePaysuiteToken(apiToken) {
-  const raw = (apiToken || process.env.PAYSUITE_API_KEY || process.env.PAYSUITE_TOKEN || '').trim();
-  // Substitui automaticamente o token antigo (2098|...) que não tinha permissão empresarial
-  if (!raw || raw.startsWith('2098|')) return FALLBACK_COMPANY_TOKEN;
-  return raw;
+  return (apiToken || process.env.PAYSUITE_API_KEY || process.env.PAYSUITE_TOKEN || '').trim();
 }
 
 export function resolvePaysuiteBaseUrl() {
@@ -27,7 +24,9 @@ export function resolvePaysuiteCreateUrl() {
 export async function createPayment({ reference, amountMinor, description, returnUrl, callbackUrl, apiToken }) {
   const token = resolvePaysuiteToken(apiToken);
   if (!token) {
-    throw new Error('Token da PaySuite não configurado (PAYSUITE_TOKEN)');
+    throw new Error(
+      'Token da PaySuite não configurado: defina PAYSUITE_TOKEN (ou PAYSUITE_API_KEY) nas variáveis de ambiente, ou guarde o token no painel (Admin → PaySuite).',
+    );
   }
   const endpoint = resolvePaysuiteCreateUrl();
 

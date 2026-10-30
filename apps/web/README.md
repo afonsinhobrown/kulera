@@ -18,7 +18,7 @@ Catálogo de vários livros, cada um com o seu preço, parceiros (editoras e esc
 - **Link de partilha por livro** (`/livro/<id>`): mostra a capa, os preços e um botão **Compre agora** por formato, que leva à página de pagamento desse livro. A pré-visualização no WhatsApp/Facebook mostra a capa, o título e os preços (a capa é servida pela mesma função, em `/api/livro?id=<id>&capa=1`, mesmo quando está guardada em base64 no painel).
 - Divisão da receita registada em cada venda (comissão aplicada na altura, que não muda depois) e valores a pagar a cada parceiro no painel, com CSV.
 - Captação de parceiros (`parceiros.html`) com lista, estado e WhatsApp directo no painel.
-- Segurança: o livro só sai com pagamento confirmado; sem ficheiro nem link público; marca de água com nome e telemóvel; webhooks com assinatura e sem duplicados; preço e disponibilidade sempre da base de dados.
+- Segurança: o livro só sai com pagamento confirmado; sem ficheiro nem link público; marca de água com nome e telemóvel; webhooks com assinatura e sem duplicados; preço e disponibilidade sempre da base de dados. **Nenhum token de pagamento no código:** o token da PaySuite vem de `PAYSUITE_TOKEN`/`PAYSUITE_API_KEY` (Vercel) ou é guardado pelo painel em `fair_settings`.
 
 ## Testes
 `npm install && npm test` (testes da lógica e do fluxo completo comprar → pagar → ler, com base de dados simulada). **Isto não substitui a compra de teste real** com a PaySuite e o Neon antes de vender:

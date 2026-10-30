@@ -62,7 +62,7 @@ export async function getPaysuiteTokenFromDb() {
   try {
     const r = await pool.query("select value from fair_settings where key='paysuite_token'");
     const dbTok = r.rows[0]?.value?.trim();
-    if (dbTok && !dbTok.startsWith('2098|')) return dbTok;
+    if (dbTok) return dbTok;
   } catch {}
   return resolvePaysuiteToken();
 }

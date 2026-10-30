@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { escapeHtml, splitChapters } from '../lib/content.js';
 import { resolvePaysuiteCreateUrl, verifySignature } from '../lib/paysuite.js';
@@ -51,3 +52,30 @@ test('normalização do URL da PaySuite (corrige api.paysuite.tech para paysuite
     else delete process.env.PAYSUITE_BASE_URL;
   }
 });
+
+test('o token da PaySuite vem do ambiente e nunca do código', async () => {
+  const { resolvePaysuiteToken, createPayment } = await import('../lib/paysuite.js');
+  const prevApi = process.env.PAYSUITE_API_KEY;
+  const prevTok = process.env.PAYSUITE_TOKEN;
+  try {
+    delete process.env.PAYSUITE_API_KEY;
+    delete process.env.PAYSUITE_TOKEN;
+    assert.equal(resolvePaysuiteToken(), '');
+    await assert.rejects(
+      () => createPayment({ reference: 'X', amountMinor: 1000, description: 'Teste' }),
+      /Token da PaySuite não configurado/,
+    );
+    process.env.PAYSUITE_TOKEN = 'abc123';
+    assert.equal(resolvePaysuiteToken(), 'abc123');
+    assert.equal(resolvePaysuiteToken('def456'), 'def456'); // token explícito (ex.: vindo do painel) tem prioridade
+  } finally {
+    if (prevApi !== undefined) process.env.PAYSUITE_API_KEY = prevApi;
+    else delete process.env.PAYSUITE_API_KEY;
+    if (prevTok !== undefined) process.env.PAYSUITE_TOKEN = prevTok;
+    else delete process.env.PAYSUITE_TOKEN;
+  }
+  // Guarda contra voltar a colar credenciais no código: um token tem o formato "1234|..." com 30+ caracteres.
+  const src = readFileSync(new URL('../lib/paysuite.js', import.meta.url), 'utf8');
+  assert.ok(!/\d{4}\|[A-Za-z0-9]{30,}/.test(src), 'lib/paysuite.js não deve conter tokens');
+});
+
