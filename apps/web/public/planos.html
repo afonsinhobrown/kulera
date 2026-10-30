@@ -1,45 +1,138 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="pt">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Kulera+ | Planos de subscri\u00e7\u00e3o</title>
+<title>Kulera+ | Planos de Subscrição para Editores e Autores</title>
 <link rel="stylesheet" href="style.css">
-<style>.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:18px}.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;box-shadow:0 1px 0 rgba(0,0,0,.02)}.price{font:700 28px Georgia,serif;margin:8px 0}.btn{display:inline-block;background:var(--brand);color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;border:0;cursor:pointer}</style>
+<style>
+.hero{text-align:center;max-width:720px;margin:24px auto 32px}
+.hero h1{font:700 34px/1.2 Georgia,serif;color:var(--ink);margin:0 0 10px}
+.hero p{font-size:16px;color:#44606a;line-height:1.5}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;max-width:1050px;margin:0 auto 40px}
+.card{background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:24px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 4px 14px rgba(0,0,0,0.04);position:relative;transition:transform .2s,box-shadow .2s}
+.card:hover{transform:translateY(-3px);box-shadow:0 8px 22px rgba(0,0,0,0.08)}
+.card.featured{border-color:var(--gold);border-width:2px;background:linear-gradient(180deg,#fffdf7 0%,#fff 100%)}
+.card .tag{position:absolute;top:-12px;right:20px;background:var(--gold);color:#241700;font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px;text-transform:uppercase;letter-spacing:.5px}
+.card h3{font:700 24px Georgia,serif;margin:0 0 8px;color:var(--ink)}
+.price-tag{font:700 32px Georgia,serif;color:var(--ink);margin:14px 0 6px}
+.price-tag small{font-size:14px;color:#5b747c;font-family:sans-serif;font-weight:400}
+.card ul{list-style:none;padding:0;margin:16px 0 24px;display:grid;gap:10px}
+.card ul li{font-size:14px;color:#334d54;display:flex;align-items:center;gap:8px}
+.card ul li::before{content:"✓";color:#0b5c63;font-weight:700}
+.card .btn{display:block;text-align:center;background:#0b5c63;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:700;border:0;cursor:pointer;font-size:15px}
+.card.featured .btn{background:var(--gold);color:#241700}
+.notice{max-width:720px;margin:0 auto 40px;background:#f0f6f5;border-left:4px solid #0b5c63;padding:14px 18px;border-radius:4px;font-size:14px;color:#2c444a}
+dialog{border:0;border-radius:12px;padding:24px;box-shadow:0 12px 36px rgba(0,0,0,0.25);max-width:440px;width:90%}
+dialog::backdrop{background:rgba(0,0,0,0.5)}
+form.f{display:grid;gap:12px}
+form.f label{font-size:14px;font-weight:600;display:grid;gap:4px}
+form.f input{padding:10px;border:1.5px solid #9db3b0;border-radius:6px;font:inherit}
+</style>
 </head>
 <body>
-<header class="top"><div class="brand">Kulera<span>+</span></div><nav><a href="index.html">Loja</a><a href="planos.html">Planos</a><a href="parceiros.html">Parceiros</a></nav></header>
+<header class="top"><div class="brand"><a href="index.html" style="color:#fff;text-decoration:none">Kulera<span>+</span></a></div><nav style="display:flex;gap:10px"><a href="index.html" style="color:#fff">Loja</a><a href="parceiros-portal.html" style="color:var(--gold);font-weight:700">Portal de Editores</a><a href="parceiros.html" style="color:#fff">Parceiros</a></nav></header>
 <main>
-  <h1>Planos mensais / anuais</h1>
-  <p>Aceda \u00e0 biblioteca com subscri\u00e7\u00e3o.</p>
-  <div class="grid" id="plans"></div>
-  <dialog id="dlg"><form method="dialog" class="f" style="max-width:420px" id="buy">
-    <b>Subcrever plano</b>
-    <input type="hidden" name="planId">
-    <label>Nome completo<input name="name" required></label>
-    <label>Telefone (M-Pesa/e-Mola)<input name="phone" required placeholder="84XXXXXXX"></label>
-    <label>Email (opcional)<input name="email" type="email"></label>
-    <p class="msg" id="bmsg"></p>
-    <div class="row"><button class="btn">Continuar para pagamento</button><button type="button" onclick="dlg.close()">Cancelar</button></div>
-  </form></dialog>
+  <div class="hero">
+    <h1>Planos de Subscrição para Editores e Autores</h1>
+    <p>Escolha o plano ideal para a sua editora ou catálogo pessoal. Publique as suas obras e ganhe destaque directo na montra principal da Kulera+.</p>
+  </div>
+  <div class="grid" id="plans"><p style="text-align:center;color:#5b747c">A carregar planos...</p></div>
+  <div class="notice">
+    <strong>Como funciona a subscrição?</strong> Os planos são mensais. Quanto maior o plano, mais livros pode publicar por mês e maior a prioridade de apresentação dos seus títulos na montra. O pagamento é feito via M-Pesa / e-Mola / Visa através da PaySuite.
+  </div>
+
+  <dialog id="dlg">
+    <form method="dialog" class="f" id="buy">
+      <h3 id="planTitle" style="margin:0 0 6px;font-family:Georgia,serif">Subscrever Plano</h3>
+      <p id="planPrice" style="margin:0 0 12px;color:#0b5c63;font-weight:700;font-size:18px"></p>
+      <input type="hidden" name="planId">
+      <div id="loggedInfo" style="font-size:13px;color:#44606a;background:#eef5f4;padding:8px 12px;border-radius:6px" hidden></div>
+      <label id="phoneLabel">Telefone para pagamento (M-Pesa / e-Mola)<input name="phone" required placeholder="84 000 0000"></label>
+      <p class="msg" id="bmsg" style="margin:4px 0"></p>
+      <div class="row" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px">
+        <button type="submit" class="btn" id="goBtn" style="background:#0b5c63;color:#fff;border:0;padding:10px;border-radius:6px;font-weight:700;cursor:pointer">Pagar</button>
+        <button type="button" onclick="dlg.close()" style="background:#e0e7e9;border:0;padding:10px;border-radius:6px;cursor:pointer">Cancelar</button>
+      </div>
+    </form>
+  </dialog>
 </main>
 <script>
-const $=id=>document.getElementById(id),dlg=$('dlg');
+const $=id=>document.getElementById(id), dlg=$('dlg');
+const TOK = localStorage.getItem('ptok') || '';
+const money=(m,c='MZN')=>{try{return new Intl.NumberFormat('pt-MZ',{style:'currency',currency:c}).format(m/100)}catch{return (m/100).toFixed(2)+' '+c}};
+
 async function load(){
-  const r=await fetch('/api/subscriptions'); const j=await r.json();
-  const g=$('plans'); g.innerHTML='';
-  (j.plans||[]).forEach(p=>{
-    const d=document.createElement('div'); d.className='card';
-    d.innerHTML='<h3>'+p.name+'</h3><div class="price">'+(p.price_minor/100).toLocaleString('pt-MZ',{style:'currency',currency:p.currency})+' / '+(p.interval==='year'?'ano':'m\u00eas')+'</div><p>'+ (p.description||'')+'</p><button class="btn">Subscrever</button>';
-    d.querySelector('button').onclick=()=>{dlg.querySelector('[name=planId]').value=p.id;dlg.showModal();};
-    g.appendChild(d);
+  const h = TOK ? { 'x-partner-token': TOK } : {};
+  const r = await fetch('/api/subscriptions', { headers: h, cache: 'no-store' });
+  const j = await r.json();
+  const g = $('plans'); g.innerHTML = '';
+  const plans = (j.plans || []);
+  if(!plans.length){ g.innerHTML='<p>Nenhum plano configurado de momento.</p>'; return; }
+
+  plans.forEach(p => {
+    const card = document.createElement('div');
+    const isFeatured = p.code === 'pro' || p.price_minor === 500000;
+    card.className = 'card' + (isFeatured ? ' featured' : '');
+    if(isFeatured){ const t = document.createElement('span'); t.className='tag'; t.textContent='Mais popular'; card.appendChild(t); }
+
+    const h3 = document.createElement('h3'); h3.textContent = p.name;
+    const pr = document.createElement('div'); pr.className='price-tag';
+    pr.innerHTML = money(p.price_minor, p.currency) + ' <small>/ mês</small>';
+
+    const ul = document.createElement('ul');
+    const pubTxt = p.max_publications ? `Até <strong>${p.max_publications} publicações</strong> por mês` : '<strong>Publicações ilimitadas</strong> por mês';
+    const prioTxt = p.showcase_priority >= 3 ? '<strong>Destaque máximo</strong> no topo da montra' : (p.showcase_priority >= 2 ? '<strong>Prioridade destacada</strong> na montra' : 'Posição normal na montra');
+    ul.innerHTML = `<li>${pubTxt}</li><li>${prioTxt}</li><li>Relatórios de vendas em tempo real</li><li>Saques para M-Pesa / e-Mola / Banco</li>`;
+
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    const isCurrent = j.current && j.current.id === p.id;
+    btn.textContent = isCurrent ? 'Plano Actual' : 'Subscrever';
+    if(isCurrent){ btn.disabled = true; btn.style.opacity = '0.7'; }
+    else {
+      btn.onclick = () => {
+        if(!TOK){
+          if(confirm('Para subscrever um plano deve primeiro iniciar sessão no Portal de Editores. Deseja ir agora?')){
+            location.href = 'parceiros-portal.html';
+          }
+          return;
+        }
+        $('planTitle').textContent = 'Subscrever: ' + p.name;
+        $('planPrice').textContent = money(p.price_minor, p.currency) + ' / mês';
+        dlg.querySelector('[name=planId]').value = p.id;
+        $('bmsg').textContent = '';
+        dlg.showModal();
+      };
+    }
+    card.append(h3, pr, ul, btn);
+    g.appendChild(card);
   });
 }
-$('#buy').onsubmit=async e=>{
-  e.preventDefault(); const f=e.target; $('bmsg').textContent='A gerar...';
-  const r=await fetch('/api/subscriptions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({planId:f.planId.value,name:f.name.value,phone:f.phone.value,email:f.email.value})});
-  const j=await r.json(); if(!r.ok){$('bmsg').textContent='Verifique os dados.';return;}
-  location.href=j.checkoutUrl;
+
+$('buy').onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target, btn = $('goBtn');
+  btn.disabled = true; $('bmsg').className = 'msg'; $('bmsg').textContent = 'A gerar pagamento PaySuite...';
+  try {
+    const r = await fetch('/api/subscriptions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-partner-token': TOK },
+      body: JSON.stringify({ planId: f.planId.value, phone: f.phone.value })
+    });
+    const j = await r.json();
+    if(!r.ok){
+      $('bmsg').className = 'msg err';
+      $('bmsg').textContent = j.error === 'login_required' ? 'Sessão expirada. Volte a entrar no portal.' : 'Verifique o número de telefone.';
+      btn.disabled = false;
+      return;
+    }
+    location.href = j.checkoutUrl;
+  } catch(err){
+    $('bmsg').className = 'msg err';
+    $('bmsg').textContent = 'Erro ao contactar PaySuite. Tente novamente.';
+    btn.disabled = false;
+  }
 };
 load();
 </script>

@@ -75,12 +75,16 @@ export default async function handler(req, res) {
         if (x?.type === 'subscription' && x?.plan_id) {
           const pl = await client.query("select interval from fair_plans where id=$1", [x.plan_id]);
           const days = pl.rows[0]?.interval === 'year' ? 365 : 30;
-          const buyer = await client.query("select buyer_name,buyer_phone,buyer_email from fair_orders where id=$1", [order.id]);
+          const buyer = await client.query("select buyer_name,buyer_phone,buyer_email,(to_jsonb(fair_orders)->>'partner_id')::uuid as partner_id from fair_orders where id=$1", [order.id]);
           const b = buyer.rows[0];
           if (b) {
-            await client.query(`insert into fair_subscriptions (buyer_name,buyer_phone,buyer_email,plan_id,order_id,status,starts_at,ends_at)
-              values ($1,$2,$3,$4,$5,'active',now(),now()+($6||'30 days')::interval)
-              on conflict do nothing`, [b.buyer_name, b.buyer_phone, b.buyer_email, x.plan_id, order.id, days + ' days']);
+            await client.query('alter table fair_subscriptions add column if not exists partner_id uuid');
+            // Renovação: começa no fim do período activo do parceiro (se existir).
+            const cur = b.partner_id ? await client.query("select max(ends_at) e from fair_subscriptions where partner_id=$1 and status='active' and ends_at>now()", [b.partner_id]) : { rows: [] };
+            const start = cur.rows[0]?.e || null;
+            await client.query(`insert into fair_subscriptions (buyer_name,buyer_phone,buyer_email,plan_id,order_id,status,starts_at,ends_at,partner_id)
+              values ($1,$2,$3,$4,$5,'active',coalesce($7::timestamptz,now()),coalesce($7::timestamptz,now())+($6)::interval,$8)
+              on conflict do nothing`, [b.buyer_name, b.buyer_phone, b.buyer_email, x.plan_id, order.id, days + ' days', start, b.partner_id]);
           }
         }
       }

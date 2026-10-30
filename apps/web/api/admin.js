@@ -1,6 +1,7 @@
-import { timingSafeEqual } from 'node:crypto';
 import { pool } from '../lib/db.js';
 import { PUBLICATION_FEE_MINOR } from '../lib/pricing.js';
+import { isSandbox, setSandbox } from '../lib/payments.js';
+import { ensurePlanSchema } from '../lib/plans.js';
 
 const sameKey = (a, b) => {
   const ax = String(a ?? '').trim();
@@ -35,16 +36,24 @@ async function action(b) {
       return [200, { ok: true, id: r.rows[0].id }];
     }
     case 'save_book': {
-      const title = clip(b.title, 200), author = clip(b.author, 200), price = Number(b.priceMinor);
-      if (title.length < 1 || author.length < 1 || !Number.isInteger(price) || price <= 0 || price > 100_000_000) return [400, { error: 'invalid' }];
+      const title = clip(b.title, 200), author = clip(b.author, 200);
+      const okPrice = (p) => Number.isInteger(p) && p > 0 && p <= 100_000_000;
       const status = ['draft', 'published', 'suspended'].includes(b.status) ? b.status : 'draft';
       const content = typeof b.contentHtml === 'string' && b.contentHtml.trim() ? b.contentHtml.replace(/\u0000/g, '') : null;
       if (content && content.length > 3_500_000) return [413, { error: 'content_too_large' }];
       const hasDigital = b.hasDigital === true || b.hasDigital === 'true' || (b.hasDigital == null && b.kind !== 'physical');
       const hasPhysical = b.hasPhysical === true || b.hasPhysical === 'true' || (b.hasPhysical == null && b.kind === 'physical');
+      if (title.length < 1 || author.length < 1) return [400, { error: 'invalid' }];
       if (!hasDigital && !hasPhysical) return [400, { error: 'invalid_format' }];
+      const digitalPrice = Number(b.priceMinor), physicalPrice = Number(b.pricePhysicalMinor);
+      if (hasDigital && !okPrice(digitalPrice)) return [400, { error: 'invalid_price_digital' }];
+      if (hasPhysical && !okPrice(physicalPrice)) return [400, { error: 'invalid_price_physical' }];
+      if (hasPhysical && (b.stock === '' || b.stock == null || !Number.isInteger(Number(b.stock)) || Number(b.stock) < 0)) return [400, { error: 'invalid_stock' }];
+      // price_minor é NOT NULL: guarda o preço digital, ou o físico se o livro for só físico.
+      const price = hasDigital ? digitalPrice : physicalPrice;
+      const pricePhysical = hasPhysical ? physicalPrice : null;
       const kind = hasPhysical && !hasDigital ? 'physical' : 'ebook';
-      const stock = hasPhysical && b.stock !== '' && b.stock != null && !isNaN(Number(b.stock)) ? Number(b.stock) : (hasPhysical ? 0 : null);
+      const stock = hasPhysical ? Number(b.stock) : null;
       const requiresShipping = hasPhysical;
       const args = [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 800000) || null, content, kind, stock, requiresShipping, hasDigital, hasPhysical];
       let id = b.id;
@@ -62,6 +71,9 @@ async function action(b) {
           id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id', [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, clip(b.coverUrl, 800000) || null, content])).rows[0].id;
         }
       }
+      // Preço do formato físico (coluna criada aqui se a migração ainda não correu).
+      await pool.query('alter table fair_books add column if not exists price_physical_minor bigint');
+      await pool.query('update fair_books set price_physical_minor=$2 where id=$1', [id, pricePhysical]);
       // Livros de parceiros externos pagam a taxa de publicação (500 MT); livros da Kulera não.
       await pool.query('update fair_books set publication_fee_minor = case when partner_id is null then 0 else greatest(publication_fee_minor, $2) end where id=$1', [id, PUBLICATION_FEE_MINOR]);
       // Nunca fica publicado um livro que oferece digital sem conteúdo.
@@ -110,9 +122,21 @@ async function action(b) {
       if (code.length<2||name.length<2||!Number.isInteger(price)||price<0) return [400,{error:'invalid'}];
       const iv = b.interval==='year'?'year':'month';
       const st = b.status==='archived'?'archived':'active';
-      if (uuid(b.id)) { await pool.query('update fair_plans set code=$2,name=$3,description=$4,price_minor=$5,currency=$6,interval=$7,status=$8 where id=$1',[b.id,code,name,clip(b.description,200)||null,clip(b.currency,3)||'MZN',price,iv,st]); return [200,{ok:true,id:b.id}]; }
-      const r = await pool.query('insert into fair_plans (code,name,description,price_minor,currency,interval,status) values ($1,$2,$3,$4,$5,$6,$7,$8) returning id',[code,name,clip(b.description,200)||null,clip(b.currency,3)||'MZN',price,iv,st]);
+      const maxPub = b.maxPublications !== '' && b.maxPublications != null && !isNaN(Number(b.maxPublications)) ? Number(b.maxPublications) : null;
+      const prio = !isNaN(Number(b.showcasePriority)) ? Number(b.showcasePriority) : 0;
+      await ensurePlanSchema();
+      if (uuid(b.id)) {
+        await pool.query('update fair_plans set code=$2,name=$3,description=$4,price_minor=$5,currency=$6,interval=$7,status=$8,max_publications=$9,showcase_priority=$10 where id=$1',
+          [b.id,code,name,clip(b.description,200)||null,clip(b.currency,3)||'MZN',price,iv,st,maxPub,prio]);
+        return [200,{ok:true,id:b.id}];
+      }
+      const r = await pool.query('insert into fair_plans (code,name,description,price_minor,currency,interval,status,max_publications,showcase_priority) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id',
+        [code,name,clip(b.description,200)||null,clip(b.currency,3)||'MZN',price,iv,st,maxPub,prio]);
       return [200,{ok:true,id:r.rows[0].id}];
+    }
+    case 'set_sandbox': {
+      await setSandbox(b.enabled === true || b.enabled === 'true');
+      return [200, { ok: true, sandbox: await isSandbox() }];
     }
     case 'withdrawal_status': {
       if (!uuid(b.id) || !['requested', 'processing', 'paid', 'rejected'].includes(b.status)) return [400, { error: 'invalid' }];
@@ -152,7 +176,7 @@ export default async function handler(req, res) {
   }
   let books;
   try {
-    books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content, kind, stock, requires_shipping, has_digital, has_physical, publication_fee_minor, publication_fee_paid_at from fair_books order by created_at desc`)).rows;
+    books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content, kind, stock, requires_shipping, has_digital, has_physical, (to_jsonb(fair_books)->>'price_physical_minor')::bigint as price_physical_minor, publication_fee_minor, publication_fee_paid_at from fair_books order by created_at desc`)).rows;
   } catch {
     books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content from fair_books order by created_at desc`)).rows.map(x=>({...x,kind:'ebook',stock:null,requires_shipping:false,has_digital:true,has_physical:false,publication_fee_minor:0,publication_fee_paid_at:null}));
   }
@@ -162,7 +186,11 @@ export default async function handler(req, res) {
   let submissions = [];
   try { submissions = (await pool.query(`select s.id, s.title, s.author, s.status, s.admin_notes, s.created_at, p.name as partner from fair_submissions s left join fair_partners p on p.id=s.partner_id order by s.created_at desc limit 500`)).rows; } catch {}
   let plans = [];
-  try { plans = (await pool.query('select id,code,name,description,price_minor,currency,interval,status from fair_plans order by created_at asc')).rows; } catch {}
+  try {
+    await ensurePlanSchema();
+    plans = (await pool.query('select id,code,name,description,price_minor,currency,interval,status,max_publications,showcase_priority from fair_plans order by showcase_priority desc, price_minor asc')).rows;
+  } catch {}
+  const sandbox = await isSandbox();
   let subs = [];
   try { subs = (await pool.query(`select s.id,s.buyer_name,s.buyer_phone,s.status,s.starts_at,s.ends_at,pl.name as plan from fair_subscriptions s left join fair_plans pl on pl.id=s.plan_id order by s.created_at desc limit 500`)).rows; } catch {}
   let withdrawals = [];
@@ -176,7 +204,8 @@ export default async function handler(req, res) {
       kulera_minor: Number(split.a) + Number(split.e), partners_minor: Number(split.p), fees_minor: Number(publicationFees.f) },
     leads, orders, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor), publication_fee_minor: Number(x.publication_fee_minor || 0) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
     submissions, plans: plans.map((x)=>({...x,price_minor:Number(x.price_minor)})), subscriptions: subs,
-    withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})) });
+    withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})),
+    sandbox });
   } catch (e) {
     console.error('admin.error', e?.message || String(e));
     return res.status(500).json({ error: 'internal_error' });

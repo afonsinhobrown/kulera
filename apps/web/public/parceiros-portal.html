@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="pt">
 <head>
 <meta charset="utf-8">
@@ -32,6 +32,18 @@
   </div>
   <div id="app" hidden>
     <p>Bem-vindo, <span id="pname"></span> (<span id="pstatus"></span>)</p>
+    <div id="planBanner" style="background:#eef6f5;border:1.5px solid #0b5c63;border-radius:8px;padding:12px 16px;margin:12px 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div>
+        <strong id="planName">A verificar plano...</strong>
+        <div id="planDetails" style="font-size:13px;color:#44606a"></div>
+      </div>
+      <a href="planos.html" class="btn" style="background:#0b5c63;color:#fff;padding:8px 14px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:700">Ver / Mudar Plano</a>
+    </div>
+    <div id="pendingFeesCard" style="background:#fff8e6;border:1.5px solid #d4a017;border-radius:8px;padding:12px 16px;margin:12px 0" hidden>
+      <strong style="color:#7a4b00">Taxas de Publicação Pendentes</strong>
+      <p style="font-size:13px;margin:4px 0 8px;color:#5a3700">Para os seus livros aprovados ficarem visíveis na montra, pague a taxa de publicação (500 MT cada).</p>
+      <div id="feesList" style="display:grid;gap:6px"></div>
+    </div>
     <button id="logout" class="sec">Sair</button>
     <h2>Submeter manuscrito</h2>
     <form class="f" id="sub">
@@ -83,6 +95,37 @@ const wst={requested:'Pedido',processing:'Em processamento',paid:'Pago',rejected
 async function loadReports(){const {ok,j}=await call('/api/partner-submit?reports=1');if(!ok)return;const s=j.summary||{};
   const kd=[['Ganhos (líquido)',money(s.earned)],['Vendas',s.salesCount||0],['Disponível p/ saque',money(s.available)],['Bruto vendido',money(s.gross)],['Comissão Kulera',money(s.appTotal)],['Taxa publicação paga',money(s.feesPaid)],['Saques pagos',money(s.withdrawalsPaid)],['Saques em aberto',money(s.withdrawalsOpen)]];
   const kb=$('#rkpi');kb.innerHTML='';kd.forEach(([l,v])=>{const d=document.createElement('div');d.innerHTML='<b></b><span></span>';d.firstChild.textContent=v;d.lastChild.textContent=l;kb.appendChild(d)});
+  if(j.plan){
+    $('#planName').textContent = 'Plano Activo: ' + j.plan.name;
+    const maxTxt = j.plan.max_publications ? `${j.used || 0}/${j.plan.max_publications} publicações usadas este mês` : `${j.used || 0} publicações usadas (Ilimitadas)`;
+    const prioTxt = j.plan.showcase_priority >= 3 ? 'Destaque máximo no topo' : (j.plan.showcase_priority >= 2 ? 'Prioridade destacada' : 'Posição normal');
+    $('#planDetails').textContent = `${maxTxt} · Montra: ${prioTxt} · Válido até ${new Date(j.plan.ends_at).toLocaleDateString('pt-MZ')}`;
+  } else {
+    $('#planName').textContent = 'Sem plano de subscrição activo';
+    $('#planDetails').textContent = 'Subscreva um plano (Básico 3000, Profissional 5000 ou Premium 7000 MT) para poder submeter manuscritos.';
+  }
+  const pf = j.pendingFees || [];
+  if(pf.length){
+    $('#pendingFeesCard').hidden = false;
+    const fl = $('#feesList'); fl.innerHTML = '';
+    pf.forEach(item => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;background:#fff;padding:8px 12px;border-radius:6px;border:1px solid #e0c878;font-size:14px';
+      row.innerHTML = `<span><strong>${item.title}</strong> — ${money(item.publication_fee_minor)}</span>`;
+      const btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'btn'; btn.style.cssText = 'background:#0b5c63;color:#fff;padding:6px 12px;font-size:13px;border-radius:4px;border:0;cursor:pointer';
+      btn.textContent = 'Pagar Taxa';
+      btn.onclick = async () => {
+        const tel = prompt('Número M-Pesa / e-Mola para pagamento:');
+        if(!tel) return;
+        btn.disabled = true; btn.textContent = 'A gerar...';
+        const res = await call('/api/partner-submit', { action: 'pay_fee', bookId: item.id, phone: tel });
+        if(res.ok && res.j.checkoutUrl){ location.href = res.j.checkoutUrl; }
+        else { alert('Não foi possível gerar o pagamento PaySuite.'); btn.disabled = false; btn.textContent = 'Pagar Taxa'; }
+      };
+      row.appendChild(btn); fl.appendChild(row);
+    });
+  } else { $('#pendingFeesCard').hidden = true; }
   fill($('#rsales'),['Data','Livro','Valor','Comissão','Editores','O meu','Estado'],j.sales||[],x=>{const tr=document.createElement('tr');tr.append(cell(x.created_at?new Date(x.created_at).toLocaleString('pt-MZ'):''),cell(x.title),cell(money(x.gross_minor)),cell(money(x.app_minor)),cell(money(x.editors_minor)),cell(money(x.partner_minor)),cell(x.paid_at?'Pago':(x.status||'')));return tr});
   fill($('#rfees'),['Data','Valor','Estado'],j.fees||[],x=>{const tr=document.createElement('tr');tr.append(cell(x.created_at?new Date(x.created_at).toLocaleString('pt-MZ'):''),cell(money(x.amount_minor)),cell(x.paid_at?'Paga':'Pendente'));return tr});
   fill($('#rwth'),['Data','Valor','Método','Detalhes','Estado'],j.withdrawals||[],x=>{const tr=document.createElement('tr');tr.append(cell(x.created_at?new Date(x.created_at).toLocaleString('pt-MZ'):''),cell(money(x.amount_minor)),cell(x.method||''),cell(x.details||''),cell(wst[x.status]||x.status));return tr});
@@ -91,7 +134,15 @@ $('#wform').onsubmit=async e=>{e.preventDefault();const f=e.target,m=$('wmsg');c
 $('#file').onchange=async e=>{const f=e.target.files[0];contentHtml=null;const m=$('fmsg');m.textContent='A converter...';if(!f){m.textContent='';return;}try{if(/\.docx$/i.test(f.name)){if(!window.mammoth)throw 0;const r=await mammoth.convertToHtml({arrayBuffer:await f.arrayBuffer()});contentHtml=r.value;}else contentHtml=await f.text();m.textContent='Pronto ('+Math.round(contentHtml.length/1000)+'k)';}catch{m.className='msg err';m.textContent='Erro ao ler ficheiro';}};
 $('#reg').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-auth',{action:'register',name:f.name.value,kind:f.kind.value,phone:f.phone.value,email:f.email.value,password:f.password.value});$('rmsg').textContent=ok?'Registo enviado. Já pode entrar.':(j.error==='exists'?'Já existe conta com este email.':'Verifique os dados.');$('rmsg').className=ok?'msg':'msg err';};
 $('#login').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-auth',{action:'login',email:f.email.value,password:f.password.value});if(!ok){$('lmsg').textContent='Credenciais inválidas.';$('lmsg').className='msg err';return;}TOK=j.token;localStorage.setItem('ptok',TOK);loadMe();};
-$('#sub').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-submit',{title:f.title.value,author:f.author.value,description:f.description.value,language:f.language.value,coverUrl:f.coverUrl.value,contentHtml});$('smsg').textContent=ok?'Submetido com sucesso.':'Erro ao submeter.';$('smsg').className=ok?'msg':'msg err';if(ok){f.reset();contentHtml=null;$('#fmsg').textContent='';loadSubs();}};
+$('#sub').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-submit',{title:f.title.value,author:f.author.value,description:f.description.value,language:f.language.value,coverUrl:f.coverUrl.value,contentHtml});
+  if(ok){ $('smsg').textContent='Submetido com sucesso.'; $('smsg').className='msg'; f.reset(); contentHtml=null; $('#fmsg').textContent=''; loadSubs(); loadReports(); }
+  else {
+    $('smsg').className='msg err';
+    if(j.error==='no_plan') $('smsg').innerHTML='Necessita de um plano activo para submeter manuscritos. <a href="planos.html" style="color:#a00">Subscrever plano</a>.';
+    else if(j.error==='plan_limit') $('smsg').textContent=`Atingiu o limite de publicações mensais do seu plano (${j.limit}). Faça upgrade na página de planos.`;
+    else $('smsg').textContent='Erro ao submeter. Verifique os dados.';
+  }
+};
 $('#logout').onclick=()=>{localStorage.removeItem('ptok');location.reload();};
 if(TOK)loadMe().catch(()=>{});
 </script>

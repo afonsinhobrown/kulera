@@ -1,6 +1,5 @@
-import { randomBytes, randomUUID } from 'node:crypto';
 import { pool } from '../lib/db.js';
-import { createPayment } from '../lib/paysuite.js';
+import { startPayment } from '../lib/payments.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
@@ -20,7 +19,7 @@ export default async function handler(req, res) {
 
   // Preço, moeda e disponibilidade SEMPRE da base de dados. Nunca se vende um livro sem conteúdo publicado.
   const found = await pool.query(
-    "select id, title, price_minor, currency, kind, requires_shipping, stock, content_html, coalesce(has_digital,true) as has_digital, coalesce(has_physical,false) as has_physical from fair_books where id = $1 and status = 'published'", [bookId]);
+    "select id, title, price_minor, currency, kind, requires_shipping, stock, content_html, coalesce(has_digital,true) as has_digital, coalesce(has_physical,false) as has_physical, (to_jsonb(fair_books)->>'price_physical_minor')::bigint as price_physical_minor from fair_books where id = $1 and status = 'published'", [bookId]);
   const book = found.rows[0];
   if (!book) return res.status(404).json({ error: 'book_unavailable' });
   const hasDigital = book.has_digital !== false;
@@ -37,45 +36,20 @@ export default async function handler(req, res) {
     if (book.stock != null && Number(book.stock) <= 0) return res.status(404).json({ error: 'book_unavailable' });
     if (!shippingAddress || shippingAddress.length < 5) return res.status(400).json({ error: 'invalid_address' });
   }
-  let priceMinor = Number(book.price_minor);
-  if (process.env.NODE_ENV !== 'production') {
-    if (process.env.SANDBOX === 'true' || process.env.TEST_PRICE_MT === '1' || process.env.FORCE_TEST_PRICE === '1' || process.env.TEST_PRICE_MT === '11') {
-      priceMinor = process.env.TEST_PRICE_MT_ALL ? Math.round(Number(process.env.TEST_PRICE_MT_ALL) * 100) : 1100;
-    } else if (process.env.TEST_PRICE_MT_ALL) {
-      priceMinor = Math.round(Number(process.env.TEST_PRICE_MT_ALL) * 100);
-    }
-  }
-
-  const id = randomUUID();
-  const token = randomBytes(32).toString('hex');
-  const reference = `KF${id.replaceAll('-', '').slice(0, 28)}`;
-  const site = process.env.SITE_URL;
-
-  await pool.query(
-    `insert into fair_orders (id, token, reference, buyer_name, buyer_phone, buyer_email, amount_minor, currency, book_id, type, shipping_name, shipping_phone, shipping_address, shipping_city)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-    [id, token, reference, name, phone, email || null, priceMinor, book.currency, book.id, isPhysical ? 'physical' : 'book', shippingName || name, shippingPhone || phone, shippingAddress || null, shippingCity || null],
-  );
+  // Preço de tabela do formato escolhido; em modo sandbox startPayment cobra 10 MT.
+  const listMinor = isPhysical ? Number(book.price_physical_minor ?? book.price_minor) : Number(book.price_minor);
   if (isPhysical && book.stock != null) {
     await pool.query('update fair_books set stock = stock - 1 where id = $1 and stock >= 1', [book.id]);
   }
-  try {
-    const { providerPaymentId, checkoutUrl } = await createPayment({
-      reference, amountMinor: priceMinor, description: `${isPhysical?'Kulera+: Livro físico':'Kulera+'}: ${book.title}`.slice(0, 120),
-      returnUrl: `${site}/pagamento.html?t=${token}`, callbackUrl: `${site}/api/webhook`,
-    });
-    await pool.query(
-      `update fair_orders set provider_payment_id = $2, checkout_url = $3,
-         status = case when status = 'created' then 'pending' else status end where id = $1`,
-      [id, providerPaymentId, checkoutUrl],
-    );
-    return res.status(200).json({ checkoutUrl, token, format: chosen });
-  } catch (error) {
-    console.error('checkout.error', String(error));
-    if (isPhysical && book.stock != null) {
-      await pool.query('update fair_books set stock = stock + 1 where id = $1', [book.id]);
-    }
-    await pool.query("update fair_orders set status = 'failed' where id = $1 and status in ('created','pending')", [id]);
+  const pay = await startPayment({
+    type: isPhysical ? 'physical' : 'book', listAmountMinor: listMinor, currency: book.currency, name, phone, email,
+    description: `${isPhysical ? 'Kulera+: Livro físico' : 'Kulera+'}: ${book.title}`,
+    extra: { book_id: book.id, shipping_name: shippingName || name, shipping_phone: shippingPhone || phone, shipping_address: shippingAddress || null, shipping_city: shippingCity || null },
+  });
+  if (!pay.ok) {
+    if (isPhysical && book.stock != null) await pool.query('update fair_books set stock = stock + 1 where id = $1', [book.id]);
     return res.status(502).json({ error: 'payment_unavailable' });
   }
+  return res.status(200).json({ checkoutUrl: pay.checkoutUrl, token: pay.token, format: chosen, amountMinor: pay.amountMinor, sandbox: pay.sandbox });
 }
+

@@ -72,6 +72,7 @@ alter table fair_books add column if not exists requires_shipping boolean not nu
 alter table fair_books add column if not exists shipping_info text;
 alter table fair_books add column if not exists has_digital boolean not null default true;
 alter table fair_books add column if not exists has_physical boolean not null default false;
+alter table fair_books add column if not exists price_physical_minor bigint check (price_physical_minor is null or price_physical_minor > 0);
 update fair_books set has_physical = true where coalesce(kind,'ebook')='physical' or coalesce(requires_shipping,false);
 update fair_books set has_digital = false where coalesce(kind,'ebook')='physical' and content_html is null;
 alter table fair_orders add column if not exists book_id uuid references fair_books (id);

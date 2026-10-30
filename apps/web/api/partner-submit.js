@@ -1,4 +1,6 @@
-﻿import { pool } from "../lib/db.js";
+import { pool } from "../lib/db.js";
+import { startPayment } from "../lib/payments.js";
+import { activePlan, publicationsUsed } from "../lib/plans.js";
 
 const clip = (v,n)=>String(v??"").replace(/\u0000/g,"").trim().slice(0,n);
 const uuid = (v)=>/^[0-9a-f-]{36}$/.test(String(v));
@@ -32,7 +34,11 @@ export default async function handler(req,res){
       const feesPending = fees.filter(f=>!f.paid_at).reduce((a,f)=>a+num(f.amount_minor),0);
       const wPaid = withdrawals.filter(w=>w.status==="paid").reduce((a,w)=>a+num(w.amount_minor),0);
       const wOpen = withdrawals.filter(w=>w.status==="requested"||w.status==="processing").reduce((a,w)=>a+num(w.amount_minor),0);
-      return res.json({ ok:true, partner:p.rows[0]||null,
+      let pendingFees = [];
+      try { pendingFees = (await pool.query("select id, title, publication_fee_minor from fair_books where partner_id=$1 and publication_fee_paid_at is null and coalesce(publication_fee_minor,0)>0 order by created_at desc",[pid])).rows.map(x=>({...x,publication_fee_minor:Number(x.publication_fee_minor)})); } catch {}
+      const plan = await activePlan(pid).catch(()=>null);
+      const used = await publicationsUsed(pid).catch(()=>0);
+      return res.json({ ok:true, partner:p.rows[0]||null, plan, used, pendingFees,
         summary:{ salesCount:sales.length, gross, appTotal, editorsTotal, earned, feesPaid, feesPending, withdrawalsPaid:wPaid, withdrawalsOpen:wOpen, available: earned-wPaid-wOpen },
         sales, fees, withdrawals });
     }
@@ -51,6 +57,22 @@ export default async function handler(req,res){
       const ins = await pool.query("insert into fair_partner_withdrawals (partner_id,amount_minor,method,details) values ($1,$2,$3,$4) returning id",[pid,amount,clip(b.method,40)||null,clip(b.details,300)||null]);
       return res.json({ok:true,id:ins.rows[0].id});
     }
+    if(b.action==="pay_fee"){
+      if(!uuid(b.bookId))return res.status(400).json({error:"invalid"});
+      const bk = (await pool.query("select id,title,publication_fee_minor from fair_books where id=$1 and partner_id=$2 and publication_fee_paid_at is null and coalesce(publication_fee_minor,0)>0",[b.bookId,pid])).rows[0];
+      if(!bk)return res.status(404).json({error:"not_found"});
+      const pr = (await pool.query("select name,phone,email from fair_partners where id=$1",[pid])).rows[0]||{};
+      const phone = String(b.phone||pr.phone||"").replace(/\D/g,"");
+      if(phone.length<9)return res.status(400).json({error:"invalid_phone"});
+      const pay = await startPayment({ type:"publication", listAmountMinor:Number(bk.publication_fee_minor), name:pr.name||"Parceiro", phone, email:pr.email,
+        description:`Kulera+: Taxa de publicação - ${bk.title}`, extra:{ book_id:bk.id, partner_id:pid } });
+      if(!pay.ok)return res.status(502).json({error:"payment_unavailable"});
+      return res.json({ok:true,checkoutUrl:pay.checkoutUrl,amountMinor:pay.amountMinor,sandbox:pay.sandbox});
+    }
+    // Publicar exige plano activo e respeita o limite mensal do plano.
+    const plan = await activePlan(pid);
+    if(!plan)return res.status(402).json({error:"no_plan"});
+    if(plan.max_publications!=null && await publicationsUsed(pid) >= plan.max_publications)return res.status(403).json({error:"plan_limit",limit:plan.max_publications});
     const title = clip(b.title,200), author = clip(b.author,200);
     if(title.length<1||author.length<1)return res.status(400).json({error:"invalid"});
     const content = typeof b.contentHtml==="string"&&b.contentHtml.trim()?b.contentHtml.replace(/\u0000/g,""):null;

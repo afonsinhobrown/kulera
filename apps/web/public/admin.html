@@ -4,131 +4,793 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Painel · Kulera+</title>
+<title>Painel Administrativo · Kulera+</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="style.css">
-<style>table{border-collapse:collapse;width:100%;font-size:14px;background:#fff}th,td{border:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}.wrap{overflow-x:auto;margin-bottom:8px}.kpi{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}.kpi div{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 16px}.kpi b{display:block;font:700 24px Georgia,serif}select,textarea{font:inherit;padding:8px;border:1.5px solid #9db3b0;border-radius:6px;width:100%;background:#fff}h2{font-family:Georgia,serif;margin-top:30px}.mini{display:inline-block;font-size:14px;padding:8px 12px}form.f{display:grid;gap:10px;max-width:560px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}</style>
+<style>
+:root{
+  --admin-bg:#f5f8f8;
+  --sidebar-w:240px;
+  --primary:#0b5c63;
+  --primary-hover:#08474d;
+  --card-bg:#ffffff;
+  --border-c:#dce5e4;
+}
+body{background:var(--admin-bg);margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#22333b}
+.admin-header{background:#073337;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:2px solid var(--gold);box-shadow:0 2px 8px rgba(0,0,0,0.15)}
+.admin-header .brand{font:700 22px Georgia,serif;display:flex;align-items:center;gap:8px}
+.admin-header .brand span{color:var(--gold)}
+.header-actions{display:flex;align-items:center;gap:14px}
+.sandbox-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:700;transition:all .2s;cursor:pointer;border:1px solid transparent}
+.sandbox-badge.active{background:#ffebd4;color:#914900;border-color:#ffb766}
+.sandbox-badge.inactive{background:#114a4f;color:#b2d4d8}
+.btn-logout{background:#b02a37;color:#fff;border:0;padding:8px 16px;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;transition:background .2s}
+.btn-logout:hover{background:#8c1d28}
+
+.admin-layout{display:flex;min-height:calc(100vh - 60px)}
+.sidebar{width:var(--sidebar-w);background:#0e4449;color:#e1ecec;display:flex;flex-direction:column;flex-shrink:0}
+.sidebar nav{display:flex;flex-direction:column;gap:2px;padding:16px 8px}
+.nav-tab{display:flex;align-items:center;gap:12px;padding:12px 14px;color:#c0dedf;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;border:0;background:transparent;width:100%;text-align:left;cursor:pointer;transition:all .15s}
+.nav-tab:hover{background:#135960;color:#fff}
+.nav-tab.active{background:var(--gold);color:#241700}
+.nav-tab .badge{margin-left:auto;background:rgba(0,0,0,0.25);color:#fff;padding:2px 8px;border-radius:10px;font-size:11px}
+.nav-tab.active .badge{background:#241700;color:#fff}
+
+.content-pane{flex:1;padding:28px 36px;overflow-y:auto;max-width:1400px}
+.tab-content{display:none}
+.tab-content.active{display:block;animation:fadeIn .2s ease-in}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+.pane-title{font:700 26px Georgia,serif;color:var(--ink);margin:0 0 8px;display:flex;align-items:center;justify-content:space-between}
+.pane-sub{color:#5b747c;font-size:14px;margin:0 0 20px}
+
+/* KPIs */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+.kpi-card{background:var(--card-bg);border:1px solid var(--border-c);border-radius:10px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.03)}
+.kpi-card b{display:block;font:700 28px Georgia,serif;color:var(--ink);margin-bottom:4px}
+.kpi-card span{font-size:13px;color:#617a80;font-weight:600}
+
+/* Tables and Cards */
+.table-card{background:var(--card-bg);border:1px solid var(--border-c);border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.03);margin-bottom:24px}
+.table-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{background:#f1f6f6;color:#334d54;font-weight:700;padding:12px 14px;border-bottom:1px solid var(--border-c);text-align:left}
+td{padding:12px 14px;border-bottom:1px solid var(--border-c);color:#24363b}
+tr:hover td{background:#fafcfc}
+
+/* Forms */
+.form-card{background:var(--card-bg);border:1px solid var(--border-c);border-radius:10px;padding:24px;box-shadow:0 1px 4px rgba(0,0,0,0.03);max-width:680px;margin-top:16px}
+.form-card h3{font:700 20px Georgia,serif;margin:0 0 16px;color:var(--ink)}
+form.f{display:grid;gap:14px}
+form.f label{display:grid;gap:6px;font-size:14px;font-weight:600;color:#24363b}
+form.f input,form.f select,form.f textarea{font:inherit;padding:9px 12px;border:1.5px solid #9db3b0;border-radius:6px;background:#fff;width:100%;box-sizing:border-box}
+form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--primary);outline:none}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.btn-primary{background:var(--primary);color:#fff;border:0;padding:10px 18px;border-radius:6px;font-weight:700;cursor:pointer;font-size:14px}
+.btn-primary:hover{background:var(--primary-hover)}
+.btn-secondary{background:#e2eceb;color:#224447;border:0;padding:10px 18px;border-radius:6px;font-weight:600;cursor:pointer;font-size:14px}
+.btn-secondary:hover{background:#d2e0df}
+.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;border:0;cursor:pointer;background:#e9f0f0;color:#184045}
+.btn-action:hover{background:#d3e3e3}
+.sandbox-banner{background:#fff3cd;border:1px solid #ffeeba;color:#856404;padding:12px 20px;border-radius:8px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
+</style>
 </head>
 <body>
-<div class="top">Kulera<span>+</span> · Painel</div>
+<div class="admin-header">
+  <div class="brand">Kulera<span>+</span> Admin</div>
+  <div class="header-actions">
+    <div id="sandboxToggle" class="sandbox-badge inactive" title="Clique para alternar o modo sandbox">
+      <span>● Modo Sandbox:</span> <span id="sandboxStatusText">Desactivado</span>
+    </div>
+    <button id="logoutBtn" class="btn-logout" type="button">Sair do Painel</button>
+  </div>
+</div>
+
 <main>
-  <form id="login" style="max-width:420px"><label>Chave de acesso<input id="key" type="password" autocomplete="current-password" required></label><p class="msg err" id="err"></p><button type="submit">Entrar</button></form>
-  <div id="app" hidden>
-    <div class="kpi" id="kpi"></div>
-    <p><button id="csvL" class="sec mini">Parceiros interessados (CSV)</button> <button id="csvO" class="sec mini">Vendas (CSV)</button> <button id="csvP" class="sec mini">Valores a pagar a parceiros (CSV)</button></p>
-
-    <h2>Submissões de parceiros</h2><div class="wrap"><table id="subs"></table></div>
-    <form class="f" id="subForm">
-      <b>Acção sobre submissão</b>
-      <input type="hidden" name="submissionId">
-      <label>Preço para criar livro (MZN)<input name="price" type="number" min="1" step="0.01" placeholder="Ex: 299.00"></label>
-      <label>Ao aprovar, criar livro como <select name="status"><option value="draft">Rascunho</option><option value="published">Publicado</option></select></label>
-      <label>Notas para o parceiro (opcional)<input name="notes"></label>
-      <p class="msg" id="subMsg"></p>
-      <div class="row"><button type="submit" style="background:var(--gold)">Aprovar e criar livro</button><button type="button" id="subReject" class="sec">Pedir alterações / Rejeitar</button></div>
+  <!-- Login Screen -->
+  <div id="login" style="max-width:400px;margin:80px auto;background:#fff;padding:32px;border-radius:12px;border:1px solid var(--border-c);box-shadow:0 8px 24px rgba(0,0,0,0.06)">
+    <h2 style="font:700 24px Georgia,serif;margin:0 0 8px;color:#073337">Acesso ao Painel</h2>
+    <p style="font-size:14px;color:#5b747c;margin:0 0 20px">Insira a chave de administração da Kulera+.</p>
+    <form id="loginForm" style="display:grid;gap:14px">
+      <label style="display:grid;gap:6px;font-weight:600;font-size:14px">Chave de acesso
+        <input id="key" type="password" autocomplete="current-password" required style="padding:10px;border:1.5px solid #9db3b0;border-radius:6px;font:inherit">
+      </label>
+      <p class="msg err" id="err" style="margin:0;font-size:13px"></p>
+      <button type="submit" class="btn-primary" style="padding:12px">Entrar no Painel</button>
     </form>
+  </div>
 
-    <h2>Livros</h2><div class="wrap"><table id="books"></table></div>
-    <form class="f" id="bookForm">
-      <b id="bookFormTitle">Novo livro</b><input type="hidden" name="id">
-      <label>Título<input name="title" required maxlength="200"></label>
-      <label>Autor<input name="author" required maxlength="200"></label>
-      <label>Sinopse<textarea name="description" rows="3" maxlength="2000"></textarea></label>
-      <div class="row"><label>Formatos <small>(um ou ambos)</small><span style="display:flex;gap:14px"><label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" name="hasDigital" style="width:auto"> Digital</label><label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" name="hasPhysical" style="width:auto"> Físico</label></span></label><label>Idioma<input name="language" value="pt" maxlength="10"></label></div>
-      <div class="row"><label>Preço (MZN)<input name="price" type="number" min="1" step="0.01" inputmode="decimal" required></label><label>Stock <small>(só físico)</small><input name="stock" type="number" min="0" step="1"></label></div>
-      <label>Parceiro <select name="partnerId"><option value="">Kulera (livro próprio)</option></select></label>
-      <label>Capa do livro <small>(arraste ou cole uma imagem aqui, ou URL HTTPS)</small><input name="coverUrl" id="coverUrlInput"><div class="coverPreview" id="coverPreview"></div></label>
-      <label>Ficheiro do livro <small>(Word .docx ou HTML) - apenas para digital</small><input type="file" id="file" accept=".docx,.html,.htm"></label>
-      <p class="msg" id="fileMsg"></p>
-      <label>Estado <select name="status"><option value="draft">Rascunho</option><option value="published">Publicado</option><option value="suspended">Suspenso</option></select></label>
-      <p class="msg" id="bookMsg" role="alert"></p>
-      <div class="row"><button type="submit" class="mini">Guardar livro</button><button type="button" id="bookReset" class="sec mini">Novo</button></div>
-    </form>
+  <!-- App with Tabs -->
+  <div id="app" class="admin-layout" hidden>
+    <aside class="sidebar">
+      <nav>
+        <button class="nav-tab active" data-tab="tab-overview">📊 Visão Geral</button>
+        <button class="nav-tab" data-tab="tab-books">📚 Livros e Catálogo</button>
+        <button class="nav-tab" data-tab="tab-submissions">📥 Submissões <span class="badge" id="subBadge">0</span></button>
+        <button class="nav-tab" data-tab="tab-plans">💳 Planos de Subscrição</button>
+        <button class="nav-tab" data-tab="tab-partners">🤝 Parceiros & Autores</button>
+        <button class="nav-tab" data-tab="tab-sales">💰 Vendas & Saques</button>
+        <button class="nav-tab" data-tab="tab-leads">📞 Leads de Parceiros</button>
+      </nav>
+    </aside>
 
-    <h2>Planos de subscrição</h2><div class="wrap"><table id="plans"></table></div>
-    <form class="f" id="planForm">
-      <b>Novo/Editar plano</b><input type="hidden" name="id">
-      <div class="row"><label>Código<input name="code" required></label><label>Nome<input name="name" required></label></div>
-      <label>Descrição<input name="description"></label>
-      <div class="row"><label>Preço (MZN)<input name="price" type="number" min="0" step="0.01" required></label><label>Moeda<input name="currency" value="MZN"></label></div>
-      <div class="row"><label>Intervalo <select name="interval"><option value="month">Mensal</option><option value="year">Anual</option></select></label><label>Estado <select name="status"><option value="active">Ativo</option><option value="archived">Arquivado</option></select></label></div>
-      <p class="msg" id="planMsg"></p>
-      <div class="row"><button type="submit">Guardar plano</button><button type="button" id="planReset" class="sec">Novo</button></div>
-    </form>
-    <h2>Subscrições</h2><div class="wrap"><table id="subsList"></table></div>
+    <section class="content-pane">
+      <div id="sandboxAlert" class="sandbox-banner" hidden>
+        <div>⚠️ <strong>MODO SANDBOX ATIVO:</strong> Todos os pagamentos (PaySuite) cobram apenas <strong>10.00 MZN</strong> para testes reais.</div>
+        <button type="button" class="btn-action" onclick="toggleSandbox(false)">Desativar</button>
+      </div>
 
-    <h2>Parceiros</h2><div class="wrap"><table id="partners"></table></div>
-    <form class="f" id="partnerForm">
-      <b id="partnerFormTitle">Novo parceiro</b><input type="hidden" name="id">
-      <label>Nome<input name="name" required maxlength="120"></label>
-      <div class="row"><label>Tipo <select name="kind"><option value="publisher">Editora</option><option value="author">Escritor</option></select></label><label>Comissão da Kulera (%)<input name="commission" type="number" min="0" max="100" step="0.01" required></label></div>
-      <div class="row"><label>Telemóvel<input name="phone" type="tel"></label><label>Email<input name="email" type="email"></label></div>
-      <label>Estado <select name="status"><option value="active">Activo</option><option value="suspended">Suspenso</option></select></label>
-      <p class="msg" id="partnerMsg" role="alert"></p>
-      <div class="row"><button type="submit" class="mini">Guardar parceiro</button><button type="button" id="partnerReset" class="sec mini">Novo</button></div>
-    </form>
+      <!-- TAB 1: VISÃO GERAL -->
+      <div id="tab-overview" class="tab-content active">
+        <div class="pane-title">Visão Geral do Negócio</div>
+        <div class="pane-sub">Métricas de faturação, vendas e pagamentos processados.</div>
+        <div class="kpi-grid" id="kpi"></div>
+        <div style="display:flex;gap:10px;margin-bottom:24px">
+          <button id="csvO" class="btn-secondary" style="font-size:13px">Exportar Vendas (CSV)</button>
+          <button id="csvP" class="btn-secondary" style="font-size:13px">Exportar Payouts Parceiros (CSV)</button>
+          <button id="csvL" class="btn-secondary" style="font-size:13px">Exportar Leads (CSV)</button>
+        </div>
+        <div class="pane-title" style="font-size:20px">Últimas Encomendas Realizadas</div>
+        <div class="table-card"><div class="table-wrap"><table id="recentOrders"></table></div></div>
+      </div>
 
-    <h2>Valores a pagar aos parceiros</h2><div class="wrap"><table id="payouts"></table></div>
-    <h2>Saques de parceiros</h2><div class="wrap"><table id="withdrawals"></table></div>
-    <h2>Parceiros interessados</h2><div class="wrap"><table id="leads"></table></div>
-    <h2>Últimas vendas</h2><div class="wrap"><table id="orders"></table></div>
+      <!-- TAB 2: LIVROS -->
+      <div id="tab-books" class="tab-content">
+        <div class="pane-title">Gestão do Catálogo de Livros</div>
+        <div class="pane-sub">Gerir formatos (digital e físico), stocks, preços independentes e publicação.</div>
+        <div class="table-card"><div class="table-wrap"><table id="books"></table></div></div>
+
+        <div class="form-card">
+          <h3 id="bookFormTitle">Registar Novo Livro</h3>
+          <form class="f" id="bookForm">
+            <input type="hidden" name="id">
+            <label>Título<input name="title" required maxlength="200"></label>
+            <label>Autor<input name="author" required maxlength="200"></label>
+            <label>Sinopse<textarea name="description" rows="3" maxlength="2000"></textarea></label>
+            <div class="row">
+              <label>Formatos Disponíveis <small>(um ou ambos)</small>
+                <span style="display:flex;gap:16px;padding:8px 0">
+                  <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" name="hasDigital" style="width:auto"> Digital</label>
+                  <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" name="hasPhysical" style="width:auto"> Físico</label>
+                </span>
+              </label>
+              <label>Idioma<input name="language" value="pt" maxlength="10"></label>
+            </div>
+            <div class="row" id="digitalFields"><label>Preço Digital (MZN)<input name="price" type="number" min="1" step="0.01" inputmode="decimal"></label><span></span></div>
+            <div class="row" id="physicalFields" hidden>
+              <label>Preço Físico (MZN)<input name="pricePhysical" type="number" min="1" step="0.01" inputmode="decimal"></label>
+              <label>Quantidade em Stock<input name="stock" type="number" min="0" step="1"></label>
+            </div>
+            <label>Editora / Parceiro <select name="partnerId"><option value="">Kulera (livro próprio)</option></select></label>
+            <label>Capa do Livro <small>(cole URL ou arraste a imagem)</small><input name="coverUrl" id="coverUrlInput"><div class="coverPreview" id="coverPreview"></div></label>
+            <label>Ficheiro do Livro <small>(Word .docx ou HTML - para e-book digital)</small><input type="file" id="file" accept=".docx,.html,.htm"></label>
+            <p class="msg" id="fileMsg"></p>
+            <label>Estado do Livro <select name="status"><option value="draft">Rascunho</option><option value="published">Publicado</option><option value="suspended">Suspenso</option></select></label>
+            <p class="msg" id="bookMsg" role="alert"></p>
+            <div class="row"><button type="submit" class="btn-primary">Guardar Livro</button><button type="button" id="bookReset" class="btn-secondary">Limpar / Novo</button></div>
+          </form>
+        </div>
+      </div>
+
+      <!-- TAB 3: SUBMISSÕES -->
+      <div id="tab-submissions" class="tab-content">
+        <div class="pane-title">Manuscritos Submetidos por Parceiros</div>
+        <div class="pane-sub">Reveja as propostas dos editores, aprove para criação de livro ou solicite alterações.</div>
+        <div class="table-card"><div class="table-wrap"><table id="subs"></table></div></div>
+
+        <div class="form-card">
+          <h3>Decisão sobre Submissão Seleccionada</h3>
+          <form class="f" id="subForm">
+            <input type="hidden" name="submissionId">
+            <label>Preço Inicial de Venda (MZN)<input name="price" type="number" min="1" step="0.01" placeholder="Ex: 500.00"></label>
+            <label>Ao aprovar, criar como <select name="status"><option value="draft">Rascunho (Aguarda taxa/revisão)</option><option value="published">Publicado Directamente</option></select></label>
+            <label>Notas de feedback para o parceiro<input name="notes" placeholder="Feedback sobre a obra ou motivo de revisão"></label>
+            <p class="msg" id="subMsg"></p>
+            <div class="row">
+              <button type="submit" class="btn-primary" style="background:var(--gold);color:#241700">Aprovar e Criar Livro</button>
+              <button type="button" id="subReject" class="btn-secondary">Pedir Alterações / Rejeitar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- TAB 4: PLANOS -->
+      <div id="tab-plans" class="tab-content">
+        <div class="pane-title">Planos de Subscrição Mensal</div>
+        <div class="pane-sub">Configuração dos planos oficiais (Básico 3.000 MT, Profissional 5.000 MT, Premium 7.000 MT), limites de publicação e prioridade na montra.</div>
+        <div class="table-card"><div class="table-wrap"><table id="plans"></table></div></div>
+
+        <div class="form-card">
+          <h3>Configurar Plano</h3>
+          <form class="f" id="planForm">
+            <input type="hidden" name="id">
+            <div class="row"><label>Código do Plano<input name="code" required placeholder="ex: basic, pro, premium"></label><label>Nome Apresentado<input name="name" required placeholder="ex: Básico, Profissional"></label></div>
+            <label>Descrição detalhada dos benefícios<input name="description" placeholder="ex: Até 3 publicações mensais · Posição normal"></label>
+            <div class="row">
+              <label>Preço Mensal (MZN)<input name="price" type="number" min="0" step="0.01" required></label>
+              <label>Limite Publicações / Mês <small>(vazio = ilimitado)</small><input name="maxPublications" type="number" min="1" placeholder="ex: 3, 10"></label>
+            </div>
+            <div class="row">
+              <label>Prioridade na Montra <small>(1=normal, 2=prioritário, 3=topo)</small><input name="showcasePriority" type="number" min="0" max="10" value="1"></label>
+              <label>Estado do Plano <select name="status"><option value="active">Activo</option><option value="archived">Arquivado</option></select></label>
+            </div>
+            <p class="msg" id="planMsg"></p>
+            <div class="row"><button type="submit" class="btn-primary">Guardar Plano</button><button type="button" id="planReset" class="btn-secondary">Novo Plano</button></div>
+          </form>
+        </div>
+
+        <div class="pane-title" style="font-size:20px;margin-top:32px">Subscrições de Parceiros Activas</div>
+        <div class="table-card"><div class="table-wrap"><table id="subsList"></table></div></div>
+      </div>
+
+      <!-- TAB 5: PARCEIROS -->
+      <div id="tab-partners" class="tab-content">
+        <div class="pane-title">Editoras e Escritores Parceiros</div>
+        <div class="pane-sub">Registo, comissões acordadas e gestão de estado de contas de parceiros.</div>
+        <div class="table-card"><div class="table-wrap"><table id="partners"></table></div></div>
+
+        <div class="form-card">
+          <h3 id="partnerFormTitle">Registar Novo Parceiro</h3>
+          <form class="f" id="partnerForm">
+            <input type="hidden" name="id">
+            <label>Nome da Editora / Autor<input name="name" required maxlength="120"></label>
+            <div class="row">
+              <label>Tipo <select name="kind"><option value="publisher">Editora</option><option value="author">Escritor / Autor</option></select></label>
+              <label>Comissão da Kulera (%)<input name="commission" type="number" min="0" max="100" step="0.01" required value="30"></label>
+            </div>
+            <div class="row"><label>Telemóvel<input name="phone" type="tel"></label><label>Email<input name="email" type="email"></label></div>
+            <label>Estado da Conta <select name="status"><option value="active">Activo</option><option value="suspended">Suspenso</option></select></label>
+            <p class="msg" id="partnerMsg" role="alert"></p>
+            <div class="row"><button type="submit" class="btn-primary">Guardar Parceiro</button><button type="button" id="partnerReset" class="btn-secondary">Limpar / Novo</button></div>
+          </form>
+        </div>
+      </div>
+
+      <!-- TAB 6: VENDAS & SAQUES -->
+      <div id="tab-sales" class="tab-content">
+        <div class="pane-title">Faturação, Payouts e Saques</div>
+        <div class="pane-sub">Acompanhamento de vendas em tempo real, pagamentos devidos a parceiros e aprovação de saques.</div>
+
+        <div class="pane-title" style="font-size:18px">Pedidos de Saque de Parceiros</div>
+        <div class="table-card"><div class="table-wrap"><table id="withdrawals"></table></div></div>
+
+        <div class="pane-title" style="font-size:18px;margin-top:24px">Saldos Acumulados a Pagar a Parceiros</div>
+        <div class="table-card"><div class="table-wrap"><table id="payouts"></table></div></div>
+
+        <div class="pane-title" style="font-size:18px;margin-top:24px">Histórico Completo de Vendas</div>
+        <div class="table-card"><div class="table-wrap"><table id="orders"></table></div></div>
+      </div>
+
+      <!-- TAB 7: LEADS -->
+      <div id="tab-leads" class="tab-content">
+        <div class="pane-title">Leads de Novos Parceiros</div>
+        <div class="pane-sub">Contactos interessados em vender na Kulera+ através do formulário de adesão.</div>
+        <div class="table-card"><div class="table-wrap"><table id="leads"></table></div></div>
+      </div>
+    </section>
   </div>
 </main>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script>
-const $=(id)=>document.getElementById(id);let KEY=sessionStorage.getItem('kulera_admin_key')||'',DATA=null,contentHtml=null,LOAD_INTERVAL=null;
-const fmt=(m)=>(m/100).toLocaleString('pt-MZ',{minimumFractionDigits:2})+' MZN';
-const cell=(v)=>{const td=document.createElement('td');td.textContent=v??'';return td;};
-const api=(body)=>fetch('/api/admin',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':KEY},body:JSON.stringify(body)}).then(async r=>({ok:r.ok,j:await r.json()}));
-function fill(t,heads,rows,make){t.innerHTML='';const tr=document.createElement('tr');heads.forEach(h=>{const th=document.createElement('th');th.textContent=h;tr.appendChild(th)});t.appendChild(tr);rows.forEach(r=>t.appendChild(make(r)));}
-function btn(label,fn){const b=document.createElement('button');b.type='button';b.className='sec mini';b.textContent=label;b.onclick=fn;const td=document.createElement('td');td.appendChild(b);return td;}
-async function load(){
-  const r=await fetch('/api/admin',{cache:'no-store',headers:{'x-admin-key':KEY}});if(!r.ok){if(LOAD_INTERVAL){clearInterval(LOAD_INTERVAL);LOAD_INTERVAL=null;}throw new Error(r.status===401?'auth':'server');}const j=await r.json();DATA=j;const T=j.totals;
-  $('kpi').innerHTML='';[['Vendas pagas',T.paid],['Receita',fmt(T.paid_minor)],['Fica na Kulera',fmt(T.kulera_minor)],['A pagar a parceiros',fmt(T.partners_minor)],['Pagamentos em aberto',T.open_orders]].forEach(([l,v])=>{const d=document.createElement('div');d.innerHTML='<b></b><span></span>';d.firstChild.textContent=v;d.lastChild.textContent=l;$('kpi').appendChild(d)});
-  const sel=document.querySelector('#bookForm [name=partnerId]'),cur=sel.value;sel.length=1;j.partners.forEach(p=>sel.add(new Option(p.name,p.id)));sel.value=cur;
-  fill($('books'),['Livro','Preço','Parceiro','Conteúdo','Estado','',''],j.books,b=>{const tr=document.createElement('tr');const p=j.partners.find(x=>x.id===b.partner_id);tr.append(cell(b.title+' — '+b.author),cell(fmt(b.price_minor)),cell(p?p.name:'Kulera'),cell(b.has_content?'Sim':'Falta'),cell({draft:'Rascunho',published:'Publicado',suspended:'Suspenso'}[b.status]),btn('Editar',()=>editBook(b)),btn('Remover',async()=>{if(!confirm('Remover "'+b.title+'" da loja?'))return;const r=await api({action:'delete_book',id:b.id});if(r.ok){load()}else{alert('Erro ao remover')}}));return tr});
-  fill($('subs'),['Data','Parceiro','Título','Autor','Estado','Notas',''],j.submissions||[],s=>{const tr=document.createElement('tr');const st={submitted:'Submetido',in_review:'Em análise',changes_requested:'Alterações pedidas',approved:'Aprovado',rejected:'Rejeitado'}[s.status]||s.status;tr.append(cell(new Date(s.created_at).toLocaleString('pt-MZ')),cell(s.partner||''),cell(s.title),cell(s.author),cell(st),cell(s.admin_notes||''),btn('Selecionar',()=>{const f=$('subForm');f.submissionId.value=s.id;f.notes.value=s.admin_notes||'';$('subMsg').textContent='';f.price.focus();f.scrollIntoView({behavior:'smooth'});}));return tr});
-  fill($('partners'),['Parceiro','Tipo','Comissão','Contacto','Estado',''],j.partners,p=>{const tr=document.createElement('tr');tr.append(cell(p.name),cell(p.kind==='publisher'?'Editora':'Escritor'),cell((p.commission_bps/100)+'%'),cell([p.phone,p.email].filter(Boolean).join(' · ')),cell(p.status==='active'?'Activo':'Suspenso'),btn('Editar',()=>editPartner(p)));return tr});
-  fill($('payouts'),['Parceiro','Vendas','Valor bruto','A pagar ao parceiro'],j.payouts,x=>{const tr=document.createElement('tr');tr.append(cell(x.name),cell(x.sales),cell(fmt(x.gross)),cell(fmt(x.owed)));return tr});
-  fill($('withdrawals'),['Data','Parceiro','Valor','Método','Detalhes','Estado',''],j.withdrawals||[],w=>{const tr=document.createElement('tr');const st={requested:'Pedido',processing:'Em processamento',paid:'Pago',rejected:'Recusado'}[w.status]||w.status;tr.append(cell(new Date(w.created_at).toLocaleString('pt-MZ')),cell(w.partner||''),cell(fmt(w.amount_minor)),cell(w.method||''),cell(w.details||''),cell(st));
-    const actions=document.createElement('td');
-    if(w.status==='requested'||w.status==='processing'){const b=document.createElement('button');b.type='button';b.className='sec mini';b.textContent='Marcar como pago';b.onclick=async()=>{if(!confirm('Marcar saque de '+fmt(w.amount_minor)+' como pago?'))return;const r=await api({action:'withdrawal_status',id:w.id,status:'paid'});if(r.ok)load();else alert('Erro');};actions.appendChild(b);}
-    tr.appendChild(actions);return tr});
-  fill($('leads'),['Data','Nome','Tipo','Telemóvel','Livros','Estado'],j.leads,l=>{const tr=document.createElement('tr');tr.append(cell(new Date(l.created_at).toLocaleString('pt-MZ')),cell(l.name+(l.organisation?' · '+l.organisation:'')),cell(l.kind==='publisher'?'Editora':'Escritor'));
-    const td=cell(l.phone);const a=document.createElement('a');a.href='https://wa.me/'+l.phone;a.textContent=' WhatsApp';td.appendChild(a);tr.append(td,cell(l.titles_count));
-    const s=document.createElement('select');[['new','Novo'],['contacted','Contactado'],['signed','Subscreveu'],['declined','Recusou']].forEach(([v,t])=>s.add(new Option(t,v)));s.value=l.status;s.onchange=()=>api({action:'lead_status',id:l.id,status:s.value});const tds=document.createElement('td');tds.appendChild(s);tr.appendChild(tds);return tr});
-  fill($('orders'),['Data','Comprador','Telemóvel','Livro','Valor','Estado'],j.orders,o=>{const tr=document.createElement('tr');tr.append(cell(new Date(o.created_at).toLocaleString('pt-MZ')),cell(o.buyer_name),cell(o.buyer_phone),cell(o.book),cell(fmt(o.amount_minor)),cell(o.status));return tr});
+const $ = id => document.getElementById(id);
+let KEY = sessionStorage.getItem('kulera_admin_key') || '', DATA = null, contentHtml = null, LOAD_INTERVAL = null;
+
+const fmt = m => (m/100).toLocaleString('pt-MZ', { minimumFractionDigits: 2 }) + ' MZN';
+const cell = v => { const td = document.createElement('td'); td.textContent = v ?? ''; return td; };
+const api = body => fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify(body) }).then(async r => ({ ok: r.ok, j: await r.json() }));
+
+function fill(t, heads, rows, make){
+  t.innerHTML = '';
+  const tr = document.createElement('tr');
+  heads.forEach(h => { const th = document.createElement('th'); th.textContent = h; tr.appendChild(th); });
+  t.appendChild(tr);
+  rows.forEach(r => t.appendChild(make(r)));
 }
-function editBook(b){const f=$('bookForm');$('bookFormTitle').textContent='Editar: '+b.title;f.id.value=b.id;f.title.value=b.title;f.author.value=b.author;f.description.value=b.description||'';f.price.value=(b.price_minor/100).toFixed(2);f.language.value=b.language;f.partnerId.value=b.partner_id||'';f.coverUrl.value=b.cover_url||'';showCoverPreview();f.status.value=b.status;const hd=b.has_digital!==undefined?b.has_digital:(b.kind!=='physical');const hp=b.has_physical!==undefined?b.has_physical:(b.kind==='physical'||b.requires_shipping===true);f.hasDigital.checked=hd===true;f.hasPhysical.checked=hp===true;f.stock.value=b.stock??'';contentHtml=null;$('file').value='';$('fileMsg').textContent=b.has_content?'Já tem conteúdo. Só escolha um ficheiro se quiser substituí-lo.':'';f.scrollIntoView({behavior:'smooth'})}
-function resetBook(){$('bookForm').reset();$('bookForm').id.value='';$('bookFormTitle').textContent='Novo livro';$('bookForm').hasDigital.checked=true;$('bookForm').hasPhysical.checked=false;contentHtml=null;$('coverPreview').innerHTML='';$('fileMsg').textContent='';$('bookMsg').textContent=''}
-function editPartner(p){const f=$('partnerForm');$('partnerFormTitle').textContent='Editar: '+p.name;f.id.value=p.id;f.name.value=p.name;f.kind.value=p.kind;f.commission.value=p.commission_bps/100;f.phone.value=p.phone||'';f.email.value=p.email||'';f.status.value=p.status;f.scrollIntoView({behavior:'smooth'})}
-function resetPartner(){$('partnerForm').reset();$('partnerForm').id.value='';$('partnerFormTitle').textContent='Novo parceiro';$('partnerMsg').textContent=''}
-$('file').addEventListener('change',async(e)=>{const file=e.target.files[0];contentHtml=null;if(!file)return;const m=$('fileMsg');m.className='msg';m.textContent='A converter…';
-  try{if(/\.docx$/i.test(file.name)){if(!window.mammoth)throw new Error('mammoth');const r=await mammoth.convertToHtml({arrayBuffer:await file.arrayBuffer()},{styleMap:["p[style-name='Title'] => h1:fresh","p[style-name='Título'] => h1:fresh","p[style-name='Heading 1'] => h1:fresh","p[style-name='Título 1'] => h1:fresh"]});contentHtml=r.value}else contentHtml=await file.text();
-    if(!contentHtml.trim())throw new Error('empty');m.textContent='Pronto: '+Math.round(contentHtml.length/1000)+' mil caracteres. Cada «Título 1» do Word passa a ser um capítulo.'}
-  catch{contentHtml=null;m.className='msg err';m.textContent='Não foi possível ler o ficheiro. Se for Word, tente exportar para HTML.'}});
-async function setCoverFromBlob(blob){const url=URL.createObjectURL(blob);try{const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url;});const max=900;const scale=Math.min(1,max/Math.max(img.width,img.height));const w=Math.max(1,Math.round(img.width*scale)),h=Math.max(1,Math.round(img.height*scale));const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');ctx.imageSmoothingQuality='high';ctx.drawImage(img,0,0,w,h);$('coverUrlInput').value=c.toDataURL('image/jpeg',0.88);showCoverPreview();}finally{URL.revokeObjectURL(url);}}
-function showCoverPreview(){const p=$('coverPreview');p.innerHTML='';const v=$('coverUrlInput').value.trim();if(!v)return;const img=document.createElement('img');img.src=v;img.style.cssText='max-height:120px;border:1px solid var(--line);border-radius:4px;margin-top:6px';img.onerror=()=>{p.innerHTML='';};p.appendChild(img);}
-$('coverUrlInput').addEventListener('paste',e=>{const items=e.clipboardData?.items||[];for(const item of items){if(item.type.startsWith('image/')){const file=item.getAsFile();if(!file)continue;e.preventDefault();setCoverFromBlob(file);return;}}});
-$('coverUrlInput').addEventListener('input',showCoverPreview);
-$('coverUrlInput').addEventListener('dragover',e=>{e.preventDefault();});
-$('coverUrlInput').addEventListener('drop',e=>{const file=e.dataTransfer?.files?.[0];if(file&&file.type.startsWith('image/')){e.preventDefault();setCoverFromBlob(file);}});
-$('bookForm').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target,m=$('bookMsg');m.className='msg';m.textContent='A guardar…';
-  const {ok,j}=await api({action:'save_book',id:f.id.value||undefined,title:f.title.value,author:f.author.value,description:f.description.value,language:f.language.value,priceMinor:Math.round(Number(f.price.value)*100),partnerId:f.partnerId.value||null,coverUrl:f.coverUrl.value,status:f.status.value,hasDigital:f.hasDigital.checked,hasPhysical:f.hasPhysical.checked,stock:f.stock.value,contentHtml});
-  if(!ok){m.className='msg err';m.textContent=j.error==='content_too_large'?'O livro é demasiado grande (máximo cerca de 3,5 milhões de caracteres).':'Verifique os campos (título, autor e preço).';return}
-  m.className='msg';m.textContent=j.warning?'Guardado como rascunho: falta o ficheiro do livro.':'Guardado.';f.id.value=j.id;contentHtml=null;load()});
-$('partnerForm').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target,m=$('partnerMsg');
-  const {ok,j}=await api({action:'save_partner',id:f.id.value||undefined,name:f.name.value,kind:f.kind.value,commissionBps:Math.round(Number(f.commission.value)*100),phone:f.phone.value,email:f.email.value,status:f.status.value});
-  m.className=ok?'msg':'msg err';m.textContent=ok?'Guardado.':'Verifique os campos.';if(ok){f.id.value=j.id;load()}});
-$('bookReset').onclick=resetBook;$('partnerReset').onclick=resetPartner;
-$('subForm').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target,m=$('subMsg');if(!f.submissionId.value){m.className='msg err';m.textContent='Escolha primeiro uma submissão na tabela.';return}if(!(Number(f.price.value)>0)){m.className='msg err';m.textContent='Indique o preço para criar o livro.';f.price.focus();return}const {ok,j}=await api({action:'approve_submission',submissionId:f.submissionId.value,priceMinor:Math.round(Number(f.price.value)*100),status:f.status.value,adminNotes:f.notes.value});m.className=ok?'msg':'msg err';m.textContent=ok?'Aprovado. Livro criado.':'Erro: '+(j.error||'verifique os dados.');if(ok){f.submissionId.value='';f.price.value='';f.notes.value='';load();}});
-$('subReject').onclick=async()=>{const f=$('subForm'),m=$('subMsg');if(!f.submissionId.value){m.className='msg err';m.textContent='Escolha primeiro uma submissão na tabela.';return}const {ok,j}=await api({action:'reject_submission',submissionId:f.submissionId.value,status:'changes_requested',adminNotes:f.notes.value});m.className=ok?'msg':'msg err';m.textContent=ok?'Registado.':'Erro: '+(j.error||'verifique os dados.');if(ok){f.submissionId.value='';f.notes.value='';load();}};
-$('planForm').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target,m=$('planMsg');const {ok}=await api({action:'save_plan',id:f.id.value||undefined,code:f.code.value,name:f.name.value,description:f.description.value,priceMinor:Math.round(Number(f.price.value)*100),currency:f.currency.value,interval:f.interval.value,status:f.status.value});m.className=ok?'msg':'msg err';m.textContent=ok?'Guardado.':'Erro.';if(ok)load();});
-$('planReset').onclick=()=>{$('planForm').reset();$('planForm').id.value='';$('planMsg').textContent='';};
-$('login').addEventListener('submit',async(e)=>{e.preventDefault();KEY=($('key').value||'').trim();sessionStorage.setItem('kulera_admin_key',KEY);try{await load();$('err').textContent='';$('login').hidden=true;$('app').hidden=false;if(LOAD_INTERVAL)clearInterval(LOAD_INTERVAL);LOAD_INTERVAL=setInterval(()=>{if(!document.activeElement||!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))load().catch(()=>{})},30000)}catch(err){$('err').textContent=err?.message==='auth'?'Chave incorrecta.':'Erro ao ligar ao servidor.';if(err?.message==='auth')sessionStorage.removeItem('kulera_admin_key');}});
-async function csv(t){const r=await fetch('/api/admin?format=csv&type='+t,{cache:'no-store',headers:{'x-admin-key':KEY}});const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='kulera-'+t+'.csv';a.click()}
-$('csvL').onclick=()=>csv('leads');$('csvO').onclick=()=>csv('orders');$('csvP').onclick=()=>csv('payouts');
-if(KEY){$('login').hidden=true;$('app').hidden=false;load().catch((err)=>{$('login').hidden=false;$('app').hidden=true;if(err?.message==='auth'){sessionStorage.removeItem('kulera_admin_key');KEY='';}});if(LOAD_INTERVAL)clearInterval(LOAD_INTERVAL);LOAD_INTERVAL=setInterval(()=>{if(!document.activeElement||!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))load().catch(()=>{})},30000);}
+function btn(label, fn){
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'btn-action'; b.textContent = label; b.onclick = fn;
+  const td = document.createElement('td'); td.appendChild(b); return td;
+}
+
+// Tabs switching logic
+document.querySelectorAll('.nav-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    tab.classList.add('active');
+    const target = tab.dataset.tab;
+    if($(target)) $(target).classList.add('active');
+  });
+});
+
+// Logout
+$('logoutBtn').onclick = () => {
+  if(confirm('Terminar sessão de administração?')){
+    sessionStorage.removeItem('kulera_admin_key');
+    location.reload();
+  }
+};
+
+// Sandbox toggle
+async function toggleSandbox(forceVal){
+  const current = DATA?.sandbox === true;
+  const next = forceVal !== undefined ? forceVal : !current;
+  const promptTxt = next
+    ? 'Ativar MODO SANDBOX?\n\nTodos os pagamentos no site cobrarão apenas 10.00 MZN para testes reais na PaySuite.'
+    : 'Desativar MODO SANDBOX e voltar aos preços reais de tabela?';
+  if(!confirm(promptTxt)) return;
+  const { ok, j } = await api({ action: 'set_sandbox', enabled: next });
+  if(ok){
+    DATA.sandbox = j.sandbox;
+    renderSandbox(j.sandbox);
+  }
+}
+$('sandboxToggle').onclick = () => toggleSandbox();
+
+function renderSandbox(isSandbox){
+  const b = $('sandboxToggle'), txt = $('sandboxStatusText'), alert = $('sandboxAlert');
+  if(isSandbox){
+    b.className = 'sandbox-badge active';
+    txt.textContent = 'ATIVO (10 MT)';
+    alert.hidden = false;
+  } else {
+    b.className = 'sandbox-badge inactive';
+    txt.textContent = 'Desactivado';
+    alert.hidden = true;
+  }
+}
+
+async function load(){
+  const r = await fetch('/api/admin', { cache: 'no-store', headers: { 'x-admin-key': KEY } });
+  if(!r.ok){
+    if(LOAD_INTERVAL){ clearInterval(LOAD_INTERVAL); LOAD_INTERVAL = null; }
+    throw new Error(r.status === 401 ? 'auth' : 'server');
+  }
+  const j = await r.json();
+  DATA = j;
+  renderSandbox(j.sandbox);
+
+  // KPIs
+  const T = j.totals;
+  $('kpi').innerHTML = '';
+  [
+    ['Total de Vendas Pagas', T.paid],
+    ['Volume Bruto Faturado', fmt(T.paid_minor)],
+    ['Receita Kulera+', fmt(T.kulera_minor)],
+    ['Saldo a Pagar a Parceiros', fmt(T.partners_minor)],
+    ['Taxas Publicação Recebidas', fmt(T.fees_minor || 0)],
+    ['Pagamentos Pendentes', T.open_orders]
+  ].forEach(([l, v]) => {
+    const d = document.createElement('div');
+    d.className = 'kpi-card';
+    d.innerHTML = '<b></b><span></span>';
+    d.firstChild.textContent = v;
+    d.lastChild.textContent = l;
+    $('kpi').appendChild(d);
+  });
+
+  // Partner select
+  const sel = document.querySelector('#bookForm [name=partnerId]'), cur = sel.value;
+  sel.length = 1;
+  j.partners.forEach(p => sel.add(new Option(p.name, p.id)));
+  sel.value = cur;
+
+  // Submissions badge
+  const pendingSubs = (j.submissions || []).filter(s => s.status === 'submitted' || s.status === 'in_review').length;
+  $('subBadge').textContent = pendingSubs;
+
+  // Books
+  fill($('books'), ['Livro', 'Preço Digital', 'Preço Físico', 'Stock', 'Parceiro', 'Conteúdo', 'Estado', '', ''], j.books, b => {
+    const tr = document.createElement('tr');
+    const p = j.partners.find(x => x.id === b.partner_id);
+    const pDig = b.has_digital ? fmt(b.price_minor) : '—';
+    const pFis = b.has_physical ? fmt(b.price_physical_minor ?? b.price_minor) : '—';
+    const stockTxt = b.has_physical ? (b.stock != null ? b.stock + ' un.' : '0 un.') : '—';
+    tr.append(
+      cell(b.title + ' — ' + b.author),
+      cell(pDig),
+      cell(pFis),
+      cell(stockTxt),
+      cell(p ? p.name : 'Kulera (Próprio)'),
+      cell(b.has_content ? '✓ Presente' : '⚠️ Falta'),
+      cell({ draft: 'Rascunho', published: 'Publicado', suspended: 'Suspenso' }[b.status] || b.status),
+      btn('Editar', () => editBook(b)),
+      btn('Remover', async () => {
+        if(!confirm('Remover o livro "' + b.title + '" do catálogo?')) return;
+        const res = await api({ action: 'delete_book', id: b.id });
+        if(res.ok) load(); else alert('Erro ao remover livro');
+      })
+    );
+    return tr;
+  });
+
+  // Submissions
+  fill($('subs'), ['Data', 'Parceiro', 'Título', 'Autor', 'Estado', 'Notas', ''], j.submissions || [], s => {
+    const tr = document.createElement('tr');
+    const st = { submitted: 'Submetido', in_review: 'Em análise', changes_requested: 'Alterações pedidas', approved: 'Aprovado', rejected: 'Rejeitado' }[s.status] || s.status;
+    tr.append(
+      cell(new Date(s.created_at).toLocaleString('pt-MZ')),
+      cell(s.partner || ''),
+      cell(s.title),
+      cell(s.author),
+      cell(st),
+      cell(s.admin_notes || ''),
+      btn('Avaliar', () => {
+        const f = $('subForm');
+        f.submissionId.value = s.id;
+        f.notes.value = s.admin_notes || '';
+        $('subMsg').textContent = '';
+        f.price.focus();
+        f.scrollIntoView({ behavior: 'smooth' });
+      })
+    );
+    return tr;
+  });
+
+  // Plans
+  fill($('plans'), ['Código', 'Nome', 'Preço Mensal', 'Limite Publicações', 'Prioridade Montra', 'Estado', ''], j.plans || [], p => {
+    const tr = document.createElement('tr');
+    const limTxt = p.max_publications ? p.max_publications + ' / mês' : 'Ilimitado';
+    const prioTxt = p.showcase_priority >= 3 ? '3 (Destaque Topo)' : (p.showcase_priority >= 2 ? '2 (Prioritário)' : '1 (Normal)');
+    tr.append(
+      cell(p.code),
+      cell(p.name),
+      cell(fmt(p.price_minor)),
+      cell(limTxt),
+      cell(prioTxt),
+      cell(p.status === 'active' ? 'Activo' : 'Arquivado'),
+      btn('Editar', () => editPlan(p))
+    );
+    return tr;
+  });
+
+  // Subscriptions list
+  fill($('subsList'), ['Comprador', 'Telefone', 'Plano', 'Início', 'Término', 'Estado'], j.subscriptions || [], s => {
+    const tr = document.createElement('tr');
+    tr.append(
+      cell(s.buyer_name),
+      cell(s.buyer_phone),
+      cell(s.plan || 'Plano'),
+      cell(new Date(s.starts_at).toLocaleDateString('pt-MZ')),
+      cell(new Date(s.ends_at).toLocaleDateString('pt-MZ')),
+      cell(s.status === 'active' ? 'Activa' : s.status)
+    );
+    return tr;
+  });
+
+  // Partners
+  fill($('partners'), ['Parceiro', 'Tipo', 'Comissão Kulera', 'Contacto', 'Estado', ''], j.partners, p => {
+    const tr = document.createElement('tr');
+    tr.append(
+      cell(p.name),
+      cell(p.kind === 'publisher' ? 'Editora' : 'Escritor'),
+      cell((p.commission_bps/100) + '%'),
+      cell([p.phone, p.email].filter(Boolean).join(' · ')),
+      cell(p.status === 'active' ? 'Activo' : 'Suspenso'),
+      btn('Editar', () => editPartner(p))
+    );
+    return tr;
+  });
+
+  // Payouts
+  fill($('payouts'), ['Parceiro', 'Vendas Realizadas', 'Faturação Bruta', 'Saldo Devido ao Parceiro'], j.payouts, x => {
+    const tr = document.createElement('tr');
+    tr.append(cell(x.name), cell(x.sales), cell(fmt(x.gross)), cell(fmt(x.owed)));
+    return tr;
+  });
+
+  // Withdrawals
+  fill($('withdrawals'), ['Data', 'Parceiro', 'Valor Saque', 'Método', 'Detalhes', 'Estado', ''], j.withdrawals || [], w => {
+    const tr = document.createElement('tr');
+    const st = { requested: 'Pedido', processing: 'Em processamento', paid: 'Pago', rejected: 'Recusado' }[w.status] || w.status;
+    tr.append(
+      cell(new Date(w.created_at).toLocaleString('pt-MZ')),
+      cell(w.partner || ''),
+      cell(fmt(w.amount_minor)),
+      cell(w.method || ''),
+      cell(w.details || ''),
+      cell(st)
+    );
+    const actions = document.createElement('td');
+    if(w.status === 'requested' || w.status === 'processing'){
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn-action';
+      b.textContent = 'Marcar Pago';
+      b.onclick = async () => {
+        if(!confirm('Marcar o saque de ' + fmt(w.amount_minor) + ' como Pago?')) return;
+        const res = await api({ action: 'withdrawal_status', id: w.id, status: 'paid' });
+        if(res.ok) load(); else alert('Erro ao actualizar saque.');
+      };
+      actions.appendChild(b);
+    }
+    tr.appendChild(actions);
+    return tr;
+  });
+
+  // Orders (both in overview and sales tab)
+  const renderOrders = o => {
+    const tr = document.createElement('tr');
+    tr.append(
+      cell(new Date(o.created_at).toLocaleString('pt-MZ')),
+      cell(o.buyer_name),
+      cell(o.buyer_phone),
+      cell(o.book || (o.type === 'subscription' ? 'Subscrição Plano' : (o.type === 'publication' ? 'Taxa Publicação' : '—'))),
+      cell(fmt(o.amount_minor)),
+      cell(o.status === 'paid' ? 'Pago' : o.status)
+    );
+    return tr;
+  };
+  fill($('recentOrders'), ['Data', 'Comprador', 'Telefone', 'Item', 'Valor', 'Estado'], (j.orders || []).slice(0, 8), renderOrders);
+  fill($('orders'), ['Data', 'Comprador', 'Telefone', 'Item', 'Valor', 'Estado'], j.orders || [], renderOrders);
+
+  // Leads
+  fill($('leads'), ['Data', 'Nome / Organização', 'Tipo', 'Telemóvel / WhatsApp', 'Livros', 'Estado'], j.leads, l => {
+    const tr = document.createElement('tr');
+    tr.append(
+      cell(new Date(l.created_at).toLocaleString('pt-MZ')),
+      cell(l.name + (l.organisation ? ' · ' + l.organisation : '')),
+      cell(l.kind === 'publisher' ? 'Editora' : 'Escritor')
+    );
+    const td = cell(l.phone);
+    const a = document.createElement('a');
+    a.href = 'https://wa.me/' + l.phone.replace(/\D/g, '');
+    a.target = '_blank';
+    a.textContent = ' 💬 WhatsApp';
+    td.appendChild(a);
+    tr.append(td, cell(l.titles_count));
+
+    const s = document.createElement('select');
+    [['new', 'Novo'], ['contacted', 'Contactado'], ['signed', 'Subscreveu'], ['declined', 'Recusou']].forEach(([v, t]) => s.add(new Option(t, v)));
+    s.value = l.status;
+    s.onchange = () => api({ action: 'lead_status', id: l.id, status: s.value });
+    const tds = document.createElement('td'); tds.appendChild(s); tr.appendChild(tds);
+    return tr;
+  });
+}
+
+// Edit functions
+function editBook(b){
+  const f = $('bookForm');
+  $('bookFormTitle').textContent = 'Editar: ' + b.title;
+  f.id.value = b.id;
+  f.title.value = b.title;
+  f.author.value = b.author;
+  f.description.value = b.description || '';
+  f.language.value = b.language;
+  f.partnerId.value = b.partner_id || '';
+  f.coverUrl.value = b.cover_url || '';
+  showCoverPreview();
+  f.status.value = b.status;
+  const hd = b.has_digital !== undefined ? b.has_digital : (b.kind !== 'physical');
+  const hp = b.has_physical !== undefined ? b.has_physical : (b.kind === 'physical' || b.requires_shipping === true);
+  f.hasDigital.checked = hd === true;
+  f.hasPhysical.checked = hp === true;
+  f.stock.value = b.stock ?? '';
+  f.price.value = hd ? (b.price_minor/100).toFixed(2) : '';
+  f.pricePhysical.value = hp ? (((b.price_physical_minor ?? b.price_minor) || 0)/100).toFixed(2) : '';
+  syncFormats();
+  contentHtml = null;
+  $('file').value = '';
+  $('fileMsg').textContent = b.has_content ? 'Livro já possui conteúdo armazenado.' : '';
+  f.scrollIntoView({ behavior: 'smooth' });
+}
+
+function resetBook(){
+  $('bookForm').reset();
+  $('bookForm').id.value = '';
+  $('bookFormTitle').textContent = 'Registar Novo Livro';
+  $('bookForm').hasDigital.checked = true;
+  $('bookForm').hasPhysical.checked = false;
+  syncFormats();
+  contentHtml = null;
+  $('coverPreview').innerHTML = '';
+  $('fileMsg').textContent = '';
+  $('bookMsg').textContent = '';
+}
+
+function editPartner(p){
+  const f = $('partnerForm');
+  $('partnerFormTitle').textContent = 'Editar: ' + p.name;
+  f.id.value = p.id;
+  f.name.value = p.name;
+  f.kind.value = p.kind;
+  f.commission.value = p.commission_bps / 100;
+  f.phone.value = p.phone || '';
+  f.email.value = p.email || '';
+  f.status.value = p.status;
+  f.scrollIntoView({ behavior: 'smooth' });
+}
+
+function resetPartner(){
+  $('partnerForm').reset();
+  $('partnerForm').id.value = '';
+  $('partnerFormTitle').textContent = 'Registar Novo Parceiro';
+  $('partnerMsg').textContent = '';
+}
+
+function editPlan(p){
+  const f = $('planForm');
+  f.id.value = p.id;
+  f.code.value = p.code;
+  f.name.value = p.name;
+  f.description.value = p.description || '';
+  f.price.value = (p.price_minor / 100).toFixed(2);
+  f.maxPublications.value = p.max_publications ?? '';
+  f.showcasePriority.value = p.showcase_priority ?? 1;
+  f.status.value = p.status;
+  f.scrollIntoView({ behavior: 'smooth' });
+}
+
+function syncFormats(){
+  const f = $('bookForm'), d = f.hasDigital.checked, p = f.hasPhysical.checked;
+  $('digitalFields').hidden = !d;
+  $('physicalFields').hidden = !p;
+  f.price.required = d;
+  f.pricePhysical.required = p;
+  f.stock.required = p;
+}
+$('bookForm').hasDigital.addEventListener('change', syncFormats);
+$('bookForm').hasPhysical.addEventListener('change', syncFormats);
+syncFormats();
+
+function showCoverPreview(){
+  const p = $('coverPreview'); p.innerHTML = '';
+  const v = $('coverUrlInput').value.trim();
+  if(!v) return;
+  const img = document.createElement('img');
+  img.src = v;
+  img.style.cssText = 'max-height:120px;border:1px solid var(--border-c);border-radius:4px;margin-top:6px';
+  img.onerror = () => { p.innerHTML = ''; };
+  p.appendChild(img);
+}
+$('coverUrlInput').addEventListener('input', showCoverPreview);
+
+$('file').addEventListener('change', async e => {
+  const file = e.target.files[0]; contentHtml = null; if(!file) return;
+  const m = $('fileMsg'); m.className = 'msg'; m.textContent = 'A converter manuscrito...';
+  try {
+    if(/\.docx$/i.test(file.name)){
+      if(!window.mammoth) throw new Error('mammoth');
+      const r = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() }, { styleMap: ["p[style-name='Title'] => h1:fresh","p[style-name='Heading 1'] => h1:fresh"] });
+      contentHtml = r.value;
+    } else contentHtml = await file.text();
+    if(!contentHtml.trim()) throw new Error('empty');
+    m.textContent = 'Pronto: ' + Math.round(contentHtml.length/1000) + ' mil caracteres lidos.';
+  } catch {
+    contentHtml = null; m.className = 'msg err'; m.textContent = 'Não foi possível ler o ficheiro Word/HTML.';
+  }
+});
+
+// Book submit
+$('bookForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, m = $('bookMsg');
+  m.className = 'msg'; m.textContent = 'A guardar...';
+  if(!f.hasDigital.checked && !f.hasPhysical.checked){
+    m.className = 'msg err'; m.textContent = 'Marque Digital, Físico ou ambos.'; return;
+  }
+  const { ok, j } = await api({
+    action: 'save_book', id: f.id.value || undefined,
+    title: f.title.value, author: f.author.value, description: f.description.value, language: f.language.value,
+    priceMinor: f.hasDigital.checked ? Math.round(Number(f.price.value)*100) : null,
+    pricePhysicalMinor: f.hasPhysical.checked ? Math.round(Number(f.pricePhysical.value)*100) : null,
+    partnerId: f.partnerId.value || null, coverUrl: f.coverUrl.value, status: f.status.value,
+    hasDigital: f.hasDigital.checked, hasPhysical: f.hasPhysical.checked,
+    stock: f.hasPhysical.checked ? f.stock.value : null, contentHtml
+  });
+  if(!ok){
+    m.className = 'msg err';
+    m.textContent = ({
+      content_too_large: 'O livro é demasiado grande.',
+      invalid_price_digital: 'Indique o preço digital.',
+      invalid_price_physical: 'Indique o preço físico.',
+      invalid_stock: 'Indique o stock físico.',
+      invalid_format: 'Marque Digital, Físico ou ambos.'
+    })[j.error] || 'Verifique os dados inseridos.';
+    return;
+  }
+  m.className = 'msg';
+  m.textContent = j.warning ? 'Guardado como rascunho (falta ficheiro de conteúdo).' : 'Livro guardado com sucesso.';
+  f.id.value = j.id; contentHtml = null; load();
+});
+
+// Partner submit
+$('partnerForm').addEventListener('submit', async e => {
+  e.preventDefault(); const f = e.target, m = $('partnerMsg');
+  const { ok, j } = await api({
+    action: 'save_partner', id: f.id.value || undefined, name: f.name.value, kind: f.kind.value,
+    commissionBps: Math.round(Number(f.commission.value)*100), phone: f.phone.value, email: f.email.value, status: f.status.value
+  });
+  m.className = ok ? 'msg' : 'msg err';
+  m.textContent = ok ? 'Parceiro guardado com sucesso.' : 'Verifique os dados.';
+  if(ok){ f.id.value = j.id; load(); }
+});
+
+// Plan submit
+$('planForm').addEventListener('submit', async e => {
+  e.preventDefault(); const f = e.target, m = $('planMsg');
+  const { ok } = await api({
+    action: 'save_plan', id: f.id.value || undefined, code: f.code.value, name: f.name.value, description: f.description.value,
+    priceMinor: Math.round(Number(f.price.value)*100), maxPublications: f.maxPublications.value, showcasePriority: f.showcasePriority.value, status: f.status.value
+  });
+  m.className = ok ? 'msg' : 'msg err';
+  m.textContent = ok ? 'Plano guardado com sucesso.' : 'Erro ao guardar plano.';
+  if(ok) load();
+});
+
+// Submission action
+$('subForm').addEventListener('submit', async e => {
+  e.preventDefault(); const f = e.target, m = $('subMsg');
+  if(!f.submissionId.value){ m.className = 'msg err'; m.textContent = 'Seleccione primeiro uma submissão na tabela.'; return; }
+  if(!(Number(f.price.value) > 0)){ m.className = 'msg err'; m.textContent = 'Indique o preço do livro.'; f.price.focus(); return; }
+  const { ok, j } = await api({
+    action: 'approve_submission', submissionId: f.submissionId.value,
+    priceMinor: Math.round(Number(f.price.value)*100), status: f.status.value, adminNotes: f.notes.value
+  });
+  m.className = ok ? 'msg' : 'msg err';
+  m.textContent = ok ? 'Submissão aprovada e livro criado.' : ('Erro: ' + (j.error || 'verifique os dados'));
+  if(ok){ f.submissionId.value = ''; f.price.value = ''; f.notes.value = ''; load(); }
+});
+
+$('subReject').onclick = async () => {
+  const f = $('subForm'), m = $('subMsg');
+  if(!f.submissionId.value){ m.className = 'msg err'; m.textContent = 'Seleccione primeiro uma submissão na tabela.'; return; }
+  const { ok, j } = await api({ action: 'reject_submission', submissionId: f.submissionId.value, status: 'changes_requested', adminNotes: f.notes.value });
+  m.className = ok ? 'msg' : 'msg err';
+  m.textContent = ok ? 'Pedido de alterações registado.' : 'Erro ao registar.';
+  if(ok){ f.submissionId.value = ''; f.notes.value = ''; load(); }
+};
+
+$('bookReset').onclick = resetBook;
+$('partnerReset').onclick = resetPartner;
+$('planReset').onclick = () => { $('planForm').reset(); $('planForm').id.value = ''; $('planMsg').textContent = ''; };
+
+// Login form
+$('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  KEY = ($('key').value || '').trim();
+  sessionStorage.setItem('kulera_admin_key', KEY);
+  try {
+    await load();
+    $('err').textContent = '';
+    $('login').hidden = true;
+    $('app').hidden = false;
+    if(LOAD_INTERVAL) clearInterval(LOAD_INTERVAL);
+    LOAD_INTERVAL = setInterval(() => {
+      if(!document.activeElement || !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) load().catch(()=>{});
+    }, 30000);
+  } catch(err){
+    $('err').textContent = err?.message === 'auth' ? 'Chave de administração incorreta.' : 'Erro ao ligar ao servidor.';
+    if(err?.message === 'auth') sessionStorage.removeItem('kulera_admin_key');
+  }
+});
+
+async function csv(t){
+  const r = await fetch('/api/admin?format=csv&type=' + t, { cache: 'no-store', headers: { 'x-admin-key': KEY } });
+  const b = await r.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b);
+  a.download = 'kulera-' + t + '.csv';
+  a.click();
+}
+$('csvL').onclick = () => csv('leads');
+$('csvO').onclick = () => csv('orders');
+$('csvP').onclick = () => csv('payouts');
+
+if(KEY){
+  $('login').hidden = true;
+  $('app').hidden = false;
+  load().catch(err => {
+    $('login').hidden = false;
+    $('app').hidden = true;
+    if(err?.message === 'auth'){ sessionStorage.removeItem('kulera_admin_key'); KEY = ''; }
+  });
+  if(LOAD_INTERVAL) clearInterval(LOAD_INTERVAL);
+  LOAD_INTERVAL = setInterval(() => {
+    if(!document.activeElement || !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) load().catch(()=>{});
+  }, 30000);
+}
 </script>
 </body>
 </html>

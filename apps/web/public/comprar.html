@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="pt">
 <head>
 <meta charset="utf-8">
@@ -34,7 +34,8 @@ const errors={invalid_name:'Escreva o seu nome.',invalid_phone:'Escreva um núme
 const money=(m,c)=>{try{return new Intl.NumberFormat('pt-MZ',{style:'currency',currency:c}).format(m/100)}catch{return (m/100).toFixed(2)+' '+c}};
 const id=new URLSearchParams(location.search).get('id');
 let b=null,fmt='digital';
-function applyFmt(){const physical=fmt==='physical';$('ship').hidden=!physical;const f=$('form');if(physical){if(!f.shippingName.value)f.shippingName.value=f.name.value||'';if(!f.shippingPhone.value)f.shippingPhone.value=f.phone.value||'';}$('go').textContent=physical?'Ir para pagamento (entrega)':'Ir para pagamento';}
+function priceFor(f){return f==='physical'?(b.physicalPriceMinor??b.priceMinor):(b.digitalPriceMinor??b.priceMinor)}
+function applyFmt(){const physical=fmt==='physical';$('ship').hidden=!physical;const f=$('form');if(physical){if(!f.shippingName.value)f.shippingName.value=f.name.value||'';if(!f.shippingPhone.value)f.shippingPhone.value=f.phone.value||'';}const pe=$('fmtPrice');if(pe)pe.textContent=money(priceFor(fmt),b.currency);$('go').textContent=(physical?'Pagar (entrega) ':'Pagar ')+money(priceFor(fmt),b.currency);}
 async function load(){
   const r=await fetch('/api/books'); const list=await r.json();
   b=(list||[]).find(x=>x.id===id);
@@ -42,8 +43,8 @@ async function load(){
   const hasD=b.hasDigital!==false, hasP=b.hasPhysical===true||b.requiresShipping===true;
   fmt=hasD?'digital':'physical';
   const badge=[hasD?'E-book':null,hasP?'Físico':null].filter(Boolean).join(' + ');
-  let html='<p><b>'+b.title+'</b><br>'+b.author+'<br><small>'+badge+'</small><br><span class="price" style="font-size:24px">'+money(b.priceMinor,b.currency)+'</span></p>';
-  if(hasD&&hasP){html+='<p style="margin:10px 0"><b>Formato:</b> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400"><input type="radio" name="fmt" value="digital" checked style="width:auto"> E-book (digital)</label> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400"><input type="radio" name="fmt" value="physical" style="width:auto"> Físico (entrega)</label></p>';}
+  let html='<p><b>'+b.title+'</b><br>'+b.author+'<br><small>'+badge+'</small><br><span class="price" id="fmtPrice" style="font-size:24px"></span></p>';
+  if(hasD&&hasP){html+='<p style="margin:10px 0"><b>Formato:</b> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400"><input type="radio" name="fmt" value="digital" checked style="width:auto"> E-book (digital) — '+money(priceFor('digital'),b.currency)+'</label> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400"><input type="radio" name="fmt" value="physical" style="width:auto"> Físico (entrega) — '+money(priceFor('physical'),b.currency)+'</label></p>';}
   $('info').innerHTML=html;
   document.querySelectorAll('[name=fmt]').forEach(x=>x.onchange=()=>{fmt=x.value;applyFmt();});
   const f=$('form'); f.name.oninput=()=>{if(fmt==='physical')f.shippingName.value=f.name.value}; f.phone.oninput=()=>{if(fmt==='physical')f.shippingPhone.value=f.phone.value};
