@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { pool } from './db.js';
-import { createPayment } from './paysuite.js';
+import { createPayment, resolvePaysuiteToken } from './paysuite.js';
 import { computeSplit } from './split.js';
 import { APP_BPS, EDITORS_BPS } from './pricing.js';
 
@@ -61,9 +61,10 @@ export async function getPaysuiteTokenFromDb() {
   await ensurePaymentSchema();
   try {
     const r = await pool.query("select value from fair_settings where key='paysuite_token'");
-    if (r.rows[0]?.value && r.rows[0].value.trim()) return r.rows[0].value.trim();
+    const dbTok = r.rows[0]?.value?.trim();
+    if (dbTok && !dbTok.startsWith('2098|')) return dbTok;
   } catch {}
-  return (process.env.PAYSUITE_API_KEY || process.env.PAYSUITE_TOKEN || '').trim();
+  return resolvePaysuiteToken();
 }
 
 export async function getAdminKeyFromDb() {
