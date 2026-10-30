@@ -63,14 +63,17 @@ async function renderPdf(){
   const base=pg.getViewport({scale:1});
   const maxW=Math.min(Math.max(host.clientWidth||680,320),900);
   const vp=pg.getViewport({scale:(maxW/base.width)*pdfZoom});
+  // Desenha em alta densidade (Retina/telemóvel 2–3x) para o texto sair nítido, não esbatido.
+  let dpr=Math.min(Math.max(window.devicePixelRatio||1,1),3);
+  if(vp.width*dpr>2200) dpr=Math.max(1,2200/vp.width); // evita canvas gigante com zoom alto
   const canvas=document.createElement('canvas');
-  canvas.width=Math.round(vp.width); canvas.height=Math.round(vp.height);
+  canvas.width=Math.round(vp.width*dpr); canvas.height=Math.round(vp.height*dpr);
   const wrap=document.createElement('div'); wrap.className='pdf-wrap';
   wrap.appendChild(canvas);
   if(pdfMark){ const w=document.createElement('div'); w.className='pdf-wm'; w.textContent=pdfMark; wrap.appendChild(w); }
   const cnt=document.createElement('div'); cnt.className='pdf-count'; cnt.textContent=pdfPage+' / '+pdfTotal; wrap.appendChild(cnt);
   host.innerHTML=''; host.appendChild(wrap);
-  await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+  await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp,transform:dpr!==1?[dpr,0,0,dpr,0,0]:undefined}).promise;
   $('prev').disabled=pdfPage<=1; $('next').disabled=pdfPage>=pdfTotal;
   try{localStorage.setItem('kulera_pg_'+t,pdfPage)}catch{}
   window.scrollTo(0,0);
