@@ -80,6 +80,9 @@ async function q(sql, p = []) {
   if (/^select name,phone,email from fair_partners where id=\$1/i.test(s)) {
     return rows(S.partners.filter((x) => x.id === p[0]));
   }
+  if (s.startsWith('select cover_url from fair_books where id = $1 and status = $2')) {
+    return rows(S.books.filter((b) => b.id === p[0] && b.status === p[1]).map((b) => ({ cover_url: b.cover_url ?? null })));
+  }
   if (/^select id,title,publication_fee_minor from fair_books where id=\$1 and partner_id=\$2/i.test(s)) {
     return rows(
       S.books.filter(

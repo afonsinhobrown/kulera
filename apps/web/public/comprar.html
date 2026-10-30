@@ -115,8 +115,8 @@ async function load(){
   $('bAuthorText').textContent=b.author;
 
   // Configurar botões de partilha
-  const shareUrl = location.origin + '/comprar.html?id=' + encodeURIComponent(b.id);
-  const shareTxt = `📖 "${b.title}" de ${b.author} disponível na Kulera+! Compre aqui: ${shareUrl}`;
+  const shareUrl = location.origin + '/livro/' + encodeURIComponent(b.id);
+  const shareTxt = `📖 "${b.title}" de ${b.author} na Kulera+. ${fmt==='physical'?'Físico':'E-book'} ${money(priceFor(fmt),b.currency)}. Compre agora: ${shareUrl}`;
   $('shareBox').hidden = false;
   $('shareWa').href = 'https://wa.me/?text=' + encodeURIComponent(shareTxt);
   $('shareNative').onclick = async () => {

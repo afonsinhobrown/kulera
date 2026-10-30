@@ -1,1 +1,3 @@
-{}
+{
+  "rewrites": [{ "source": "/livro/:id", "destination": "/api/livro?id=:id" }]
+}

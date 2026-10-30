@@ -72,16 +72,27 @@ function resolveCoverSrc(book){
 }
 
 function bookShareUrl(b){
-  return location.origin + '/comprar.html?id=' + encodeURIComponent(b.id);
+  return location.origin + '/livro/' + encodeURIComponent(b.id);
+}
+
+function bookSharePrices(b){
+  const hasD = b.hasDigital !== false;
+  const hasP = b.hasPhysical === true || b.requiresShipping === true;
+  const parts = [];
+  if(hasD) parts.push('E-book ' + money(b.digitalPriceMinor ?? b.priceMinor, b.currency));
+  if(hasP) parts.push('Físico ' + money(b.physicalPriceMinor ?? b.priceMinor, b.currency));
+  return parts.join(' · ');
 }
 
 function bookShareText(b){
-  return `📖 "${b.title}" de ${b.author} disponível na Kulera+! Compre e leia aqui: ${bookShareUrl(b)}`;
+  const prices = bookSharePrices(b);
+  return `📖 "${b.title}" de ${b.author} na Kulera+. ${prices ? prices + '. ' : ''}Compre agora: ${bookShareUrl(b)}`;
 }
 
 async function shareBook(b, feedbackEl){
   const url = bookShareUrl(b);
-  const text = `📖 "${b.title}" de ${b.author} na Kulera+`;
+  const prices = bookSharePrices(b);
+  const text = `📖 "${b.title}" de ${b.author} na Kulera+${prices ? ' · ' + prices : ''}. Compre agora!`;
   if(navigator.share){
     try{
       await navigator.share({ title: b.title + ' · Kulera+', text, url });
