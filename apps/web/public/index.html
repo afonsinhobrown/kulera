@@ -30,8 +30,9 @@
   <p class="note" id="have" hidden>Já comprou? <a id="haveLink" href="#">Abrir o meu livro</a></p>
   <div class="books" id="books" aria-live="polite"><p class="empty">A carregar livros…</p></div>
 
-  <section class="buy panel" id="buy" hidden style="max-width:520px;margin:16px 0 30px">
-    <h1 id="bTitle" style="font-size:26px"></h1><p class="author" id="bAuthor"></p><p id="bDesc"></p><p class="price" id="bPrice"></p>
+  <section class="buy panel" id="buy" hidden style="max-width:520px;margin:16px 0 30px;text-align:center">
+    <div id="bCover" style="margin:0 auto 16px;max-width:200px"></div>
+    <h1 id="bTitle" style="font-size:26px"></h1><p class="author" id="bAuthor"></p><p id="bDesc" style="text-align:left"></p><p class="price" id="bPrice"></p>
     <a class="btn" id="goBuy" href="#">Comprar agora</a>
   </section>
 
@@ -77,7 +78,12 @@ fetch('/api/books',{cache:'no-store'}).then(r=>r.json()).then(list=>{
     c.append(cv,h,a,p,btn);box.appendChild(c);
   });
 }).catch(()=>{$('books').innerHTML='<p class="empty">Não foi possível carregar. Atualize a página.</p>'});
-function choose(b,scroll=true){current=b;const hasD=b.hasDigital!==false,hasP=b.hasPhysical===true||b.requiresShipping===true;const parts=[hasD?'Digital: '+money(b.digitalPriceMinor??b.priceMinor,b.currency):null,hasP?'Físico: '+money(b.physicalPriceMinor??b.priceMinor,b.currency):null].filter(Boolean);$('buy').hidden=false;$('bTitle').textContent=b.title;$('bAuthor').textContent=b.author;$('bDesc').textContent=b.description||'';$('bPrice').textContent=parts.join(' · ');$('goBuy').href='comprar.html?id='+encodeURIComponent(b.id);$('goBuy').textContent='Comprar agora';if(scroll)$('buy').scrollIntoView({behavior:'smooth'})}
+function choose(b,scroll=true){current=b;const hasD=b.hasDigital!==false,hasP=b.hasPhysical===true||b.requiresShipping===true;const parts=[hasD?'Digital: '+money(b.digitalPriceMinor??b.priceMinor,b.currency):null,hasP?'Físico: '+money(b.physicalPriceMinor??b.priceMinor,b.currency):null].filter(Boolean);$('buy').hidden=false;
+  const covBox=$('bCover'); if(covBox){
+    if(b.coverUrl){ covBox.innerHTML='<div class="cover" style="max-width:180px"><img src="'+b.coverUrl+'" alt="Capa"></div>'; }
+    else{ covBox.innerHTML='<div class="cover" style="max-width:180px"><span style="padding:10px;font-size:16px">'+b.title+'</span></div>'; }
+  }
+  $('bTitle').textContent=b.title;$('bAuthor').textContent=b.author;$('bDesc').textContent=b.description||'';$('bPrice').textContent=parts.join(' · ');$('goBuy').href='comprar.html?id='+encodeURIComponent(b.id);$('goBuy').textContent='Comprar agora';if(scroll)$('buy').scrollIntoView({behavior:'smooth'})}
 if($('form')) $('form').addEventListener('submit',async(e)=>{e.preventDefault();});
 </script>
 </body>

@@ -11,7 +11,11 @@
 <main>
   <section class="panel" style="max-width:520px">
     <h1 style="font-size:28px">Finalizar compra</h1>
-    <div id="info"></div>
+    <div id="info" style="text-align:center"></div>
+    <div style="background:#e8f4f5;border:1px solid #c2e2e5;border-radius:8px;padding:12px 14px;margin:12px 0;font-size:14px;color:#18454b;line-height:1.45;display:flex;gap:10px;align-items:flex-start">
+      <span style="font-size:18px">📖</span>
+      <div><b>Como vai ler o seu livro?</b><br>Não precisa de criar conta. Assim que o pagamento for concluído, o seu livro abre automaticamente aqui e recebe o link de acesso no telemóvel/email para ler quando quiser.</div>
+    </div>
     <form id="form" novalidate>
       <label>Nome completo<input name="name" autocomplete="name" required maxlength="80"></label>
       <label>Telefone (M-Pesa / e-Mola)<input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="84 000 0000" required></label>
@@ -43,7 +47,13 @@ async function load(){
   const hasD=b.hasDigital!==false, hasP=b.hasPhysical===true||b.requiresShipping===true;
   fmt=hasD?'digital':'physical';
   const badge=[hasD?'E-book':null,hasP?'Físico':null].filter(Boolean).join(' + ');
-  let html='<p><b>'+b.title+'</b><br>'+b.author+'<br><small>'+badge+'</small><br><span class="price" id="fmtPrice" style="font-size:24px"></span></p>';
+  let coverHtml = '';
+  if(b.coverUrl){
+    coverHtml = '<div class="cover" style="max-width:160px;margin:12px auto 16px"><img src="'+b.coverUrl+'" alt="Capa"></div>';
+  } else {
+    coverHtml = '<div class="cover" style="max-width:160px;margin:12px auto 16px"><span style="font-size:15px;padding:8px">'+b.title+'</span></div>';
+  }
+  let html=coverHtml+'<p style="margin:4px 0"><b>'+b.title+'</b><br><span style="color:#557077">'+b.author+'</span><br><small style="color:var(--sea);font-weight:600">'+badge+'</small><br><span class="price" id="fmtPrice" style="font-size:24px;display:inline-block;margin:10px 0 4px"></span></p>';
   if(hasD&&hasP){html+='<p style="margin:10px 0"><b>Formato:</b> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400"><input type="radio" name="fmt" value="digital" checked style="width:auto"> E-book (digital) — '+money(priceFor('digital'),b.currency)+'</label> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400"><input type="radio" name="fmt" value="physical" style="width:auto"> Físico (entrega) — '+money(priceFor('physical'),b.currency)+'</label></p>';}
   $('info').innerHTML=html;
   document.querySelectorAll('[name=fmt]').forEach(x=>x.onchange=()=>{fmt=x.value;applyFmt();});

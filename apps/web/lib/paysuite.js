@@ -18,12 +18,19 @@ export async function createPayment({ reference, amountMinor, description, retur
     }),
     signal: AbortSignal.timeout(10_000),
   });
-  if (!res.ok) throw new Error(`PaySuite HTTP ${res.status}`); // nunca registar token nem corpo
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    console.error(`PaySuite HTTP Error ${res.status}:`, errText);
+    throw new Error(`PaySuite HTTP ${res.status}: ${errText.slice(0, 100)}`);
+  }
   const json = await res.json();
   const d = json.data ?? json;
   const providerPaymentId = d.id ?? d.payment_id ?? d.reference;
   const checkoutUrl = d.checkout_url ?? d.checkoutUrl ?? d.payment_url ?? d.url;
-  if (!providerPaymentId || !checkoutUrl) throw new Error('Resposta inesperada da PaySuite');
+  if (!providerPaymentId || !checkoutUrl) {
+    console.error('PaySuite resposta sem id ou checkoutUrl:', JSON.stringify(d));
+    throw new Error('Resposta inesperada da PaySuite');
+  }
   return { providerPaymentId: String(providerPaymentId), checkoutUrl };
 }
 
