@@ -24,7 +24,7 @@ function siteOrigin(req) {
   const host = req?.headers?.['x-forwarded-host'] || req?.headers?.host;
   const proto = String(req?.headers?.['x-forwarded-proto'] || 'https').split(',')[0].trim() || 'https';
   if (host) return `${proto}://${host}`;
-  return String(process.env.SITE_URL || 'https://kulera.vercel.app').replace(/\/+$/, '');
+  return String(process.env.SITE_URL || 'https://kulera.tecnoincubadora.org').replace(/\/+$/, '');
 }
 
 // A capa é servida pela própria página (?capa=1), tanto para capas em base64 como para links externos.

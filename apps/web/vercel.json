@@ -1,3 +1,11 @@
 {
+  "redirects": [
+    {
+      "source": "/livro/:id",
+      "has": [{ "type": "host", "value": "kulera-omega.vercel.app" }],
+      "destination": "https://kulera.tecnoincubadora.org/livro/:id",
+      "permanent": true
+    }
+  ],
   "rewrites": [{ "source": "/livro/:id", "destination": "/api/livro?id=:id" }]
 }

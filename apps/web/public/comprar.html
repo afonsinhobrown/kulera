@@ -114,8 +114,9 @@ async function load(){
   $('bTitleText').textContent=b.title;
   $('bAuthorText').textContent=b.author;
 
-  // Configurar botões de partilha
-  const shareUrl = location.origin + '/livro/' + encodeURIComponent(b.id);
+  // Configurar botões de partilha (sempre com o domínio público do site)
+  const shareOrigin = /(^|\.)vercel\.app$/i.test(location.hostname) ? 'https://kulera.tecnoincubadora.org' : location.origin;
+  const shareUrl = shareOrigin + '/livro/' + encodeURIComponent(b.id);
   const shareTxt = `📖 "${b.title}" de ${b.author} na Kulera+. ${fmt==='physical'?'Físico':'E-book'} ${money(priceFor(fmt),b.currency)}. Compre agora: ${shareUrl}`;
   $('shareBox').hidden = false;
   $('shareWa').href = 'https://wa.me/?text=' + encodeURIComponent(shareTxt);

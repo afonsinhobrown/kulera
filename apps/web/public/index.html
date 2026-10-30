@@ -71,8 +71,15 @@ function resolveCoverSrc(book){
   return u;
 }
 
+// Os links partilhados usam sempre o domínio público do site, mesmo que a página
+// esteja a ser vista pelo endereço de deploy (*.vercel.app).
+const CANONICAL_ORIGIN='https://kulera.tecnoincubadora.org';
+function shareOrigin(){
+  return /(^|\.)vercel\.app$/i.test(location.hostname) ? CANONICAL_ORIGIN : location.origin;
+}
+
 function bookShareUrl(b){
-  return location.origin + '/livro/' + encodeURIComponent(b.id);
+  return shareOrigin() + '/livro/' + encodeURIComponent(b.id);
 }
 
 function bookSharePrices(b){
