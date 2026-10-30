@@ -15,7 +15,7 @@ Catálogo de vários livros, cada um com o seu preço, parceiros (editoras e esc
 
 ## O que a plataforma faz
 - Loja com todos os livros publicados; comprar com M-Pesa, e-Mola ou Visa; confirmação automática; leitura logo a seguir (telemóvel e computador).
-- **Link de partilha por livro** (`/livro/<id>`): mostra a capa, os preços e um botão **Compre agora** por formato, que leva à página de pagamento desse livro. A pré-visualização no WhatsApp/Facebook mostra a capa, o título e os preços (a capa é servida por `/api/capa?id=<id>`, mesmo quando está guardada em base64 no painel).
+- **Link de partilha por livro** (`/livro/<id>`): mostra a capa, os preços e um botão **Compre agora** por formato, que leva à página de pagamento desse livro. A pré-visualização no WhatsApp/Facebook mostra a capa, o título e os preços (a capa é servida pela mesma função, em `/api/livro?id=<id>&capa=1`, mesmo quando está guardada em base64 no painel).
 - Divisão da receita registada em cada venda (comissão aplicada na altura, que não muda depois) e valores a pagar a cada parceiro no painel, com CSV.
 - Captação de parceiros (`parceiros.html`) com lista, estado e WhatsApp directo no painel.
 - Segurança: o livro só sai com pagamento confirmado; sem ficheiro nem link público; marca de água com nome e telemóvel; webhooks com assinatura e sem duplicados; preço e disponibilidade sempre da base de dados.

@@ -5,6 +5,8 @@ import { book as siteBook } from '../lib/book.js';
 // É servida pelo servidor (e não pelo browser) para que a pré-visualização do link mostre
 // a capa, os preços e o texto "Compre agora". Cada preço tem um botão "Compre agora" que
 // leva à página de pagamento desse livro (/comprar.html?id=...&fmt=...).
+// A mesma função serve a capa como imagem: /api/livro?id=<id>&capa=1
+// (assim o projeto fica com 12 funções, o máximo do plano Hobby da Vercel).
 // No Vercel, /livro/<id> é reescrito para /api/livro?id=<id> (ver vercel.json).
 
 const esc = (v) =>
@@ -25,12 +27,12 @@ function siteOrigin(req) {
   return String(process.env.SITE_URL || 'https://kulera.vercel.app').replace(/\/+$/, '');
 }
 
-// A capa é servida por /api/capa (funciona tanto para capas em base64 como para links externos).
+// A capa é servida pela própria página (?capa=1), tanto para capas em base64 como para links externos.
 // O parâmetro v renova a imagem em cache quando a capa é alterada no painel.
 function coverPath(b) {
   if (!b.coverUrl) return '';
   const v = b.updatedAt ? '&v=' + encodeURIComponent(String(b.updatedAt)) : '';
-  return `/api/capa?id=${encodeURIComponent(b.id)}${v}`;
+  return `/api/livro?id=${encodeURIComponent(b.id)}&capa=1${v}`;
 }
 
 const BOOK_SQL = `select b.id, b.title, b.author, b.description, b.language, b.price_minor, b.currency,
@@ -106,8 +108,45 @@ function priceOptions(b) {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const IMAGE_TYPE = /^image\/(png|jpe?g|webp|gif|svg\+xml)$/i;
 
 const payHref = (id, fmt) => `/comprar.html?id=${encodeURIComponent(id)}&fmt=${fmt}`;
+
+// Capa do livro como imagem pública, para o og:image e para o <img> da página.
+async function serveCover(req, res, id) {
+  let cover = '';
+  try {
+    const r = await pool.query('select cover_url from fair_books where id = $1 and status = $2', [id, 'published']);
+    cover = String(r.rows[0]?.cover_url || '').trim();
+  } catch {
+    return res.status(404).json({ error: 'not_found' });
+  }
+  if (!cover) return res.status(404).json({ error: 'not_found' });
+
+  // Capa externa: manda o browser/leitor de redes sociais para o endereço original.
+  if (/^https?:\/\//i.test(cover)) {
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Location', cover);
+    return res.status(302).send('');
+  }
+
+  // Capa guardada na base de dados como data URI (é o que o painel faz ao carregar uma imagem).
+  const m = /^data:(image\/[a-z0-9.+-]+)(;base64)?,([\s\S]*)$/i.exec(cover);
+  if (!m || !IMAGE_TYPE.test(m[1])) return res.status(404).json({ error: 'not_found' });
+  let bytes;
+  try {
+    bytes = m[2] ? Buffer.from(m[3], 'base64') : Buffer.from(decodeURIComponent(m[3]), 'utf8');
+  } catch {
+    return res.status(404).json({ error: 'not_found' });
+  }
+  if (!bytes.length) return res.status(404).json({ error: 'not_found' });
+
+  res.setHeader('Content-Type', m[1].toLowerCase());
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'");
+  res.setHeader('Cache-Control', req?.query?.v ? 'public, max-age=31536000, immutable' : 'public, max-age=300');
+  return res.status(200).send(bytes);
+}
 
 function pageShell({ title, description, canonical, og, body }) {
   const support = String(siteBook?.supportWhatsApp || '').replace(/\D/g, '');
@@ -272,9 +311,16 @@ function sendHtml(res, status, html) {
 
 export default async function handler(req, res) {
   const id = String(req?.query?.id ?? '').trim();
+  const wantsCover = Boolean(req?.query?.capa);
   const origin = siteOrigin(req);
+
+  if (!UUID.test(id)) {
+    if (wantsCover) return res.status(404).json({ error: 'not_found' });
+    return sendHtml(res, 404, renderNotFound(origin));
+  }
+  if (wantsCover) return serveCover(req, res, id);
+
   try {
-    if (!UUID.test(id)) return sendHtml(res, 404, renderNotFound(origin));
     const found = await findBook(id);
     if (!found) return sendHtml(res, 404, renderNotFound(origin));
     res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300');

@@ -303,7 +303,6 @@ assert.equal((await call(lead, { method: 'POST', body: { website: 'spam' } })).c
 
 // 10. Link de partilha (/livro/<id>): mostra capa, preços, "Compre agora" e leva à página de pagamento do livro
 const { default: livroPage } = await import('../api/livro.js');
-const { default: capa } = await import('../api/capa.js');
 S.books.push({
   id: U + '21',
   title: 'Livro Partilhado',
@@ -324,26 +323,26 @@ assert.ok(String(share.h['Content-Type']).includes('text/html'));
 assert.ok(String(share.h['Cache-Control']).includes('public'));
 const shareHtml = share.body;
 assert.ok(shareHtml.includes('Livro Partilhado'));
-assert.ok(shareHtml.includes('og:image') && shareHtml.includes('https://site.test/api/capa?id=' + U + '21'));
+assert.ok(shareHtml.includes('og:image') && shareHtml.includes('https://site.test/api/livro?id=' + U + '21') && shareHtml.includes('capa=1'));
 assert.ok(shareHtml.includes('450,00') && shareHtml.includes('900,00')); // preços do catálogo
 assert.ok((shareHtml.match(/Compre agora/g) || []).length >= 2); // um botão por formato
 assert.ok(shareHtml.includes('comprar.html?id=' + encodeURIComponent(U + '21') + '&amp;fmt=digital'));
 assert.ok(shareHtml.includes('&amp;fmt=physical'));
 assert.ok(shareHtml.includes('og:description') && shareHtml.includes('Compre agora'));
 
-// A capa é servida como imagem, mesmo quando está guardada em base64 no painel (og:image funciona sempre)
+// A capa é servida como imagem (?capa=1), mesmo quando está guardada em base64 no painel (og:image funciona sempre)
 const shareData = await call(livroPage, { query: { id: U + '11' } });
 assert.equal(shareData.code, 200);
-assert.ok(shareData.body.includes('/api/capa?id=' + U + '11'));
-const capaData = await call(capa, { query: { id: U + '11' } });
+assert.ok(shareData.body.includes('/api/livro?id=' + U + '11') && shareData.body.includes('capa=1'));
+const capaData = await call(livroPage, { query: { id: U + '11', capa: '1' } });
 assert.equal(capaData.code, 200);
 assert.ok(String(capaData.h['Content-Type']).startsWith('image/'));
 assert.equal(capaData.h['X-Content-Type-Options'], 'nosniff');
 assert.ok(Buffer.isBuffer(capaData.body) && capaData.body.length > 100);
-const capaExternal = await call(capa, { query: { id: U + '21' } });
+const capaExternal = await call(livroPage, { query: { id: U + '21', capa: '1' } });
 assert.equal(capaExternal.code, 302);
 assert.equal(capaExternal.h['Location'], 'https://cdn.test/capa.jpg');
-assert.equal((await call(capa, { query: { id: U + '99' } })).code, 404);
+assert.equal((await call(livroPage, { query: { id: U + '99', capa: '1' } })).code, 404);
 
 // Livro só digital e sem capa: um único "Compre agora" e nenhum og:image partido
 const shareDigital = await call(livroPage, { query: { id: U + '12' } });
