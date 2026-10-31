@@ -235,7 +235,8 @@ $('topupForm').onsubmit = async (e) => {
   location.href = j.checkoutUrl;
 };
 
-$('logout').onclick = () => {
+$('logout').onclick = async () => {
+  try { await api({ action: 'reader_logout' }); } catch {}
   localStorage.removeItem('kulera_reader');
   TOKEN = '';
   $('tabAccount').hidden = true;

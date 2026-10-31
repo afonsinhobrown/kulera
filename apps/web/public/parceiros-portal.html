@@ -142,6 +142,9 @@ async function loadReports(){const {ok,j}=await call('/api/partner-submit?report
   // Créditos de publicação
   const credits = j.credits || [];
   const remaining = credits.reduce((a, c) => a + Number(c.remaining || 0), 0);
+  if (remaining > 0 && $('#planDetails')) {
+    $('#planDetails').textContent += ` · ${remaining} vaga(s) de crédito`;
+  }
   const ck = $('#creditKpi');
   if (ck) {
     ck.innerHTML = '';

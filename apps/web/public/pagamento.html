@@ -50,6 +50,14 @@ function paid(type) {
       '<p class="note">A voltar à sua conta… Se não for automático, <a href="/conta.html">abra a Área do leitor</a>.</p>'
     );
   }
+  if (type === 'credits') {
+    setTimeout(() => location.replace('/parceiros-portal.html'), 1600);
+    return show(
+      '<h1 class="ok">Créditos adicionados</h1>' +
+      '<p>Obrigado! Os créditos ficaram na sua conta de parceiro e já podem ser usados para publicar ou reactivar livros.</p>' +
+      '<p class="note">A voltar ao Portal de Editores… Se não for automático, <a href="/parceiros-portal.html">abra o Portal</a>.</p>'
+    );
+  }
   if (type === 'subscription') {
     return show(
       '<h1 class="ok">Subscrição activada!</h1>' +
