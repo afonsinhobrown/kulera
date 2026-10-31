@@ -1,9 +1,9 @@
 import { timingSafeEqual } from 'node:crypto';
 import { pool } from '../lib/db.js';
-import { PUBLICATION_FEE_MINOR } from '../lib/pricing.js';
 import { ensurePaymentSchema, isSandbox, setSandbox, getAdminKeyFromDb, getPaysuiteTokenFromDb, resolveSiteUrl, settleOrderPaid } from '../lib/payments.js';
 import { createPayment, getPaymentStatus } from '../lib/paysuite.js';
 import { ensurePlanSchema } from '../lib/plans.js';
+import { getPublicationFeeMinor, getSetting, setSetting } from '../lib/settings.js';
 import { approveDeviceRequest, rejectDeviceRequest } from '../lib/device.js';
 import { announceBook, subscriberCount } from '../lib/marketing.js';
 import { emailConfig, emailConfigured, sendEmail } from '../lib/email.js';
@@ -94,7 +94,7 @@ async function action(b) {
           `update fair_books set publication_fee_minor = case when partner_id is null then 0 else greatest(coalesce(publication_fee_minor,0), $2) end,
              publication_fee_paid_at = case when $3 = 'published' and partner_id is not null then coalesce(publication_fee_paid_at, now()) else publication_fee_paid_at end
            where id=$1`,
-          [id, PUBLICATION_FEE_MINOR, status],
+          [id, await getPublicationFeeMinor(pool), status],
         );
       } catch {}
       // Nunca fica publicado um livro que oferece apenas digital sem conteúdo.
@@ -128,7 +128,7 @@ async function action(b) {
       const pid = uuid(sub.partner_id) ? sub.partner_id : null;
       // Livro de parceiro externo só publica depois de pagar a taxa de publicação no portal.
       const status = pid ? 'draft' : (b.status === 'published' ? 'published' : 'draft');
-      const fee = pid ? PUBLICATION_FEE_MINOR : 0;
+      const fee = pid ? await getPublicationFeeMinor(pool) : 0;
       const r = await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html,publication_fee_minor) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id',
         [title, author, clip(sub.description,2000)||null, clip(sub.language,10)||'pt', price, pid, status, clip(sub.cover_url, 2_500_000)||null, sub.content_html||null, fee]);
       await pool.query("update fair_submissions set status='approved', reviewed_at=now(), admin_notes=$2 where id=$1", [b.submissionId, clip(b.adminNotes,500)||null]);
@@ -212,6 +212,12 @@ async function action(b) {
       if (!uuid(b.bookId)) return [400, { error: 'invalid_book' }];
       if (!emailConfigured()) return [200, { ok: false, error: 'email_not_configured' }];
       return [200, await announceBook(pool, b.bookId)];
+    }
+    case 'save_settings': {
+      const fee = Number(b.publication_fee_minor);
+      if (!Number.isInteger(fee) || fee < 0 || fee > 100_000_00) return [400, { error: 'invalid_fee' }];
+      await setSetting(pool, 'publication_fee_minor', fee);
+      return [200, { ok: true, settings: { publication_fee_minor: await getPublicationFeeMinor(pool) } }];
     }
     case 'withdrawal_status': {
       if (!uuid(b.id) || !['requested', 'processing', 'paid', 'rejected'].includes(b.status)) return [400, { error: 'invalid' }];
@@ -380,6 +386,7 @@ export default async function handler(req, res) {
       submissions, plans: plans.map((x)=>({...x,price_minor:Number(x.price_minor)})), subscriptions: subs,
       withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})),
       subscribers, emailReady: emailConfigured(), emailFrom: emailConfig()?.from || null, emailSupport: emailConfig()?.replyTo || null, promotions,
+      settings: { publication_fee_minor: await getPublicationFeeMinor(pool) },
       sandbox, paysuiteTokenHint });
   } catch (e) {
     console.error('admin.error', e?.message || String(e));

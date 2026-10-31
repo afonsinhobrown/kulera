@@ -233,6 +233,16 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
         <div class="pane-sub">Configuração dos planos oficiais (Básico 3.000 MT, Profissional 5.000 MT, Premium 7.000 MT), limites de publicação e prioridade na montra.</div>
         <div class="table-card"><div class="table-wrap"><table id="plans"></table></div></div>
 
+        <div class="form-card" style="margin-top:16px">
+          <h3>Configurações Gerais</h3>
+          <form class="f" id="settingsForm">
+            <label>Taxa de publicação por livro de parceiro (MZN)<input name="publicationFee" type="number" min="0" step="0.01" required></label>
+            <p style="font-size:13px;color:#5b747c;margin:0">Cobrada no Portal de Editores quando um livro do parceiro é aprovado. Ponha 0 para não cobrar.</p>
+            <p class="msg" id="settingsMsg"></p>
+            <button>Guardar configurações</button>
+          </form>
+        </div>
+
         <div class="form-card">
           <h3>Configurar Plano</h3>
           <form class="f" id="planForm">
@@ -524,6 +534,9 @@ async function load(){
   });
 
   // Plans
+  if ($('settingsForm').publicationFee && j.settings) {
+    $('settingsForm').publicationFee.value = (Number(j.settings.publication_fee_minor) / 100).toFixed(2);
+  }
   fill($('plans'), ['Código', 'Nome', 'Preço Mensal', 'Limite Publicações', 'Prioridade Montra', 'Estado', ''], j.plans || [], p => {
     const tr = document.createElement('tr');
     const limTxt = p.max_publications ? p.max_publications + ' / mês' : 'Ilimitado';
@@ -1104,6 +1117,26 @@ $('subReject').onclick = async () => {
 
 $('bookReset').onclick = resetBook;
 $('partnerReset').onclick = resetPartner;
+$('settingsForm').onsubmit = async e => {
+  e.preventDefault();
+  const msg = $('settingsMsg'), btn = e.target.querySelector('button'), label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'A guardar...'; msg.className = 'msg'; msg.textContent = '';
+  try {
+    const { ok, j } = await api({ action: 'save_settings', publication_fee_minor: Math.round(Number(e.target.publicationFee.value) * 100) });
+    if (!ok || !j.ok) {
+      msg.className = 'msg err';
+      msg.textContent = 'Não foi possível guardar (' + (j.error || 'erro') + ').';
+      return;
+    }
+    msg.textContent = '✅ Taxa actualizada: ' + (Number(j.settings.publication_fee_minor) / 100).toFixed(2) + ' MT';
+  } catch {
+    msg.className = 'msg err';
+    msg.textContent = 'Erro de ligação.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+};
 $('planReset').onclick = () => { $('planForm').reset(); $('planForm').id.value = ''; $('planMsg').textContent = ''; };
 
 // Login form

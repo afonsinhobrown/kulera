@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Kulera+ | Portal de Parceiros</title>
 <link rel="stylesheet" href="style.css">
-<style>form.f{display:grid;gap:10px;max-width:560px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px}table{border-collapse:collapse;width:100%;font-size:14px;background:#fff}th,td{border:1px solid var(--line);padding:8px;text-align:left}textarea,input,select{font:inherit;padding:8px;border:1.5px solid #9db3b0;border-radius:6px;width:100%}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}h2{font-family:Georgia,serif;margin-top:24px}.kpi{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}.kpi div{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 16px}.kpi b{display:block;font:700 20px Georgia,serif}.kpi span{font-size:13px;color:#5b747c}</style>
+<style>form.f{display:grid;gap:10px;max-width:560px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px}table{border-collapse:collapse;width:100%;font-size:14px;background:#fff}th,td{border:1px solid var(--line);padding:8px;text-align:left}textarea,input,select{font:inherit;padding:8px;border:1.5px solid #9db3b0;border-radius:6px;width:100%}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}h2{font-family:Georgia,serif;margin-top:24px}.kpi{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}.kpi div{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 16px}.kpi b{display:block;font:700 20px Georgia,serif}.kpi span{font-size:13px;color:#5b747c}.ptabs{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0}.ptab{background:#eef5f4;color:#0b5c63;border:1px solid #cfe0de;border-radius:8px;padding:9px 14px;font:700 14px system-ui;cursor:pointer;width:auto}.ptab.active{background:#0b5c63;color:#fff;border-color:#0b5c63}.ppane{display:none}.ppane.active{display:block}@media(max-width:600px){.ptab{flex:1 1 45%}}</style>
 </head>
 <body>
 <div class="top">Kulera<span>+</span> | Portal de Parceiros</div>
@@ -31,7 +31,7 @@
     </div>
   </div>
   <div id="app" hidden>
-    <p>Bem-vindo, <span id="pname"></span> (<span id="pstatus"></span>)</p>
+    <p>Bem-vindo, <span id="pname"></span> (<span id="pstatus"></span>) <button id="logout" class="sec" style="float:right">Sair</button></p>
     <div id="planBanner" style="background:#eef6f5;border:1.5px solid #0b5c63;border-radius:8px;padding:12px 16px;margin:12px 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <div>
         <strong id="planName">A verificar plano...</strong>
@@ -39,44 +39,68 @@
       </div>
       <a href="planos.html" class="btn" style="background:#0b5c63;color:#fff;padding:8px 14px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:700">Ver / Mudar Plano</a>
     </div>
-    <div id="pendingFeesCard" style="background:#fff8e6;border:1.5px solid #d4a017;border-radius:8px;padding:12px 16px;margin:12px 0" hidden>
-      <strong style="color:#7a4b00">Taxas de Publicação Pendentes</strong>
-      <p style="font-size:13px;margin:4px 0 8px;color:#5a3700">Para os seus livros aprovados ficarem visíveis na montra, pague a taxa de publicação (500 MT cada).</p>
-      <div id="feesList" style="display:grid;gap:6px"></div>
-    </div>
-    <button id="logout" class="sec">Sair</button>
-    <h2>Submeter manuscrito</h2>
-    <form class="f" id="sub">
-      <input type="hidden" name="contentHtml">
-      <label>Título<input name="title" required maxlength="200"></label>
-      <label>Autor<input name="author" required maxlength="200"></label>
-      <label>Sinopse<textarea name="description" rows="3" maxlength="2000"></textarea></label>
-      <div class="row"><label>Idioma<input name="language" value="pt"></label><label>Capa (Imagem)<input type="file" id="coverFile" accept="image/*"></label></div>
-      <label>Ou Link da Capa (URL opcional)<input name="coverUrl" id="pCoverUrl" placeholder="https://..."></label>
-      <div id="pCoverPreview"></div>
-      <label>Ficheiro do Livro (.docx ou HTML)<input type="file" id="file" accept=".docx,.html,.htm"></label>
-      <p class="msg" id="fmsg"></p>
-      <p class="msg" id="smsg"></p>
-      <button>Submeter</button>
-    </form>
-    <h2>As minhas submissões</h2>
-    <div class="wrap"><table id="subs"></table></div>
 
-    <h2>Relatórios e ganhos</h2>
-    <div class="kpi" id="rkpi"></div>
-    <h3>Livros comprados</h3>
-    <div class="wrap"><table id="rsales"></table></div>
-    <h3>Taxas de publicação</h3>
-    <div class="wrap"><table id="rfees"></table></div>
-    <h3>Saques</h3>
-    <div class="wrap"><table id="rwth"></table></div>
-    <form class="f" id="wform">
-      <b>Pedir saque</b>
-      <label>Valor (MZN)<input name="amount" type="number" min="1" step="0.01" required></label>
-      <div class="row"><label>Método<select name="method"><option value="mpesa">M-Pesa</option><option value="emola">e-Mola</option><option value="bank">Transferência bancária</option></select></label><label>Detalhes (número/conta)<input name="details" maxlength="300"></label></div>
-      <p class="msg" id="wmsg"></p>
-      <button>Pedir saque</button>
-    </form>
+    <div class="ptabs" id="ptabs">
+      <button type="button" class="ptab active" data-pane="subs">As minhas submissões</button>
+      <button type="button" class="ptab" data-pane="submit">Submeter livro</button>
+      <button type="button" class="ptab" data-pane="sales">Vendas e ganhos</button>
+      <button type="button" class="ptab" data-pane="withdraw">Saques</button>
+      <button type="button" class="ptab" data-pane="fees">Taxas</button>
+    </div>
+
+    <div class="ppane active" data-pane="subs">
+      <h2>As minhas submissões</h2>
+      <div class="wrap"><table id="subs"></table></div>
+    </div>
+
+    <div class="ppane" data-pane="submit">
+      <h2>Submeter manuscrito</h2>
+      <p class="note" id="submitHint">Para submeter precisa de um plano activo (ou créditos de publicação).</p>
+      <form class="f" id="sub">
+        <input type="hidden" name="contentHtml">
+        <label>Título<input name="title" required maxlength="200"></label>
+        <label>Autor<input name="author" required maxlength="200"></label>
+        <label>Sinopse<textarea name="description" rows="3" maxlength="2000"></textarea></label>
+        <div class="row"><label>Idioma<input name="language" value="pt"></label><label>Capa (Imagem)<input type="file" id="coverFile" accept="image/*"></label></div>
+        <label>Ou Link da Capa (URL opcional)<input name="coverUrl" id="pCoverUrl" placeholder="https://..."></label>
+        <div id="pCoverPreview"></div>
+        <label>Ficheiro do Livro (.docx ou HTML)<input type="file" id="file" accept=".docx,.html,.htm"></label>
+        <p class="msg" id="fmsg"></p>
+        <p class="msg" id="smsg"></p>
+        <button>Submeter</button>
+      </form>
+    </div>
+
+    <div class="ppane" data-pane="sales">
+      <h2>Relatórios e ganhos</h2>
+      <div class="kpi" id="rkpi"></div>
+      <h3>Livros comprados</h3>
+      <div class="wrap"><table id="rsales"></table></div>
+      <h3>Taxas de publicação</h3>
+      <div class="wrap"><table id="rfees"></table></div>
+    </div>
+
+    <div class="ppane" data-pane="withdraw">
+      <h2>Saques</h2>
+      <div class="wrap"><table id="rwth"></table></div>
+      <form class="f" id="wform">
+        <b>Pedir saque</b>
+        <label>Valor (MZN)<input name="amount" type="number" min="1" step="0.01" required></label>
+        <div class="row"><label>Método<select name="method"><option value="mpesa">M-Pesa</option><option value="emola">e-Mola</option><option value="bank">Transferência bancária</option></select></label><label>Detalhes (número/conta)<input name="details" maxlength="300"></label></div>
+        <p class="msg" id="wmsg"></p>
+        <button>Pedir saque</button>
+      </form>
+    </div>
+
+    <div class="ppane" data-pane="fees">
+      <h2>Taxas de publicação</h2>
+      <div id="pendingFeesCard" style="background:#fff8e6;border:1.5px solid #d4a017;border-radius:8px;padding:12px 16px;margin:12px 0" hidden>
+        <strong style="color:#7a4b00">Taxas pendentes</strong>
+        <p style="font-size:13px;margin:4px 0 8px;color:#5a3700">Para os seus livros aprovados ficarem visíveis na montra, pague a taxa de publicação indicada em cada livro.</p>
+        <div id="feesList" style="display:grid;gap:6px"></div>
+      </div>
+      <p class="note">A taxa de publicação é definida pela Kulera e aplicada quando um livro é aprovado. Sem plano activo e sem taxa paga, o livro não é publicado.</p>
+    </div>
   </div>
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -166,12 +190,25 @@ $('#sub').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=aw
   if(ok){ $('smsg').textContent='Submetido com sucesso.'; $('smsg').className='msg'; f.reset(); contentHtml=null; $('#fmsg').textContent=''; if($('pCoverPreview'))$('pCoverPreview').innerHTML=''; loadSubs(); loadReports(); }
   else {
     $('smsg').className='msg err';
-    if(j.error==='no_plan') $('smsg').innerHTML='Necessita de um plano activo para submeter manuscritos. <a href="planos.html" style="color:#a00">Subscrever plano</a>.';
+    if(j.error==='no_plan') $('smsg').innerHTML='Necessita de um plano activo (ou créditos de publicação, em breve) para submeter manuscritos. <a href="planos.html" style="color:#a00">Subscrever plano</a>.';
     else if(j.error==='plan_limit') $('smsg').textContent=`Atingiu o limite de publicações mensais do seu plano (${j.limit}). Faça upgrade na página de planos.`;
     else $('smsg').textContent='Erro ao submeter. Verifique os dados.';
   }
 };
 $('#logout').onclick=()=>{localStorage.removeItem('ptok');location.reload();};
+
+// Abas do portal
+const panes=[...document.querySelectorAll('.ppane')], ptabs=[...document.querySelectorAll('.ptab')];
+function showPane(name){
+  const n=panes.some(p=>p.dataset.pane===name)?name:'subs';
+  panes.forEach(p=>p.classList.toggle('active',p.dataset.pane===n));
+  ptabs.forEach(b=>b.classList.toggle('active',b.dataset.pane===n));
+  if(location.hash.slice(1)!==n) history.replaceState(null,'','#'+n);
+}
+ptabs.forEach(b=>b.addEventListener('click',()=>showPane(b.dataset.pane)));
+window.addEventListener('hashchange',()=>showPane(location.hash.slice(1)));
+showPane(location.hash.slice(1));
+
 if(TOK)loadMe().catch(()=>{});
 </script>
 </body>
