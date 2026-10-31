@@ -45,7 +45,7 @@ Opcionais (só se quiser personalizar):
 ```
 EMAIL_PROVIDER=resend
 EMAIL_FROM=Kulera+ <livros@doremi.tecnoincubadora.org>
-EMAIL_SUPPORT_TO=nachingweya@gmail.com   # só o email de compra pede resposta
+EMAIL_SUPPORT_TO=tecnoincubadora.info@tecnoincubadora.org   # padrão; só o email de compra pede resposta
 EMAIL_UNSUBSCRIBE_SECRET=<segredo longo>
 MARKETING_ENABLED=true
 SITE_URL=https://kulera.tecnoincubadora.org

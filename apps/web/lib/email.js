@@ -12,6 +12,8 @@ export const SITE_BASE = () =>
 // Remetente por omissão: usa o subdomínio já verificado no Resend (doremi.tecnoincubadora.org).
 // Pode ser trocado com EMAIL_FROM sem mexer no código.
 const DEFAULT_FROM = 'Kulera+ <livros@doremi.tecnoincubadora.org>';
+// Respostas dos compradores (só no email de compra). As promoções nunca levam "responder para".
+const DEFAULT_SUPPORT = 'tecnoincubadora.info@tecnoincubadora.org';
 
 export function emailConfig() {
   const key = String(process.env.RESEND_API_KEY || process.env.BREVO_API_KEY || '').trim();
@@ -24,7 +26,8 @@ export function emailConfig() {
     provider: provider === 'brevo' ? 'brevo' : 'resend',
     key,
     from,
-    replyTo: String(process.env.EMAIL_SUPPORT_TO || process.env.EMAIL_REPLY_TO || '').trim() || undefined,
+    replyTo:
+      String(process.env.EMAIL_SUPPORT_TO || process.env.EMAIL_REPLY_TO || DEFAULT_SUPPORT).trim() || undefined,
   };
 }
 
