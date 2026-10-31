@@ -42,10 +42,12 @@ function show(html) { panel.innerHTML = html; }
 function paid(type) {
   stopped = true;
   if (type === 'topup') {
+    const go = () => location.replace('/conta.html');
+    setTimeout(go, 1600);
     return show(
       '<h1 class="ok">Saldo carregado</h1>' +
       '<p>Obrigado! O carregamento foi confirmado e o saldo já está na sua conta.</p>' +
-      '<a class="btn" href="/conta.html">Ver a minha conta</a>'
+      '<p class="note">A voltar à sua conta… Se não for automático, <a href="/conta.html">abra a Área do leitor</a>.</p>'
     );
   }
   if (type === 'subscription') {
