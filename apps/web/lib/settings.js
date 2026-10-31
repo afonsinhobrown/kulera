@@ -24,6 +24,7 @@ export async function setSetting(pool, key, value) {
 /** Taxa de publicação por livro de parceiro externo (configurável no painel). */
 export async function getPublicationFeeMinor(pool) {
   const raw = await getSetting(pool, 'publication_fee_minor', null);
+  if (raw == null || String(raw).trim() === '') return PUBLICATION_FEE_MINOR;
   const n = Number(raw);
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : PUBLICATION_FEE_MINOR;
 }
