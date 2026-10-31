@@ -23,13 +23,31 @@ async function action(b){
     case "register":{
       const name = String(b.name||"").trim().slice(0,120);
       const kind = b.kind==="author"?"author":"publisher";
-      const phone = String(b.phone||"").trim().slice(0,30);
+      const phone = String(b.phone||"").replace(/[^\d]/g,"").slice(0,30);
       const mail = String(b.email||"").trim().toLowerCase().slice(0,120);
       const pass = String(b.password||"");
       if(name.length<2||!mail.includes("@")||pass.length<6)return [400,{error:"invalid"}];
-      let pr = await pool.query("select id,status from fair_partners where lower(email)=$1 or lower(name)=$2 order by created_at desc limit 1",[mail,name.toLowerCase()]);
+      const normName = name.toLowerCase().replace(/\s+/g," ").trim();
+
+      // Uma conta por email.
+      const emailHit = await pool.query("select 1 from fair_partner_users where lower(email)=$1 limit 1",[mail]);
+      if(emailHit.rows.length) return [409,{error:"exists"}];
+
+      // Não criar outra conta para a mesma editora/escritor (nome, email ou telemóvel).
+      const pr = await pool.query(
+        `select p.id, (select count(*) from fair_partner_users u where u.partner_id = p.id)::int as users
+           from fair_partners p
+          where lower(coalesce(p.email,'')) = $1
+             or regexp_replace(lower(p.name), '\\s+', ' ', 'g') = $2
+             or regexp_replace(coalesce(p.phone,''), '\\D', '', 'g') = $3
+          order by p.created_at desc limit 1`,
+        [mail, normName, phone],
+      );
+      const existing = pr.rows[0];
+      if(existing && Number(existing.users) > 0) return [409,{error:"partner_exists"}];
+
       let pid;
-      if(pr.rows[0]){ pid = pr.rows[0].id; } else {
+      if(existing){ pid = existing.id; } else {
         const r = await pool.query("insert into fair_partners (name,kind,phone,email,status) values ($1,$2,$3,$4,'active') returning id",[name,kind,phone,mail]);
         pid = r.rows[0].id;
       }

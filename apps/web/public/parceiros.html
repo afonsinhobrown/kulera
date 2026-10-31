@@ -27,14 +27,27 @@
         <p class="msg" id="msg" role="alert" aria-live="polite"></p>
         <button id="send" type="submit">Quero ser parceiro</button>
       </form>
-      <div class="panel" id="done" hidden><h1 class="ok">Recebemos o seu contacto</h1><p>A equipa da Kulera fala consigo em breve, pelo número que indicou.</p><a class="btn sec" href="/">Voltar ao início</a></div>
+      <div class="panel" id="done" hidden>
+        <h1 class="ok">Registo recebido ✅</h1>
+        <p><b>Não precisa de voltar a enviar</b> — o seu pedido ficou guardado.</p>
+        <p>O que acontece a seguir:</p>
+        <ul class="pts">
+          <li>Confirmamos os dados e o plano (ou os créditos de publicação).</li>
+          <li>Entramos em contacto pelo telemóvel indicado, normalmente em 1–2 dias úteis.</li>
+          <li>Depois disso recebe acesso ao Portal de Editores para carregar os livros.</li>
+        </ul>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <a class="btn" href="parceiros-portal.html">Portal de Editores</a>
+          <a class="btn sec" href="/">Ver a loja</a>
+        </div>
+      </div>
     </div>
   </div>
 </main>
 <style>.pts{padding-left:20px;margin:0 0 16px}.pts li{margin:0 0 8px}.offer{background:#fff6e0;border:1.5px solid var(--gold);border-radius:8px;padding:12px 14px;font-weight:600}select{font:inherit;padding:13px 12px;border:1.5px solid #9db3b0;border-radius:6px;background:#fff;color:var(--ink)}</style>
 <script>
 const $=(id)=>document.getElementById(id);
-const errors={invalid_name:'Escreva o seu nome.',invalid_phone:'Escreva um número válido, só com números.',invalid_email:'O email não parece válido.'};
+const errors={invalid_name:'Escreva o seu nome.',invalid_phone:'Escreva um número válido, só com números.',invalid_email:'O email não parece válido.',duplicate:'Já recebemos um registo com este telemóvel/email/organização. Não precisa de voltar a enviar — falamos consigo em breve.',already_partner:'Este contacto já é parceiro da Kulera+. Entre no Portal de Editores com o seu email.'};
 fetch('/api/book').then(r=>r.json()).then(b=>{const p=b.partner||{};
   if(p.headline){$('h').textContent=p.headline;document.title=p.headline+' · Kulera+';}
   (p.points||[]).forEach(t=>{const li=document.createElement('li');li.textContent=t;$('pts').appendChild(li);});
