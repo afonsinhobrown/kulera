@@ -1,5 +1,6 @@
 import { pool } from '../lib/db.js';
 import { startPayment } from '../lib/payments.js';
+import { getReader } from '../lib/reader.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
@@ -17,6 +18,9 @@ export default async function handler(req, res) {
   const shippingAddress = String(req.body?.shippingAddress ?? '').trim();
   const shippingCity = String(req.body?.shippingCity ?? '').trim();
   const marketingOptIn = req.body?.marketing === true && Boolean(email);
+  // Compra feita com sessão de leitor fica na biblioteca dessa conta.
+  const readerToken = String(req.headers?.['x-reader-token'] || req.body?.readerToken || '');
+  const reader = /^[0-9a-f-]{36}$/.test(readerToken) ? await getReader(pool, readerToken).catch(() => null) : null;
 
   // Preço, moeda e disponibilidade SEMPRE da base de dados. Nunca se vende um livro sem conteúdo publicado.
   // Planos expirados/bloqueados do parceiro impedem novas compras de livros desse autor/editora.
@@ -78,6 +82,7 @@ export default async function handler(req, res) {
     extra: {
       book_id: book.id,
       marketing_opt_in: marketingOptIn,
+      reader_id: reader?.id || null,
       shipping_name: shippingName || name,
       shipping_phone: shippingPhone || phone,
       shipping_address: shippingAddress || null,

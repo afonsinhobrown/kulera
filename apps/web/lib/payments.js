@@ -3,6 +3,7 @@ import { pool } from './db.js';
 import { createPayment, resolvePaysuiteToken } from './paysuite.js';
 import { computeSplit } from './split.js';
 import { APP_BPS, EDITORS_BPS } from './pricing.js';
+import { ensureReaderSchema, topupBonus } from './reader.js';
 
 // Em modo sandbox TODOS os pagamentos cobram 10 MT (1000 minor, = 10,00 MZN).
 export const SANDBOX_AMOUNT_MINOR = 1000;
@@ -19,7 +20,9 @@ export async function ensurePaymentSchema() {
     await pool.query(`alter table fair_orders add column if not exists plan_id uuid`);
     await pool.query(`alter table fair_orders add column if not exists type text not null default 'book'`);
     await pool.query(`alter table fair_orders drop constraint if exists fair_orders_type_check`);
-    await pool.query(`alter table fair_orders add constraint fair_orders_type_check check (type in ('book','subscription','physical','publication'))`);
+    await pool.query(`alter table fair_orders add constraint fair_orders_type_check check (type in ('book','subscription','physical','publication','topup'))`);
+    await pool.query(`alter table fair_orders add column if not exists reader_id uuid`);
+    await pool.query(`alter table fair_orders add column if not exists wallet_minor bigint not null default 0`);
     await pool.query(`alter table fair_orders add column if not exists shipping_name text`);
     await pool.query(`alter table fair_orders add column if not exists shipping_phone text`);
     await pool.query(`alter table fair_orders add column if not exists shipping_address text`);
@@ -52,6 +55,7 @@ export async function ensurePaymentSchema() {
       paid_at timestamptz,
       created_at timestamptz not null default now()
     )`);
+    await ensureReaderSchema(pool);
   } catch {}
   ensured = true;
 }
@@ -181,12 +185,30 @@ export async function settleOrderPaid(client, orderId, providerId = null) {
   if (upd.rowCount !== 1) return false;
 
   const r = await client.query(
-    `select o.book_id, o.amount_minor, o.plan_id, o.type, b.partner_id, b.kind, b.content_html from fair_orders o
+    `select o.book_id, o.amount_minor, o.list_amount_minor, o.wallet_minor, o.reader_id, o.plan_id, o.type, b.partner_id, b.kind, b.content_html from fair_orders o
        left join fair_books b on b.id = o.book_id where o.id = $1`,
     [orderId],
   );
   const x = r.rows[0];
   if (!x) return true;
+
+  if (x.type === 'topup' && x.reader_id) {
+    // Carregamento de saldo: credita o valor escolhido (em sandbox cobra-se pouco, mas o
+    // crédito é o valor pedido — é modo de teste) e o bónus, uma única vez.
+    const credited = Number(x.list_amount_minor ?? x.amount_minor);
+    await client.query(
+      `insert into fair_reader_ledger (reader_id, kind, amount_minor, order_id, note) values ($1,'topup',$2,$3,$4)`,
+      [x.reader_id, credited, orderId, 'Carregamento de saldo'],
+    );
+    const bonus = topupBonus(credited);
+    if (bonus > 0) {
+      await client.query(
+        `insert into fair_reader_ledger (reader_id, kind, amount_minor, order_id, note) values ($1,'bonus',$2,$3,$4)`,
+        [x.reader_id, bonus, orderId, 'Bónus de carregamento (10%)'],
+      );
+    }
+    return true;
+  }
 
   if (x.type === 'publication' && x.book_id) {
     await client.query(
@@ -203,14 +225,22 @@ export async function settleOrderPaid(client, orderId, providerId = null) {
       [x.book_id],
     );
   } else if (x.book_id) {
-    const sp = computeSplit(Number(x.amount_minor), !!x.partner_id);
+    // Compra pode ter parte paga com saldo (wallet_minor) + parte na PaySuite (amount_minor).
+    const gross = Number(x.amount_minor) + Number(x.wallet_minor || 0);
+    const sp = computeSplit(gross, !!x.partner_id);
     const editorsBps = x.partner_id ? EDITORS_BPS : 10000 - APP_BPS;
     const commissionBps = APP_BPS + editorsBps;
     await client.query(
       `insert into fair_sales (order_id, book_id, partner_id, gross_minor, commission_bps, commission_minor, partner_minor, app_bps, editors_bps, app_minor, editors_minor)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) on conflict do nothing`,
-      [orderId, x.book_id, x.partner_id, x.amount_minor, commissionBps, sp.app + sp.editors, sp.partner, APP_BPS, editorsBps, sp.app, sp.editors],
+      [orderId, x.book_id, x.partner_id, gross, commissionBps, sp.app + sp.editors, sp.partner, APP_BPS, editorsBps, sp.app, sp.editors],
     );
+    if (Number(x.wallet_minor || 0) > 0) {
+      await client.query(
+        `update fair_reader_ledger set kind='purchase', note='Compra com saldo' where order_id=$1 and kind='hold'`,
+        [orderId],
+      );
+    }
   }
 
   if (x.type === 'subscription' && x.plan_id) {

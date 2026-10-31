@@ -135,3 +135,15 @@ test('email: cancelamento assinado, quota por plano e envio sem configuração',
   }
 });
 
+test('leitor: bónus de carregamento (10% a partir de 1.000 MT) e palavra-passe', async () => {
+  const { topupBonus, makeHash, verifyHash, TOPUP_BONUS_MIN_MINOR } = await import('../lib/reader.js');
+  assert.equal(topupBonus(TOPUP_BONUS_MIN_MINOR - 1), 0);
+  assert.equal(topupBonus(TOPUP_BONUS_MIN_MINOR), 10000); // 1.000 MT -> 100 MT
+  assert.equal(topupBonus(2 * TOPUP_BONUS_MIN_MINOR), 20000);
+  assert.equal(topupBonus(150000), 15000);
+  const h = makeHash('segredo123');
+  assert.ok(h.startsWith('pbkdf2$'));
+  assert.ok(verifyHash('segredo123', h));
+  assert.ok(!verifyHash('errada', h));
+});
+

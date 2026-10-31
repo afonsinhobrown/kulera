@@ -4,6 +4,7 @@ import { ensurePaymentSchema, isSandbox, setSandbox, getAdminKeyFromDb, getPaysu
 import { createPayment, getPaymentStatus } from '../lib/paysuite.js';
 import { ensurePlanSchema } from '../lib/plans.js';
 import { getPublicationFeeMinor, getSetting, setSetting } from '../lib/settings.js';
+import { grantCredit } from '../lib/reader.js';
 import { approveDeviceRequest, rejectDeviceRequest } from '../lib/device.js';
 import { announceBook, subscriberCount } from '../lib/marketing.js';
 import { emailConfig, emailConfigured, sendEmail } from '../lib/email.js';
@@ -252,6 +253,11 @@ async function action(b) {
         client.release();
       }
     }
+    case 'grant_reader_credit': {
+      if (!uuid(b.readerId)) return [400, { error: 'invalid_reader' }];
+      const result = await grantCredit(pool, { readerId: b.readerId, amountMinor: b.amountMinor, note: b.note });
+      return result.ok ? [200, { ok: true, balance: result.balance }] : [400, { error: result.error }];
+    }
     case 'withdrawal_status': {
       if (!uuid(b.id) || !['requested', 'processing', 'paid', 'rejected'].includes(b.status)) return [400, { error: 'invalid' }];
       await pool.query("update fair_partner_withdrawals set status=$2, paid_at=case when $2='paid' then coalesce(paid_at, now()) else paid_at end where id=$1", [b.id, b.status]);
@@ -428,6 +434,14 @@ export default async function handler(req, res) {
     let withdrawals = [];
     try { withdrawals = (await pool.query(`select w.id, w.amount_minor, w.method, w.details, w.status, w.created_at, w.paid_at, p.name as partner from fair_partner_withdrawals w left join fair_partners p on p.id=w.partner_id order by w.created_at desc limit 500`)).rows; } catch {}
     const subscribers = await subscriberCount(pool);
+    let readers = [];
+    try {
+      readers = (await pool.query(
+        `select r.id, r.name, r.email, r.phone, r.status, r.created_at,
+                coalesce((select sum(l.amount_minor) from fair_reader_ledger l where l.reader_id = r.id), 0)::bigint as balance
+           from fair_readers r order by r.created_at desc limit 200`,
+      )).rows.map((x) => ({ ...x, balance: Number(x.balance) }));
+    } catch {}
     let promotions = [];
     try {
       promotions = (await pool.query(
@@ -446,7 +460,7 @@ export default async function handler(req, res) {
       leads, orders, deviceRequests, duplicates, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor), publication_fee_minor: Number(x.publication_fee_minor || 0) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
       submissions, plans: plans.map((x)=>({...x,price_minor:Number(x.price_minor)})), subscriptions: subs,
       withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})),
-      subscribers, emailReady: emailConfigured(), emailFrom: emailConfig()?.from || null, emailSupport: emailConfig()?.replyTo || null, promotions,
+      subscribers, emailReady: emailConfigured(), emailFrom: emailConfig()?.from || null, emailSupport: emailConfig()?.replyTo || null, promotions, readers,
       settings: { publication_fee_minor: await getPublicationFeeMinor(pool) },
       sandbox, paysuiteTokenHint });
   } catch (e) {

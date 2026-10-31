@@ -1,10 +1,11 @@
 import { pool } from '../lib/db.js';
-import { ensurePaymentSchema, isSandbox, settleOrderPaid, getPaysuiteTokenFromDb, resolveSiteUrl } from '../lib/payments.js';
+import { ensurePaymentSchema, isSandbox, settleOrderPaid, getPaysuiteTokenFromDb, resolveSiteUrl, startPayment } from '../lib/payments.js';
 import { getPaymentStatus } from '../lib/paysuite.js';
 import { recoverAccess } from '../lib/recovery.js';
 import { fingerprintHash, isDeviceKey, deviceHash, requestDeviceChange, sanitizeDeviceInfo } from '../lib/device.js';
 import { onOrderPaid, unsubscribe } from '../lib/marketing.js';
 import { verifyUnsubscribe } from '../lib/email.js';
+import { getReader, loginReader, readerBalance, readerLedger, registerReader, topupBonus } from '../lib/reader.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -65,6 +66,86 @@ export default async function handler(req, res) {
       console.error('unsubscribe.error', e?.message || String(e));
       return res.status(500).json({ error: 'internal_error' });
     }
+  }
+
+  if (req.method === 'POST' && req.body?.action === 'reader_register') {
+    try {
+      const result = await registerReader(pool, {
+        name: req.body?.name,
+        email: req.body?.email,
+        phone: req.body?.phone,
+        password: req.body?.password,
+      });
+      if (!result.ok) return res.status(result.error === 'exists' ? 409 : 400).json({ error: result.error });
+      return res.json({ ok: true, token: result.token, reader: result.reader });
+    } catch (e) {
+      console.error('reader.register.error', e?.message || String(e));
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  }
+
+  if (req.method === 'POST' && req.body?.action === 'reader_login') {
+    try {
+      const result = await loginReader(pool, { email: req.body?.email, password: req.body?.password });
+      if (!result.ok) return res.status(401).json({ error: 'unauthorized' });
+      return res.json({ ok: true, token: result.token, reader: result.reader });
+    } catch (e) {
+      console.error('reader.login.error', e?.message || String(e));
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  }
+
+  if (req.method === 'POST' && req.body?.action === 'reader_topup') {
+    const reader = await getReader(pool, String(req.headers?.['x-reader-token'] || req.body?.readerToken || '')).catch(() => null);
+    if (!reader) return res.status(401).json({ error: 'unauthorized' });
+    const amount = Math.round(Number(req.body?.amountMinor));
+    if (!Number.isInteger(amount) || amount < 1000 || amount > 100_000_000) return res.status(400).json({ error: 'invalid_amount' });
+    const phone = String(req.body?.phone || reader.phone || '').replace(/\D/g, '');
+    if (phone.length < 9) return res.status(400).json({ error: 'invalid_phone' });
+    try {
+      const pay = await startPayment({
+        type: 'topup',
+        listAmountMinor: amount,
+        currency: 'MZN',
+        name: reader.name,
+        phone,
+        email: reader.email,
+        description: `Kulera+: Carregamento de saldo (${(amount / 100).toFixed(2)} MT)`,
+        extra: { reader_id: reader.id },
+        req,
+      });
+      if (!pay.ok) return res.status(502).json({ error: 'payment_unavailable', detail: pay.errorDetail });
+      return res.json({
+        ok: true,
+        checkoutUrl: pay.checkoutUrl,
+        token: pay.token,
+        amountMinor: pay.amountMinor,
+        bonusMinor: topupBonus(amount),
+        sandbox: pay.sandbox,
+        simulated: Boolean(pay.simulated),
+      });
+    } catch (e) {
+      console.error('reader.topup.error', e?.message || String(e));
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  }
+
+  if (req.method === 'GET' && req.query?.reader === '1') {
+    const reader = await getReader(pool, String(req.headers?.['x-reader-token'] || '')).catch(() => null);
+    if (!reader) return res.status(401).json({ error: 'unauthorized' });
+    const [balance, ledger] = await Promise.all([readerBalance(pool, reader.id), readerLedger(pool, reader.id)]);
+    let books = [];
+    try {
+      const r = await pool.query(
+        `select o.token, o.created_at, b.id as book_id, b.title, b.author
+           from fair_orders o join fair_books b on b.id = o.book_id
+          where o.reader_id = $1 and o.status = 'paid' and coalesce(o.type,'book') = 'book'
+          order by coalesce(o.paid_at, o.created_at) desc limit 100`,
+        [reader.id],
+      );
+      books = r.rows;
+    } catch {}
+    return res.json({ ok: true, reader, balance, ledger, books });
   }
 
   const t = String(req.query?.t ?? req.body?.token ?? '');

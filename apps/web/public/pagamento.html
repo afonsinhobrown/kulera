@@ -41,6 +41,13 @@ function show(html) { panel.innerHTML = html; }
 
 function paid(type) {
   stopped = true;
+  if (type === 'topup') {
+    return show(
+      '<h1 class="ok">Saldo carregado</h1>' +
+      '<p>Obrigado! O carregamento foi confirmado e o saldo já está na sua conta.</p>' +
+      '<a class="btn" href="/conta.html">Ver a minha conta</a>'
+    );
+  }
   if (type === 'subscription') {
     return show(
       '<h1 class="ok">Subscrição activada!</h1>' +

@@ -349,6 +349,10 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
           <span id="testEmailMsg" style="font-size:13px;color:#557077"></span>
         </div>
         <div class="table-card"><div class="table-wrap"><table id="promotions"></table></div></div>
+
+        <div class="pane-title" style="font-size:18px;margin-top:24px">Leitores com conta</div>
+        <div class="pane-sub">Saldo de cada leitor. Use “Dar créditos” para atribuir oferta/promoção (fica no histórico como crédito Kulera).</div>
+        <div class="table-card"><div class="table-wrap"><table id="readers"></table></div></div>
       </div>
 
       <!-- TAB 7: LEADS -->
@@ -793,6 +797,32 @@ if (emailSum) emailSum.textContent = j.emailReady
 fill($('promotions'), ['Data', 'Livro', 'Emails enviados'], j.promotions || [], p => {
   const tr = document.createElement('tr');
   tr.append(cell(p.sent_at ? new Date(p.sent_at).toLocaleString('pt-MZ') : '—'), cell(p.book || '—'), cell(p.recipients || 0));
+  return tr;
+});
+
+// Leitores com conta
+fill($('readers'), ['Leitor', 'Contacto', 'Saldo', 'Criado', ''], j.readers || [], r => {
+  const tr = document.createElement('tr');
+  const give = document.createElement('button');
+  give.type = 'button';
+  give.className = 'btn-action';
+  give.textContent = 'Dar créditos';
+  give.onclick = async () => {
+    const v = prompt('Valor a atribuir a ' + r.name + ' (MT):', '100');
+    if (!v) return;
+    const amount = Math.round(Number(String(v).replace(',', '.')) * 100);
+    const note = prompt('Motivo (opcional):', 'Crédito de oferta') || '';
+    const { ok, j: out } = await api({ action: 'grant_reader_credit', readerId: r.id, amountMinor: amount, note });
+    if (!ok || !out.ok) alert('Falhou: ' + (out.error || 'erro'));
+    else await load();
+  };
+  tr.append(
+    cell(r.name),
+    cell([r.phone, r.email].filter(Boolean).join(' · ')),
+    cell((Number(r.balance) / 100).toFixed(2) + ' MT'),
+    cell(r.created_at ? new Date(r.created_at).toLocaleDateString('pt-MZ') : ''),
+    give,
+  );
   return tr;
 });
 
