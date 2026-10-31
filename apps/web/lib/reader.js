@@ -1,4 +1,4 @@
-import { pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { emailConfigured } from './email.js';
 import { newVerifyToken, sendVerification } from './verify.js';
 
@@ -52,8 +52,54 @@ export async function ensureReaderSchema(pool) {
     await pool.query(`alter table fair_readers add column if not exists email_verified_at timestamptz`);
     await pool.query(`alter table fair_readers add column if not exists email_token text`);
     await pool.query(`alter table fair_readers add column if not exists email_token_expires_at timestamptz`);
+    await pool.query(`create table if not exists fair_reader_sessions (
+      id uuid primary key default gen_random_uuid(),
+      reader_id uuid not null references fair_readers (id) on delete cascade,
+      token_hash text not null unique,
+      created_at timestamptz not null default now(),
+      expires_at timestamptz not null,
+      revoked_at timestamptz
+    )`);
   } catch {}
   ensured = true;
+}
+
+const sha256 = (v) => createHash('sha256').update(String(v)).digest('hex');
+const SESSION_DAYS = 90;
+
+/** Cria uma sessão privada: devolve um token aleatório; só o hash fica na base de dados. */
+export async function createSession(pool, readerId) {
+  await ensureReaderSchema(pool);
+  const token = randomBytes(32).toString('hex');
+  await pool.query(
+    `insert into fair_reader_sessions (reader_id, token_hash, expires_at)
+     values ($1,$2, now() + ($3)::int * interval '1 day')`,
+    [readerId, sha256(token), SESSION_DAYS],
+  );
+  return token;
+}
+
+/** Resolve o leitor a partir do token de sessão (só ele vê o saldo e os pagamentos). */
+export async function getReaderBySession(pool, token) {
+  const clean = String(token || '').trim();
+  if (!/^[a-f0-9]{64}$/.test(clean)) return null;
+  await ensureReaderSchema(pool);
+  const r = await pool.query(
+    `select r.id, r.name, r.email, r.phone, r.status
+       from fair_reader_sessions s join fair_readers r on r.id = s.reader_id
+      where s.token_hash = $1 and s.revoked_at is null and s.expires_at > now() and r.status = 'active'
+      limit 1`,
+    [sha256(clean)],
+  );
+  return r.rows[0] || null;
+}
+
+export async function revokeSession(pool, token) {
+  const clean = String(token || '').trim();
+  if (!/^[a-f0-9]{64}$/.test(clean)) return { ok: true };
+  await ensureReaderSchema(pool);
+  await pool.query('update fair_reader_sessions set revoked_at = now() where token_hash = $1', [sha256(clean)]);
+  return { ok: true };
 }
 
 export const topupBonus = (amountMinor) =>
@@ -105,7 +151,8 @@ export async function loginReader(pool, { email, password }) {
   }
   if (reader.email_token && !reader.email_verified_at) return { ok: false, error: 'unverified' };
   const { password_hash, email_token, ...safe } = reader;
-  return { ok: true, reader: safe, token: reader.id };
+  const session = await createSession(pool, reader.id);
+  return { ok: true, reader: safe, token: session };
 }
 
 /** Reenvia o link de confirmação (só se ainda estiver pendente). Resposta sempre neutra. */
@@ -123,6 +170,21 @@ export async function resendReaderVerification(pool, email) {
   await pool.query("update fair_readers set email_token = $2, email_token_expires_at = now() + interval '24 hours' where id = $1", [reader.id, token]);
   await sendVerification({ to: reader.email, name: reader.name, token, kind: 'reader' });
   return { ok: true };
+}
+
+/** Devolve ao saldo a reserva de uma compra que falhou/foi cancelada. */
+export async function releaseHold(pool, orderId) {
+  try {
+    await ensureReaderSchema(pool);
+    const r = await pool.query("select reader_id, amount_minor from fair_reader_ledger where order_id = $1 and kind = 'hold'", [orderId]);
+    for (const h of r.rows) {
+      await pool.query("delete from fair_reader_ledger where order_id = $1 and kind = 'hold'", [orderId]);
+      await pool.query(
+        "insert into fair_reader_ledger (reader_id, kind, amount_minor, order_id, note) values ($1,'refund',$2,$3,$4)",
+        [h.reader_id, Math.abs(Number(h.amount_minor)), orderId, 'Reserva devolvida'],
+      );
+    }
+  } catch {}
 }
 
 export async function getReader(pool, id) {

@@ -125,6 +125,39 @@ export function resolveSiteUrl(req) {
 }
 
 /**
+ * Compra paga 100% com saldo do leitor (sem PaySuite): cria a encomenda, reserva o saldo e
+ * liquida imediatamente (o livro abre logo).
+ */
+export async function createWalletOrder({ type = 'book', amountMinor, currency = 'MZN', name, phone, email, extra = {}, useMinor = 0, req }) {
+  await ensurePaymentSchema();
+  const id = randomUUID();
+  const token = randomBytes(32).toString('hex');
+  const reference = `KF${id.replaceAll('-', '').slice(0, 28)}`;
+  const cols = ['id', 'token', 'reference', 'buyer_name', 'buyer_phone', 'buyer_email', 'amount_minor', 'list_amount_minor', 'wallet_minor', 'sandbox', 'currency', 'type', ...Object.keys(extra)];
+  const vals = [id, token, reference, name, phone, email || null, 0, Number(amountMinor), Number(useMinor || amountMinor), false, currency, type, ...Object.values(extra)];
+  const marks = cols.map((_, i) => `$${i + 1}`).join(',');
+  await pool.query(`insert into fair_orders (${cols.join(',')}) values (${marks})`, vals);
+  if (Number(useMinor || 0) > 0) {
+    await pool.query(
+      `insert into fair_reader_ledger (reader_id, kind, amount_minor, order_id, note) values ($1,'hold',$2,$3,$4)`,
+      [extra.reader_id, -Number(useMinor), id, 'Reserva para compra'],
+    );
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await settleOrderPaid(client, id, 'wallet');
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+  return { ok: true, id, token, checkoutUrl: `${resolveSiteUrl(req)}/pagamento.html?t=${token}`, amountMinor: 0, walletMinor: Number(useMinor), sandbox: false };
+}
+
+/**
  * Cria a encomenda e o pagamento PaySuite. Ponto único de entrada para TODOS os pagamentos.
  * `extra` são colunas adicionais de fair_orders (book_id, plan_id, partner_id, shipping_*).
  */

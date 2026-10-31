@@ -5,7 +5,7 @@ import { recoverAccess } from '../lib/recovery.js';
 import { fingerprintHash, isDeviceKey, deviceHash, requestDeviceChange, sanitizeDeviceInfo } from '../lib/device.js';
 import { onOrderPaid, unsubscribe } from '../lib/marketing.js';
 import { verifyUnsubscribe } from '../lib/email.js';
-import { getReader, loginReader, readerBalance, readerLedger, registerReader, topupBonus } from '../lib/reader.js';
+import { getReaderBySession, loginReader, readerBalance, readerLedger, registerReader, releaseHold, revokeSession, topupBonus } from '../lib/reader.js';
 import { resendVerification, verifyToken } from '../lib/verify.js';
 
 export default async function handler(req, res) {
@@ -120,8 +120,13 @@ export default async function handler(req, res) {
     return res.json({ ok: true });
   }
 
+  if (req.method === 'POST' && req.body?.action === 'reader_logout') {
+    await revokeSession(pool, String(req.headers?.['x-reader-token'] || req.body?.readerToken || '')).catch(() => {});
+    return res.json({ ok: true });
+  }
+
   if (req.method === 'POST' && req.body?.action === 'reader_topup') {
-    const reader = await getReader(pool, String(req.headers?.['x-reader-token'] || req.body?.readerToken || '')).catch(() => null);
+    const reader = await getReaderBySession(pool, String(req.headers?.['x-reader-token'] || req.body?.readerToken || '')).catch(() => null);
     if (!reader) return res.status(401).json({ error: 'unauthorized' });
     const amount = Math.round(Number(req.body?.amountMinor));
     if (!Number.isInteger(amount) || amount < 1000 || amount > 100_000_000) return res.status(400).json({ error: 'invalid_amount' });
@@ -156,7 +161,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET' && req.query?.reader === '1') {
-    const reader = await getReader(pool, String(req.headers?.['x-reader-token'] || '')).catch(() => null);
+    const reader = await getReaderBySession(pool, String(req.headers?.['x-reader-token'] || '')).catch(() => null);
     if (!reader) return res.status(401).json({ error: 'unauthorized' });
     const [balance, ledger] = await Promise.all([readerBalance(pool, reader.id), readerLedger(pool, reader.id)]);
     let books = [];
@@ -213,6 +218,7 @@ export default async function handler(req, res) {
       }
       await client.query('COMMIT');
       if (simTarget === 'paid') await onOrderPaid(pool, order.id).catch(() => {});
+      else await releaseHold(pool, order.id).catch(() => {});
     } catch (e) {
       await client.query('ROLLBACK').catch(() => {});
       console.error('status.simulate.error', String(e));
@@ -241,6 +247,7 @@ export default async function handler(req, res) {
       }
     } else if (remoteStatus === 'failed' || remoteStatus === 'cancelled') {
       await pool.query("update fair_orders set status = $2 where id = $1 and status in ('created','pending')", [order.id, remoteStatus]).catch(() => {});
+      await releaseHold(pool, order.id).catch(() => {});
       order.status = remoteStatus;
     }
   }

@@ -28,6 +28,13 @@
       <label>Telefone (M-Pesa / e-Mola)<input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="84 000 0000" required></label>
       <label>Email <small>(opcional)</small><input name="email" type="email" autocomplete="email"></label>
       <label style="display:flex;gap:9px;align-items:flex-start;font-weight:400;font-size:14px;color:#44606a"><input type="checkbox" name="marketing" style="width:auto;margin-top:3px"> Quero receber novidades e novos livros da Kulera+ por email.</label>
+      <div id="walletBox" hidden style="background:#eef6f5;border:1px solid #cfe0de;border-radius:8px;padding:10px 12px;font-size:14px;color:#0b5c63">
+        <b id="walletBalance"></b>
+        <label style="display:flex;gap:8px;align-items:center;margin-top:6px;font-weight:600">Usar saldo (MT)
+          <input name="useBalance" type="number" min="0" step="1" value="0" style="width:110px;padding:6px 8px;border:1px solid #9db3b0;border-radius:6px">
+        </label>
+        <p style="margin:6px 0 0;font-size:12px;color:#557077">Pode usar todo ou parte do saldo; o resto paga na PaySuite.</p>
+      </div>
       <div id="ship" hidden style="background:#fffdf7;border:1.5px solid #e0a800;border-radius:10px;padding:14px;margin:10px 0;display:grid;gap:10px">
         <h2 style="font:700 18px Georgia,serif;margin:0;color:#5a3e00">📦 Endereço para Entrega (Obrigatório para livro físico)</h2>
         <p style="margin:0;font-size:13px;color:#6b5211">Preencha os dados abaixo para enviarmos o exemplar físico até si.</p>
@@ -50,6 +57,18 @@ const id=params.get('id');
 const requestedFmt=params.get('fmt');
 let b=null,fmt='digital';
 let sandbox={on:false,amountMinor:null};
+let wallet=null;
+function syncWallet(){
+  if(!wallet||!b) return;
+  const maxMinor=Math.min(wallet.balance, priceFor(fmt));
+  const inp=document.querySelector('[name=useBalance]');
+  if(inp){
+    inp.max=(maxMinor/100).toFixed(2);
+    if(Number(inp.value||0)>maxMinor/100) inp.value=(maxMinor/100).toFixed(2);
+  }
+  const el=$('walletBalance');
+  if(el) el.textContent='Saldo disponível: '+money(wallet.balance,b.currency);
+}
 function priceFor(f){return f==='physical'?(b.physicalPriceMinor??b.priceMinor):(b.digitalPriceMinor??b.priceMinor)}
 function applyFmt(){
   const physical=fmt==='physical';
@@ -72,7 +91,18 @@ function applyFmt(){
   if(pe)pe.textContent=money(priceFor(fmt),b.currency);
   // Em modo de teste o botão mostra o valor que a PaySuite vai cobrar (10 MT), não o preço de tabela.
   const charged=sandbox.on&&sandbox.amountMinor!=null?sandbox.amountMinor:priceFor(fmt);
-  $('go').textContent=(physical?'Pagar (entrega) ':'Pagar ')+money(charged,b.currency);
+  const useInput=document.querySelector('[name=useBalance]');
+  const wanted=wallet?Math.max(0,Math.min(Number(useInput?.value||0),wallet.balance/100,priceFor(fmt)/100)):0;
+  const useMinor=Math.round(wanted*100);
+  const due=Math.max(0,priceFor(fmt)-useMinor);
+  if(wallet&&useMinor>0){
+    $('go').textContent = due>0
+      ? 'Pagar '+money(due,b.currency)+' · saldo '+money(useMinor,b.currency)
+      : 'Pagar com saldo ('+money(useMinor,b.currency)+')';
+  } else {
+    $('go').textContent=(physical?'Pagar (entrega) ':'Pagar ')+money(charged,b.currency);
+  }
+  syncWallet();
 }
 function showSandbox(){
   if(!sandbox.on||!b)return;
@@ -159,6 +189,25 @@ async function load(){
     const cfg=await fetch('/api/book?_='+Date.now(),{cache:'no-store'}).then(r=>r.json());
     if(cfg&&cfg.sandbox){sandbox={on:true,amountMinor:Number(cfg.sandboxPriceMinor)||0};showSandbox();applyFmt();}
   }catch{}
+  // Saldo do leitor (se tiver sessão): pode pagar todo ou parte do livro.
+  try{
+    const rt=localStorage.getItem('kulera_reader')||'';
+    if(/^[a-f0-9]{64}$/.test(rt)){
+      const rr=await fetch('/api/status?reader=1',{headers:{'x-reader-token':rt}});
+      if(rr.ok){
+        const jj=await rr.json();
+        const bal=Number(jj.balance)||0;
+        if(bal>0){
+          wallet={token:rt,balance:bal};
+          const box=$('walletBox');
+          if(box) box.hidden=false;
+          const inp=document.querySelector('[name=useBalance]');
+          if(inp){inp.value=(Math.min(bal,priceFor(fmt))/100).toFixed(2);inp.oninput=()=>applyFmt();}
+          applyFmt();
+        }
+      }
+    }
+  }catch{}
   f.onsubmit=async e=>{
     e.preventDefault();const fd=new FormData(e.target),msg=$('msg'),btn=$('go');
     msg.className='msg';msg.textContent='';
@@ -180,7 +229,8 @@ async function load(){
     }
     btn.disabled=true;const label=btn.textContent;btn.textContent='A abrir pagamento...';
     try{
-      const body={bookId:b.id,format:fmt,name:fd.get('name'),phone:fd.get('phone'),email:fd.get('email'),marketing:fd.get('marketing')==='on'};
+      const useMinor=wallet?Math.round(Math.max(0,Math.min(Number(fd.get('useBalance')||0),wallet.balance/100,priceFor(fmt)/100))*100):0;
+      const body={bookId:b.id,format:fmt,name:fd.get('name'),phone:fd.get('phone'),email:fd.get('email'),marketing:fd.get('marketing')==='on',readerToken:wallet?wallet.token:undefined,useBalanceMinor:useMinor};
       if(fmt==='physical'){body.shippingName=fd.get('shippingName')||fd.get('name');body.shippingPhone=fd.get('shippingPhone')||fd.get('phone');body.shippingAddress=fd.get('shippingAddress');body.shippingCity=fd.get('shippingCity');}
       const rr=await fetch('/api/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const j=await rr.json();

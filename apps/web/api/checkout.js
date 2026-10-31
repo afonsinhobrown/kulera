@@ -1,6 +1,6 @@
 import { pool } from '../lib/db.js';
-import { startPayment } from '../lib/payments.js';
-import { getReader } from '../lib/reader.js';
+import { createWalletOrder, startPayment } from '../lib/payments.js';
+import { getReaderBySession, readerBalance } from '../lib/reader.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
@@ -20,7 +20,7 @@ export default async function handler(req, res) {
   const marketingOptIn = req.body?.marketing === true && Boolean(email);
   // Compra feita com sessão de leitor fica na biblioteca dessa conta.
   const readerToken = String(req.headers?.['x-reader-token'] || req.body?.readerToken || '');
-  const reader = /^[0-9a-f-]{36}$/.test(readerToken) ? await getReader(pool, readerToken).catch(() => null) : null;
+  const reader = /^[a-f0-9]{64}$/.test(readerToken) ? await getReaderBySession(pool, readerToken).catch(() => null) : null;
 
   // Preço, moeda e disponibilidade SEMPRE da base de dados. Nunca se vende um livro sem conteúdo publicado.
   // Planos expirados/bloqueados do parceiro impedem novas compras de livros desse autor/editora.
@@ -72,25 +72,50 @@ export default async function handler(req, res) {
     await pool.query('update fair_books set stock = stock - 1 where id = $1 and stock >= 1', [book.id]);
   }
 
-  const pay = await startPayment({
-    type: isPhysical ? 'physical' : 'book',
-    listAmountMinor: listMinor,
-    currency: book.currency,
-    name,
-    phone,
-    email,
-    description: `${isPhysical ? 'Kulera+: Livro físico' : 'Kulera+'}: ${book.title}`,
-    extra: {
-      book_id: book.id,
-      marketing_opt_in: marketingOptIn,
-      reader_id: reader?.id || null,
-      shipping_name: shippingName || name,
-      shipping_phone: shippingPhone || phone,
-      shipping_address: shippingAddress || null,
-      shipping_city: shippingCity || null,
-    },
-    req,
-  });
+  // Saldo do leitor (só com sessão): pode pagar tudo ou parte; o resto vai para a PaySuite.
+  let useMinor = 0;
+  if (reader) {
+    const balance = await readerBalance(pool, reader.id).catch(() => 0);
+    const asked = Number(req.body?.useBalanceMinor);
+    useMinor = Number.isFinite(asked) && asked > 0 ? Math.floor(asked) : 0;
+    if (req.body?.useAllBalance === true) useMinor = balance;
+    useMinor = Math.max(0, Math.min(useMinor, balance, listMinor));
+  }
+  const chargeMinor = listMinor - useMinor;
+
+  const extra = {
+    book_id: book.id,
+    marketing_opt_in: marketingOptIn,
+    reader_id: reader?.id || null,
+    shipping_name: shippingName || name,
+    shipping_phone: shippingPhone || phone,
+    shipping_address: shippingAddress || null,
+    shipping_city: shippingCity || null,
+  };
+
+  const pay = useMinor > 0 && chargeMinor <= 0
+    ? await createWalletOrder({
+        type: isPhysical ? 'physical' : 'book',
+        amountMinor: listMinor,
+        currency: book.currency,
+        name,
+        phone,
+        email,
+        extra,
+        useMinor,
+        req,
+      })
+    : await startPayment({
+        type: isPhysical ? 'physical' : 'book',
+        listAmountMinor: chargeMinor,
+        currency: book.currency,
+        name,
+        phone,
+        email,
+        description: `${isPhysical ? 'Kulera+: Livro físico' : 'Kulera+'}: ${book.title}`,
+        extra,
+        req,
+      });
 
   if (!pay.ok) {
     if (isPhysical && book.stock != null) {
@@ -102,11 +127,20 @@ export default async function handler(req, res) {
     });
   }
 
+  if (useMinor > 0 && chargeMinor > 0) {
+    await pool.query('update fair_orders set wallet_minor = $2 where id = $1', [pay.id, useMinor]);
+    await pool.query(
+      `insert into fair_reader_ledger (reader_id, kind, amount_minor, order_id, note) values ($1,'hold',$2,$3,$4)`,
+      [reader.id, -useMinor, pay.id, 'Reserva para compra'],
+    );
+  }
+
   return res.status(200).json({
     checkoutUrl: pay.checkoutUrl,
     token: pay.token,
     format: chosen,
     amountMinor: pay.amountMinor,
+    walletMinor: useMinor,
     sandbox: pay.sandbox,
     simulated: Boolean(pay.simulated),
     providerWarning: pay.providerWarning,
