@@ -20,6 +20,7 @@ export default async function handler(req, res) {
             and (coalesce(b.kind,'ebook') = 'physical' or coalesce(b.has_physical,false) = true or b.content_html is not null)
             and (b.partner_id is null
                  or s.id is not null
+                 or b.active_until > now()
                  or not exists (select 1 from fair_subscriptions sx where sx.partner_id = b.partner_id))
           group by b.id
           order by priority desc, b.created_at desc limit 200`);

@@ -4,6 +4,7 @@ import { createPayment, resolvePaysuiteToken } from './paysuite.js';
 import { computeSplit } from './split.js';
 import { APP_BPS, EDITORS_BPS } from './pricing.js';
 import { ensureReaderSchema, topupBonus } from './reader.js';
+import { ensureCreditSchema, packByPrice } from './credits.js';
 
 // Em modo sandbox TODOS os pagamentos cobram 10 MT (1000 minor, = 10,00 MZN).
 export const SANDBOX_AMOUNT_MINOR = 1000;
@@ -20,7 +21,7 @@ export async function ensurePaymentSchema() {
     await pool.query(`alter table fair_orders add column if not exists plan_id uuid`);
     await pool.query(`alter table fair_orders add column if not exists type text not null default 'book'`);
     await pool.query(`alter table fair_orders drop constraint if exists fair_orders_type_check`);
-    await pool.query(`alter table fair_orders add constraint fair_orders_type_check check (type in ('book','subscription','physical','publication','topup'))`);
+    await pool.query(`alter table fair_orders add constraint fair_orders_type_check check (type in ('book','subscription','physical','publication','topup','credits'))`);
     await pool.query(`alter table fair_orders add column if not exists reader_id uuid`);
     await pool.query(`alter table fair_orders add column if not exists wallet_minor bigint not null default 0`);
     await pool.query(`alter table fair_orders add column if not exists shipping_name text`);
@@ -56,6 +57,7 @@ export async function ensurePaymentSchema() {
       created_at timestamptz not null default now()
     )`);
     await ensureReaderSchema(pool);
+    await ensureCreditSchema(pool);
   } catch {}
   ensured = true;
 }
@@ -185,12 +187,28 @@ export async function settleOrderPaid(client, orderId, providerId = null) {
   if (upd.rowCount !== 1) return false;
 
   const r = await client.query(
-    `select o.book_id, o.amount_minor, o.list_amount_minor, o.wallet_minor, o.reader_id, o.plan_id, o.type, b.partner_id, b.kind, b.content_html from fair_orders o
+    `select o.book_id, o.amount_minor, o.list_amount_minor, o.wallet_minor, o.reader_id, o.partner_id as order_partner_id, o.plan_id, o.type, b.partner_id, b.kind, b.content_html from fair_orders o
        left join fair_books b on b.id = o.book_id where o.id = $1`,
     [orderId],
   );
   const x = r.rows[0];
   if (!x) return true;
+
+  if (x.type === 'credits' && x.order_partner_id) {
+    // Compra de créditos de publicação: fica um pacote com vagas e dias.
+    const pack = packByPrice(x.list_amount_minor) || {
+      code: 'custom',
+      slots: 1,
+      days: 10,
+      priceMinor: Number(x.list_amount_minor),
+    };
+    await client.query(
+      `insert into fair_partner_credits (partner_id, pack, price_minor, slots_total, slots_used, days)
+       values ($1,$2,$3,$4,0,$5)`,
+      [x.order_partner_id, pack.code, Number(x.list_amount_minor), pack.slots || 1, pack.days || 10],
+    );
+    return true;
+  }
 
   if (x.type === 'topup' && x.reader_id) {
     // Carregamento de saldo: credita o valor escolhido (em sandbox cobra-se pouco, mas o

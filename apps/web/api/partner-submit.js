@@ -1,6 +1,7 @@
 import { pool } from "../lib/db.js";
 import { startPayment } from "../lib/payments.js";
 import { activePlan, publicationsUsed } from "../lib/plans.js";
+import { activateBook, availableCredit, packByCode, CREDIT_PACKS } from "../lib/credits.js";
 
 const clip = (v,n)=>String(v??"").replace(/\u0000/g,"").trim().slice(0,n);
 const uuid = (v)=>/^[0-9a-f-]{36}$/.test(String(v));
@@ -38,7 +39,22 @@ export default async function handler(req,res){
       try { pendingFees = (await pool.query("select id, title, publication_fee_minor from fair_books where partner_id=$1 and publication_fee_paid_at is null and coalesce(publication_fee_minor,0)>0 order by created_at desc",[pid])).rows.map(x=>({...x,publication_fee_minor:Number(x.publication_fee_minor)})); } catch {}
       const plan = await activePlan(pid).catch(()=>null);
       const used = await publicationsUsed(pid).catch(()=>0);
-      return res.json({ ok:true, partner:p.rows[0]||null, plan, used, pendingFees,
+      let credits = [];
+      try {
+        credits = (await pool.query(
+          `select id, pack, price_minor, slots_total, slots_used, days, purchased_at,
+                  (slots_total - slots_used) as remaining
+             from fair_partner_credits where partner_id=$1 order by purchased_at desc limit 50`, [pid])).rows
+          .map(x=>({...x, price_minor:Number(x.price_minor), slots_total:Number(x.slots_total), slots_used:Number(x.slots_used), remaining:Number(x.remaining)}));
+      } catch {}
+      let books = [];
+      try {
+        books = (await pool.query(
+          `select id, title, status, active_until, publication_fee_paid_at, coalesce(publication_fee_minor,0)::bigint as publication_fee_minor
+             from fair_books where partner_id=$1 order by created_at desc limit 200`, [pid])).rows
+          .map(x=>({...x, publication_fee_minor:Number(x.publication_fee_minor)}));
+      } catch {}
+      return res.json({ ok:true, partner:p.rows[0]||null, plan, used, pendingFees, credits, books, packs: CREDIT_PACKS,
         summary:{ salesCount:sales.length, gross, appTotal, editorsTotal, earned, feesPaid, feesPending, withdrawalsPaid:wPaid, withdrawalsOpen:wOpen, available: earned-wPaid-wOpen },
         sales, fees, withdrawals });
     }
@@ -47,6 +63,23 @@ export default async function handler(req,res){
   }
   if(req.method==="POST"){
     const b = req.body??{};
+    if(b.action==="buy_credits"){
+      const pack = packByCode(b.pack);
+      if(!pack) return res.status(400).json({error:"invalid_pack"});
+      const pr = (await pool.query("select name,phone,email from fair_partners where id=$1",[pid])).rows[0]||{};
+      const phone = String(b.phone||pr.phone||"").replace(/\D/g,"");
+      if(phone.length<9) return res.status(400).json({error:"invalid_phone"});
+      const pay = await startPayment({ type:"credits", listAmountMinor: pack.priceMinor, name: pr.name||"Parceiro", phone, email: pr.email,
+        description:`Kulera+: Créditos de publicação (${pack.label})`, extra:{ partner_id: pid }, req });
+      if(!pay.ok) return res.status(502).json({error:"payment_unavailable", detail: pay.errorDetail});
+      return res.json({ok:true, checkoutUrl:pay.checkoutUrl, amountMinor:pay.amountMinor, sandbox:pay.sandbox, simulated:Boolean(pay.simulated)});
+    }
+    if(b.action==="activate_book"){
+      if(!uuid(b.bookId)) return res.status(400).json({error:"invalid"});
+      const result = await activateBook(pool, pid, b.bookId);
+      if(!result.ok) return res.status(400).json({error: result.error});
+      return res.json({ok:true, days: result.days});
+    }
     if(b.action==="withdraw"){
       const amount = Number(b.amountMinor);
       if(!Number.isInteger(amount)||amount<=0)return res.status(400).json({error:"invalid_amount"});
@@ -69,10 +102,11 @@ export default async function handler(req,res){
       if(!pay.ok)return res.status(502).json({error:"payment_unavailable", detail: pay.errorDetail});
       return res.json({ok:true,checkoutUrl:pay.checkoutUrl,amountMinor:pay.amountMinor,sandbox:pay.sandbox,simulated:Boolean(pay.simulated)});
     }
-    // Publicar exige plano activo e respeita o limite mensal do plano.
+    // Publicar exige plano activo OU créditos de publicação; o plano tem limite mensal.
     const plan = await activePlan(pid);
-    if(!plan)return res.status(402).json({error:"no_plan"});
-    if(plan.max_publications!=null && await publicationsUsed(pid) >= plan.max_publications)return res.status(403).json({error:"plan_limit",limit:plan.max_publications});
+    const credit = await availableCredit(pool, pid).catch(()=>null);
+    if(!plan && !credit)return res.status(402).json({error:"no_plan"});
+    if(plan && plan.max_publications!=null && await publicationsUsed(pid) >= plan.max_publications && !credit)return res.status(403).json({error:"plan_limit",limit:plan.max_publications});
     const title = clip(b.title,200), author = clip(b.author,200);
     if(title.length<1||author.length<1)return res.status(400).json({error:"invalid"});
     const content = typeof b.contentHtml==="string"&&b.contentHtml.trim()?b.contentHtml.replace(/\u0000/g,""):null;

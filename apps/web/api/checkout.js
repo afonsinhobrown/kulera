@@ -33,6 +33,7 @@ export default async function handler(req, res) {
               b.partner_id,
               case when b.partner_id is null then true
                    when exists (select 1 from fair_subscriptions s where s.partner_id = b.partner_id and s.status = 'active' and s.ends_at > now()) then true
+                   when b.active_until > now() then true
                    when not exists (select 1 from fair_subscriptions s where s.partner_id = b.partner_id) then true
                    else false end as can_sell
          from fair_books b
