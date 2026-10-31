@@ -221,6 +221,7 @@ async function action(b) {
     }
     case 'merge_partners': {
       if (!uuid(b.keepId) || !uuid(b.mergeId) || b.keepId === b.mergeId) return [400, { error: 'invalid' }];
+      await ensurePaymentSchema();
       const keep = (await pool.query('select id from fair_partners where id=$1', [b.keepId])).rows[0];
       const merge = (await pool.query('select id from fair_partners where id=$1', [b.mergeId])).rows[0];
       if (!keep || !merge) return [404, { error: 'not_found' }];
