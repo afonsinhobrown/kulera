@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Confirmar email · Kulera+</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="top"><a href="/" style="color:#fff;text-decoration:none">Kulera<span style="color:var(--gold)">+</span></a></div>
+<main>
+  <section class="panel" style="max-width:520px">
+    <h1 style="font-size:26px">Confirmar email</h1>
+    <p id="intro">A confirmar…</p>
+    <p id="msg" class="msg" role="status"></p>
+    <div id="actions" hidden>
+      <p class="note">Precisa de um novo link? Indique o email com que criou a conta.</p>
+      <form id="resendForm">
+        <label>Email<input name="email" type="email" autocomplete="email" required></label>
+        <p class="msg" id="resendMsg"></p>
+        <button type="submit">Reenviar link de confirmação</button>
+      </form>
+    </div>
+    <p class="note"><a href="conta.html">Área do leitor</a> · <a href="parceiros-portal.html">Portal de editores</a></p>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const token = new URLSearchParams(location.search).get('t') || '';
+
+async function post(body) {
+  const r = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  return { ok: r.ok, j: await r.json().catch(() => ({})) };
+}
+
+async function confirmToken() {
+  if (!token) {
+    $('intro').textContent = 'Esta ligação não tem código de confirmação.';
+    $('actions').hidden = false;
+    return;
+  }
+  const { ok, j } = await post({ action: 'verify_email', token });
+  if (ok && j.ok) {
+    $('intro').innerHTML = '<b>Email confirmado ✅</b> A sua conta está activa. Já pode entrar.';
+    const a = document.createElement('a');
+    a.className = 'btn';
+    a.href = j.kind === 'partner' ? '/parceiros-portal.html' : '/conta.html';
+    a.textContent = j.kind === 'partner' ? 'Entrar no Portal de Editores' : 'Entrar na Área do leitor';
+    $('intro').appendChild(document.createElement('br'));
+    $('intro').appendChild(a);
+    return;
+  }
+  $('intro').textContent = 'O link é inválido ou já expirou.';
+  $('actions').hidden = false;
+}
+
+$('resendForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = e.target, msg = $('resendMsg');
+  msg.className = 'msg'; msg.textContent = 'A enviar…';
+  await post({ action: 'resend_verification', email: f.email.value });
+  msg.className = 'msg';
+  msg.textContent = 'Se existir uma conta pendente com esse email, enviámos um novo link.';
+};
+
+confirmToken();
+</script>
+</body>
+</html>

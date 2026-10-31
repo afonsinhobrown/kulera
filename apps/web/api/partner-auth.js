@@ -1,5 +1,18 @@
 import { timingSafeEqual, pbkdf2Sync, randomBytes } from "node:crypto";
 import { pool } from "../lib/db.js";
+import { emailConfigured } from "../lib/email.js";
+import { newVerifyToken, sendVerification } from "../lib/verify.js";
+
+let ensured = false;
+async function ensurePartnerSchema() {
+  if (ensured) return;
+  try {
+    await pool.query("alter table fair_partner_users add column if not exists email_verified_at timestamptz");
+    await pool.query("alter table fair_partner_users add column if not exists email_token text");
+    await pool.query("alter table fair_partner_users add column if not exists email_token_expires_at timestamptz");
+  } catch {}
+  ensured = true;
+}
 
 const sameKey = (a,b)=>{
   const x = Buffer.from(String(a??""));
@@ -52,17 +65,32 @@ async function action(b){
         pid = r.rows[0].id;
       }
       const h = makeHash(pass);
+      await ensurePartnerSchema();
+      const configured = emailConfigured();
+      const vtoken = configured ? newVerifyToken() : null;
       try{
-        const r = await pool.query("insert into fair_partner_users (partner_id,email,password_hash) values ($1,$2,$3) returning id",[pid,mail,h]);
-        return [200,{ok:true,id:r.rows[0].id,partnerId:pid}];
+        const r = await pool.query(
+          `insert into fair_partner_users (partner_id,email,password_hash,email_token,email_token_expires_at,email_verified_at)
+           values ($1,$2,$3,$4, now() + interval '24 hours', $5) returning id`,
+          [pid, mail, h, vtoken, configured ? null : new Date()],
+        );
+        if (configured) {
+          const sent = await sendVerification({ to: mail, name, token: vtoken, kind: "partner" });
+          if (!sent.ok) {
+            await pool.query("update fair_partner_users set email_verified_at=now(), email_token=null where id=$1", [r.rows[0].id]);
+          }
+        }
+        return [200,{ok:true,id:r.rows[0].id,partnerId:pid,pending:configured}];
       }catch(e){ return [409,{error:"exists"}]; }
     }
     case "login":{
       const mail = String(b.email||"").trim().toLowerCase();
       const pass = String(b.password||"");
-      const r = await pool.query("select u.id,u.partner_id,u.password_hash,u.status,p.status as pstatus from fair_partner_users u join fair_partners p on p.id=u.partner_id where lower(u.email)=$1",[mail]);
+      await ensurePartnerSchema();
+      const r = await pool.query("select u.id,u.partner_id,u.password_hash,u.status,u.email_verified_at,u.email_token,p.status as pstatus from fair_partner_users u join fair_partners p on p.id=u.partner_id where lower(u.email)=$1",[mail]);
       if(!r.rows[0]||r.rows[0].status!=="active"||r.rows[0].pstatus==="suspended")return [401,{error:"unauthorized"}];
       if(!verify(pass,r.rows[0].password_hash))return [401,{error:"unauthorized"}];
+      if(r.rows[0].email_token && !r.rows[0].email_verified_at)return [403,{error:"unverified"}];
       return [200,{ok:true,token:r.rows[0].id,partnerId:r.rows[0].partner_id}];
     }
     default:return [400,{error:"invalid_action"}];

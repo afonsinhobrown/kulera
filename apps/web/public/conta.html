@@ -167,18 +167,36 @@ async function loadAccount() {
 $('loginForm').onsubmit = async (e) => {
   e.preventDefault();
   const f = e.target, msg = $('loginMsg');
-  msg.className = 'msg'; msg.textContent = 'A entrar⬦';
+  msg.className = 'msg'; msg.textContent = 'A entrar…';
   const { ok, j } = await api({ action: 'reader_login', email: f.email.value, password: f.password.value });
-  if (!ok || !j.ok) { msg.className = 'msg err'; msg.textContent = 'Email ou palavra-passe incorrectos.'; return; }
-  TOKEN = j.token; localStorage.setItem('kulera_reader', TOKEN);
-  msg.textContent = '';
-  await loadAccount();
+  if (ok && j.ok) {
+    TOKEN = j.token; localStorage.setItem('kulera_reader', TOKEN);
+    msg.textContent = '';
+    await loadAccount();
+    return;
+  }
+  if (j.error === 'unverified') {
+    msg.className = 'msg err';
+    msg.innerHTML = 'Confirme o email antes de entrar. <a href="#" id="resendVerify">Reenviar email de confirmação</a>.';
+    const link = $('resendVerify');
+    if (link) {
+      link.onclick = async (ev) => {
+        ev.preventDefault();
+        await api({ action: 'resend_verification', email: f.email.value });
+        msg.className = 'msg';
+        msg.textContent = 'Se a conta estiver pendente, enviámos um novo link.';
+      };
+    }
+    return;
+  }
+  msg.className = 'msg err';
+  msg.textContent = 'Email ou palavra-passe incorrectos.';
 };
 
 $('registerForm').onsubmit = async (e) => {
   e.preventDefault();
   const f = e.target, msg = $('registerMsg');
-  msg.className = 'msg'; msg.textContent = 'A criar conta⬦';
+  msg.className = 'msg'; msg.textContent = 'A criar conta…';
   const { ok, j } = await api({ action: 'reader_register', name: f.name.value, phone: f.phone.value, email: f.email.value, password: f.password.value });
   if (!ok || !j.ok) {
     msg.className = 'msg err';
@@ -187,9 +205,13 @@ $('registerForm').onsubmit = async (e) => {
       : 'Verifique os dados e tente outra vez.';
     return;
   }
-  TOKEN = j.token; localStorage.setItem('kulera_reader', TOKEN);
-  msg.className = 'msg'; msg.textContent = '';
-  await loadAccount();
+  const lf = $('loginForm');
+  if (lf && lf.email) lf.email.value = f.email.value;
+  msg.className = 'msg';
+  msg.textContent = j.pending
+    ? 'Conta criada. Enviámos um link de confirmação para o seu email — abra-o para activar a conta e depois entre.'
+    : 'Conta criada. Já pode entrar.';
+  showPane('login');
 };
 
 $('topupForm').onsubmit = async (e) => {

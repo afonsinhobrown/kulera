@@ -1,4 +1,6 @@
 import { pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto';
+import { emailConfigured } from './email.js';
+import { newVerifyToken, sendVerification } from './verify.js';
 
 // Contas de leitor + carteira de saldo (pré-pago).
 // Modelo: o dinheiro entra sempre pela PaySuite (carregamento). O bónus de carregamento
@@ -47,6 +49,9 @@ export async function ensureReaderSchema(pool) {
       note text,
       created_at timestamptz not null default now()
     )`);
+    await pool.query(`alter table fair_readers add column if not exists email_verified_at timestamptz`);
+    await pool.query(`alter table fair_readers add column if not exists email_token text`);
+    await pool.query(`alter table fair_readers add column if not exists email_token_expires_at timestamptz`);
   } catch {}
   ensured = true;
 }
@@ -65,27 +70,59 @@ export async function registerReader(pool, { name, email, phone, password }) {
   await ensureReaderSchema(pool);
   const dup = await pool.query('select id from fair_readers where lower(email) = $1 limit 1', [cleanEmail]);
   if (dup.rows.length) return { ok: false, error: 'exists' };
+
+  // A conta só fica activa depois de confirmar o email (se o envio estiver configurado).
+  const configured = emailConfigured();
+  const verifyToken = configured ? newVerifyToken() : null;
   const r = await pool.query(
-    `insert into fair_readers (name, email, phone, password_hash) values ($1,$2,$3,$4)
+    `insert into fair_readers (name, email, phone, password_hash, email_token, email_token_expires_at, email_verified_at)
+     values ($1,$2,$3,$4,$5, now() + interval '24 hours', $6)
      returning id, name, email, phone, status`,
-    [cleanName, cleanEmail, cleanPhone || null, makeHash(pass)],
+    [cleanName, cleanEmail, cleanPhone || null, makeHash(pass), verifyToken, configured ? null : new Date()],
   );
-  return { ok: true, reader: r.rows[0], token: r.rows[0].id };
+  const reader = r.rows[0];
+  let mail = { ok: true };
+  if (configured) {
+    mail = await sendVerification({ to: cleanEmail, name: cleanName, token: verifyToken, kind: 'reader' });
+    if (!mail.ok) {
+      // Não deixar a conta presa: se o email falhar, fica verificada e o login funciona.
+      await pool.query('update fair_readers set email_verified_at = now(), email_token = null where id = $1', [reader.id]);
+    }
+  }
+  return { ok: true, reader, pending: configured && mail.ok, emailSent: Boolean(mail.ok) };
 }
 
 export async function loginReader(pool, { email, password }) {
   const cleanEmail = normalizeEmail(email);
   await ensureReaderSchema(pool);
   const r = await pool.query(
-    'select id, name, email, phone, status, password_hash from fair_readers where lower(email) = $1 limit 1',
+    'select id, name, email, phone, status, password_hash, email_verified_at, email_token from fair_readers where lower(email) = $1 limit 1',
     [cleanEmail],
   );
   const reader = r.rows[0];
   if (!reader || reader.status !== 'active' || !verifyHash(password, reader.password_hash)) {
     return { ok: false, error: 'unauthorized' };
   }
-  const { password_hash, ...safe } = reader;
+  if (reader.email_token && !reader.email_verified_at) return { ok: false, error: 'unverified' };
+  const { password_hash, email_token, ...safe } = reader;
   return { ok: true, reader: safe, token: reader.id };
+}
+
+/** Reenvia o link de confirmação (só se ainda estiver pendente). Resposta sempre neutra. */
+export async function resendReaderVerification(pool, email) {
+  const cleanEmail = normalizeEmail(email);
+  if (!EMAIL_RE.test(cleanEmail)) return { ok: true };
+  await ensureReaderSchema(pool);
+  const r = await pool.query(
+    'select id, name, email, email_token, email_verified_at from fair_readers where lower(email) = $1 limit 1',
+    [cleanEmail],
+  );
+  const reader = r.rows[0];
+  if (!reader || !reader.email_token || reader.email_verified_at) return { ok: true };
+  const token = newVerifyToken();
+  await pool.query("update fair_readers set email_token = $2, email_token_expires_at = now() + interval '24 hours' where id = $1", [reader.id, token]);
+  await sendVerification({ to: reader.email, name: reader.name, token, kind: 'reader' });
+  return { ok: true };
 }
 
 export async function getReader(pool, id) {

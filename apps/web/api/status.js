@@ -6,6 +6,7 @@ import { fingerprintHash, isDeviceKey, deviceHash, requestDeviceChange, sanitize
 import { onOrderPaid, unsubscribe } from '../lib/marketing.js';
 import { verifyUnsubscribe } from '../lib/email.js';
 import { getReader, loginReader, readerBalance, readerLedger, registerReader, topupBonus } from '../lib/reader.js';
+import { resendVerification, verifyToken } from '../lib/verify.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -77,7 +78,12 @@ export default async function handler(req, res) {
         password: req.body?.password,
       });
       if (!result.ok) return res.status(result.error === 'exists' ? 409 : 400).json({ error: result.error });
-      return res.json({ ok: true, token: result.token, reader: result.reader });
+      return res.json({
+        ok: true,
+        pending: Boolean(result.pending),
+        emailSent: Boolean(result.emailSent),
+        reader: result.reader,
+      });
     } catch (e) {
       console.error('reader.register.error', e?.message || String(e));
       return res.status(500).json({ error: 'internal_error' });
@@ -87,12 +93,31 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.body?.action === 'reader_login') {
     try {
       const result = await loginReader(pool, { email: req.body?.email, password: req.body?.password });
-      if (!result.ok) return res.status(401).json({ error: 'unauthorized' });
+      if (!result.ok) {
+        return res.status(result.error === 'unverified' ? 403 : 401).json({ error: result.error });
+      }
       return res.json({ ok: true, token: result.token, reader: result.reader });
     } catch (e) {
       console.error('reader.login.error', e?.message || String(e));
       return res.status(500).json({ error: 'internal_error' });
     }
+  }
+
+  if (req.method === 'POST' && req.body?.action === 'verify_email') {
+    try {
+      const result = await verifyToken(pool, req.body?.token);
+      if (!result.ok) return res.status(400).json({ error: result.error || 'invalid' });
+      return res.json({ ok: true, kind: result.kind });
+    } catch (e) {
+      console.error('verify.error', e?.message || String(e));
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  }
+
+  if (req.method === 'POST' && req.body?.action === 'resend_verification') {
+    // Resposta sempre neutra (não revela se o email existe).
+    await resendVerification(pool, req.body?.email).catch(() => {});
+    return res.json({ ok: true });
   }
 
   if (req.method === 'POST' && req.body?.action === 'reader_topup') {
