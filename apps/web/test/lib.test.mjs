@@ -99,3 +99,39 @@ test('retorno do pagamento usa o domínio do pedido (ignora um SITE_URL errado)'
   }
 });
 
+test('email: cancelamento assinado, quota por plano e envio sem configuração', async () => {
+  const { unsubscribeToken, verifyUnsubscribe, unsubscribeUrl, sendEmail, emailConfigured } = await import('../lib/email.js');
+  const { promoQuotaForPlan } = await import('../lib/marketing.js');
+
+  const token = unsubscribeToken('Ana@Example.com');
+  assert.ok(verifyUnsubscribe('ana@example.com', token));
+  assert.ok(!verifyUnsubscribe('outra@example.com', token));
+  assert.match(unsubscribeUrl('ana@example.com'), /\/sair\.html\?e=ana%40example\.com&s=[a-f0-9]{64}$/);
+
+  assert.deepEqual(['basic', 'pro', 'premium', 'desconhecido'].map(promoQuotaForPlan), [1, 2, 4, 1]);
+
+  const prev = {
+    from: process.env.EMAIL_FROM,
+    resend: process.env.RESEND_API_KEY,
+    brevo: process.env.BREVO_API_KEY,
+  };
+  try {
+    delete process.env.EMAIL_FROM;
+    delete process.env.RESEND_API_KEY;
+    delete process.env.BREVO_API_KEY;
+    assert.equal(emailConfigured(), false);
+    // Sem configuração não envia e não lança: o site continua a funcionar.
+    assert.deepEqual(await sendEmail({ to: 'x@y.z', subject: 's', html: '<p>x</p>' }), {
+      ok: false,
+      error: 'email_not_configured',
+    });
+  } finally {
+    if (prev.from !== undefined) process.env.EMAIL_FROM = prev.from;
+    else delete process.env.EMAIL_FROM;
+    if (prev.resend !== undefined) process.env.RESEND_API_KEY = prev.resend;
+    else delete process.env.RESEND_API_KEY;
+    if (prev.brevo !== undefined) process.env.BREVO_API_KEY = prev.brevo;
+    else delete process.env.BREVO_API_KEY;
+  }
+});
+

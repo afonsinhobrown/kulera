@@ -3,6 +3,8 @@ import { ensurePaymentSchema, isSandbox, settleOrderPaid, getPaysuiteTokenFromDb
 import { getPaymentStatus } from '../lib/paysuite.js';
 import { recoverAccess } from '../lib/recovery.js';
 import { fingerprintHash, isDeviceKey, deviceHash, requestDeviceChange, sanitizeDeviceInfo } from '../lib/device.js';
+import { onOrderPaid, unsubscribe } from '../lib/marketing.js';
+import { verifyUnsubscribe } from '../lib/email.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -53,6 +55,18 @@ export default async function handler(req, res) {
     }
   }
 
+  if (req.method === 'POST' && req.body?.action === 'unsubscribe') {
+    const email = String(req.body?.email ?? '');
+    if (!verifyUnsubscribe(email, req.body?.sig)) return res.status(403).json({ error: 'invalid_signature' });
+    try {
+      await unsubscribe(pool, email);
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error('unsubscribe.error', e?.message || String(e));
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  }
+
   const t = String(req.query?.t ?? req.body?.token ?? '');
   if (!/^[a-f0-9]{64}$/.test(t)) return res.status(400).json({ error: 'invalid_token' });
 
@@ -92,6 +106,7 @@ export default async function handler(req, res) {
         order.status = 'failed';
       }
       await client.query('COMMIT');
+      if (simTarget === 'paid') await onOrderPaid(pool, order.id).catch(() => {});
     } catch (e) {
       await client.query('ROLLBACK').catch(() => {});
       console.error('status.simulate.error', String(e));
@@ -112,6 +127,7 @@ export default async function handler(req, res) {
         await settleOrderPaid(client, order.id, order.provider_payment_id);
         await client.query('COMMIT');
         order.status = 'paid';
+        await onOrderPaid(pool, order.id).catch(() => {});
       } catch {
         await client.query('ROLLBACK').catch(() => {});
       } finally {

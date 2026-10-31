@@ -321,6 +321,20 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
         <div class="pane-title" style="font-size:18px;margin-top:24px">Pedidos de Autorização de Dispositivo</div>
         <div class="pane-sub">Quando um comprador muda de dispositivo, o novo equipamento só abre o livro depois de aprovado aqui.</div>
         <div class="table-card"><div class="table-wrap"><table id="deviceRequests"></table></div></div>
+
+        <div class="pane-title" style="font-size:18px;margin-top:24px">Comunicação por Email</div>
+        <div class="pane-sub" id="emailSummary">—</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+          <select id="promoBook" style="min-width:240px;padding:9px 12px;border:1.5px solid #9db3b0;border-radius:6px;font:inherit"></select>
+          <button type="button" id="announceBtn" class="btn-secondary" style="font-size:13px">📣 Anunciar este livro</button>
+          <span id="promoMsg" style="font-size:13px;color:#557077"></span>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+          <input id="testEmailInput" type="email" placeholder="email para teste" style="min-width:240px;padding:9px 12px;border:1.5px solid #9db3b0;border-radius:6px;font:inherit">
+          <button type="button" id="testEmailBtn" class="btn-secondary" style="font-size:13px">✉️ Enviar teste</button>
+          <span id="testEmailMsg" style="font-size:13px;color:#557077"></span>
+        </div>
+        <div class="table-card"><div class="table-wrap"><table id="promotions"></table></div></div>
       </div>
 
       <!-- TAB 7: LEADS -->
@@ -705,6 +719,24 @@ async function load(){
     return tr;
   };
   fill($('deviceRequests'), ['Data', 'Comprador', 'Livro', 'Dispositivo', 'Estado', 'Acção'], j.deviceRequests || [], renderDeviceRequests);
+
+// Comunicação por email
+const bookSel = $('promoBook');
+if (bookSel) {
+  const prev = bookSel.value;
+  bookSel.innerHTML = '';
+  (j.books || []).filter(b => b.status === 'published').forEach(b => bookSel.add(new Option(b.title, b.id)));
+  if (prev) bookSel.value = prev;
+}
+const emailSum = $('emailSummary');
+if (emailSum) emailSum.textContent = j.emailReady
+  ? `Email configurado · ${j.subscribers || 0} subscritor(es) activos. Limite de anúncios por livro/mês: Básico 1×, Profissional 2×, Premium 4×.`
+  : 'Email ainda não configurado (defina RESEND_API_KEY e EMAIL_FROM na Vercel).';
+fill($('promotions'), ['Data', 'Livro', 'Emails enviados'], j.promotions || [], p => {
+  const tr = document.createElement('tr');
+  tr.append(cell(p.sent_at ? new Date(p.sent_at).toLocaleString('pt-MZ') : '—'), cell(p.book || '—'), cell(p.recipients || 0));
+  return tr;
+});
 
   // Leads
   fill($('leads'), ['Data', 'Nome / Organização', 'Tipo', 'Telemóvel / WhatsApp', 'Livros', 'Estado'], j.leads, l => {
@@ -1104,6 +1136,45 @@ async function csv(t){
 }
 $('csvL').onclick = () => csv('leads');
 $('csvO').onclick = () => csv('orders');
+
+// Anúncio de um livro por email (respeita a quota do plano do parceiro)
+$('announceBtn').onclick = async () => {
+  const id = $('promoBook').value, msg = $('promoMsg'), btn = $('announceBtn');
+  if (!id) return;
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'A enviar...'; msg.textContent = '';
+  try {
+    const { ok, j: out } = await api({ action: 'announce_book', bookId: id });
+    if (!ok) msg.textContent = 'Erro: ' + (out.error || 'falha');
+    else if (!out.ok) {
+      const map = {
+        quota_exceeded: `limite do plano atingido (${out.used}/${out.quota} este mês)`,
+        no_subscribers: 'ainda não há subscritores',
+        email_not_configured: 'email não configurado',
+        book_not_published: 'livro não publicado',
+        book_not_found: 'livro não encontrado',
+      };
+      msg.textContent = map[out.error] || out.error;
+    } else {
+      msg.textContent = `✅ enviado a ${out.sent} pessoa(s)${out.failed ? ` · ${out.failed} falha(s)` : ''} · quota ${out.used}/${out.quota}`;
+    }
+    await load();
+  } catch { msg.textContent = 'Erro de ligação.'; }
+  finally { btn.disabled = false; btn.textContent = label; }
+};
+$('testEmailBtn').onclick = async () => {
+  const to = $('testEmailInput').value.trim(), msg = $('testEmailMsg'), btn = $('testEmailBtn');
+  if (!to) { msg.textContent = 'Escreva um email.'; return; }
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'A enviar...'; msg.textContent = '';
+  try {
+    const { ok, j: out } = await api({ action: 'test_email', to });
+    if (!ok) msg.textContent = 'Erro: ' + (out.error || 'falha');
+    else if (!out.ok) msg.textContent = out.error === 'email_not_configured' ? 'Email não configurado (falta RESEND_API_KEY/EMAIL_FROM).' : 'Falhou: ' + (out.detail || out.error);
+    else msg.textContent = '✅ Email enviado. Verifique a caixa de entrada.';
+  } catch { msg.textContent = 'Erro de ligação.'; }
+  finally { btn.disabled = false; btn.textContent = label; }
+};
 // A PaySuite só tem um webhook por conta (partilhado). Aqui confirmamos os pendentes perguntando à PaySuite.
 $('reconcileBtn').onclick = async () => {
   const btn = $('reconcileBtn'), msg = $('reconcileMsg'), label = btn.textContent;

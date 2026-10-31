@@ -16,6 +16,7 @@ export default async function handler(req, res) {
   const shippingPhone = String(req.body?.shippingPhone ?? phone).replace(/[\s()-]/g, '').replace(/^\+/, '');
   const shippingAddress = String(req.body?.shippingAddress ?? '').trim();
   const shippingCity = String(req.body?.shippingCity ?? '').trim();
+  const marketingOptIn = req.body?.marketing === true && Boolean(email);
 
   // Preço, moeda e disponibilidade SEMPRE da base de dados. Nunca se vende um livro sem conteúdo publicado.
   // Planos expirados/bloqueados do parceiro impedem novas compras de livros desse autor/editora.
@@ -76,6 +77,7 @@ export default async function handler(req, res) {
     description: `${isPhysical ? 'Kulera+: Livro físico' : 'Kulera+'}: ${book.title}`,
     extra: {
       book_id: book.id,
+      marketing_opt_in: marketingOptIn,
       shipping_name: shippingName || name,
       shipping_phone: shippingPhone || phone,
       shipping_address: shippingAddress || null,

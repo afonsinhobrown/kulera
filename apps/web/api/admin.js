@@ -5,6 +5,8 @@ import { ensurePaymentSchema, isSandbox, setSandbox, getAdminKeyFromDb, getPaysu
 import { createPayment, getPaymentStatus } from '../lib/paysuite.js';
 import { ensurePlanSchema } from '../lib/plans.js';
 import { approveDeviceRequest, rejectDeviceRequest } from '../lib/device.js';
+import { announceBook, subscriberCount } from '../lib/marketing.js';
+import { emailConfigured, sendEmail } from '../lib/email.js';
 
 const sameKey = (a, b) => {
   const ax = String(a ?? '').trim();
@@ -194,6 +196,23 @@ async function action(b) {
       }
       return [200, { ok: true, open: pend.rows.length, checked, paid, closed }];
     }
+    case 'test_email': {
+      const to = String(b.to || '').trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return [400, { error: 'invalid_email' }];
+      if (!emailConfigured()) return [200, { ok: false, error: 'email_not_configured' }];
+      const res = await sendEmail({
+        to,
+        subject: 'Teste de email · Kulera+',
+        html: '<p style="font:16px system-ui">Este é um email de teste da Kulera+. Se o recebeu, o envio está configurado.</p>',
+        text: 'Este é um email de teste da Kulera+.',
+      });
+      return [200, { ok: res.ok, detail: res.error || null }];
+    }
+    case 'announce_book': {
+      if (!uuid(b.bookId)) return [400, { error: 'invalid_book' }];
+      if (!emailConfigured()) return [200, { ok: false, error: 'email_not_configured' }];
+      return [200, await announceBook(pool, b.bookId)];
+    }
     case 'withdrawal_status': {
       if (!uuid(b.id) || !['requested', 'processing', 'paid', 'rejected'].includes(b.status)) return [400, { error: 'invalid' }];
       await pool.query("update fair_partner_withdrawals set status=$2, paid_at=case when $2='paid' then coalesce(paid_at, now()) else paid_at end where id=$1", [b.id, b.status]);
@@ -341,6 +360,15 @@ export default async function handler(req, res) {
     } catch {}
     let withdrawals = [];
     try { withdrawals = (await pool.query(`select w.id, w.amount_minor, w.method, w.details, w.status, w.created_at, w.paid_at, p.name as partner from fair_partner_withdrawals w left join fair_partners p on p.id=w.partner_id order by w.created_at desc limit 500`)).rows; } catch {}
+    const subscribers = await subscriberCount(pool);
+    let promotions = [];
+    try {
+      promotions = (await pool.query(
+        `select p.id, p.sent_at, p.recipients, coalesce(b.title,'Livro') as book
+           from fair_promotions p left join fair_books b on b.id = p.book_id
+          order by p.sent_at desc limit 50`,
+      )).rows;
+    } catch {}
 
     if (req.query?.format === 'csv') {
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -351,6 +379,7 @@ export default async function handler(req, res) {
       leads, orders, deviceRequests, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor), publication_fee_minor: Number(x.publication_fee_minor || 0) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
       submissions, plans: plans.map((x)=>({...x,price_minor:Number(x.price_minor)})), subscriptions: subs,
       withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})),
+      subscribers, emailReady: emailConfigured(), promotions,
       sandbox, paysuiteTokenHint });
   } catch (e) {
     console.error('admin.error', e?.message || String(e));

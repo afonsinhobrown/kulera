@@ -27,6 +27,7 @@
       <label>Nome completo<input name="name" autocomplete="name" required maxlength="80"></label>
       <label>Telefone (M-Pesa / e-Mola)<input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="84 000 0000" required></label>
       <label>Email <small>(opcional)</small><input name="email" type="email" autocomplete="email"></label>
+      <label style="display:flex;gap:9px;align-items:flex-start;font-weight:400;font-size:14px;color:#44606a"><input type="checkbox" name="marketing" style="width:auto;margin-top:3px"> Quero receber novidades e novos livros da Kulera+ por email.</label>
       <div id="ship" hidden style="background:#fffdf7;border:1.5px solid #e0a800;border-radius:10px;padding:14px;margin:10px 0;display:grid;gap:10px">
         <h2 style="font:700 18px Georgia,serif;margin:0;color:#5a3e00">📦 Endereço para Entrega (Obrigatório para livro físico)</h2>
         <p style="margin:0;font-size:13px;color:#6b5211">Preencha os dados abaixo para enviarmos o exemplar físico até si.</p>
@@ -179,7 +180,7 @@ async function load(){
     }
     btn.disabled=true;const label=btn.textContent;btn.textContent='A abrir pagamento...';
     try{
-      const body={bookId:b.id,format:fmt,name:fd.get('name'),phone:fd.get('phone'),email:fd.get('email')};
+      const body={bookId:b.id,format:fmt,name:fd.get('name'),phone:fd.get('phone'),email:fd.get('email'),marketing:fd.get('marketing')==='on'};
       if(fmt==='physical'){body.shippingName=fd.get('shippingName')||fd.get('name');body.shippingPhone=fd.get('shippingPhone')||fd.get('phone');body.shippingAddress=fd.get('shippingAddress');body.shippingCity=fd.get('shippingCity');}
       const rr=await fetch('/api/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const j=await rr.json();

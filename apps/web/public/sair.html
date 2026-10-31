@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Cancelar subscrição · Kulera+</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="top"><a href="index.html" style="color:#fff;text-decoration:none">Kulera<span style="color:var(--gold)">+</span></a></div>
+<main>
+  <section class="panel" style="max-width:520px">
+    <h1 style="font-size:26px">Cancelar subscrição</h1>
+    <p id="intro">A processar…</p>
+    <p id="msg" class="msg" role="status"></p>
+    <div id="actions" hidden>
+      <button type="button" id="confirm" style="width:100%">Cancelar subscrição de novidades</button>
+    </div>
+    <p class="note"><a href="index.html">Voltar à loja</a></p>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const email = String(params.get('e') || '').trim();
+const sig = String(params.get('s') || '').trim();
+
+if (!email || !sig) {
+  $('intro').textContent = 'Este endereço não é válido. Use o link que recebeu no email.';
+} else {
+  $('intro').innerHTML = 'Vai deixar de receber novidades e anúncios de livros no endereço <b></b>.';
+  $('intro').querySelector('b').textContent = email;
+  $('actions').hidden = false;
+}
+
+$('confirm').onclick = async () => {
+  const btn = $('confirm');
+  btn.disabled = true; btn.textContent = 'A cancelar…';
+  try {
+    const r = await fetch('/api/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'unsubscribe', email, sig }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) {
+      $('actions').hidden = true;
+      $('intro').textContent = 'Subscrição cancelada.';
+      $('msg').className = 'msg';
+      $('msg').textContent = 'Já não vai receber novidades da Kulera+. As suas compras e os links de leitura continuam a funcionar.';
+    } else {
+      $('msg').className = 'msg err';
+      $('msg').textContent = 'Não foi possível cancelar (link inválido ou expirado).';
+      btn.disabled = false; btn.textContent = 'Cancelar subscrição de novidades';
+    }
+  } catch {
+    $('msg').className = 'msg err';
+    $('msg').textContent = 'Não foi possível ligar ao servidor. Tente novamente.';
+    btn.disabled = false; btn.textContent = 'Cancelar subscrição de novidades';
+  }
+};
+</script>
+</body>
+</html>

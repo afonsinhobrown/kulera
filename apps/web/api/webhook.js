@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { pool } from '../lib/db.js';
 import { settleOrderPaid } from '../lib/payments.js';
+import { onOrderPaid } from '../lib/marketing.js';
 import { EVENT_STATUS, verifySignature } from '../lib/paysuite.js';
 
 export const config = { api: { bodyParser: false } }; // precisamos do corpo bruto para validar a assinatura
@@ -70,6 +71,7 @@ export default async function handler(req, res) {
       );
     }
     await client.query('COMMIT');
+    if (target === 'paid') await onOrderPaid(pool, order.id).catch(() => {});
     return res.status(200).json({ ok: true, result: 'applied' });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
