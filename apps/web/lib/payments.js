@@ -25,6 +25,20 @@ export async function ensurePaymentSchema() {
     await pool.query(`alter table fair_orders add column if not exists shipping_address text`);
     await pool.query(`alter table fair_orders add column if not exists shipping_city text`);
     await pool.query(`alter table fair_orders add column if not exists shipped_at timestamptz`);
+    await pool.query(`alter table fair_orders add column if not exists device_key_hash text`);
+    await pool.query(`alter table fair_orders add column if not exists device_fingerprint_hash text`);
+    await pool.query(`alter table fair_orders add column if not exists device_bound_at timestamptz`);
+    await pool.query(`alter table fair_orders add column if not exists access_email_sent_at timestamptz`);
+    await pool.query(`create table if not exists fair_device_requests (
+      id uuid primary key default gen_random_uuid(),
+      order_id uuid not null references fair_orders (id) on delete cascade,
+      requested_key_hash text not null,
+      requested_fingerprint_hash text,
+      device_info jsonb,
+      status text not null default 'pending' check (status in ('pending','approved','rejected')),
+      created_at timestamptz not null default now(),
+      resolved_at timestamptz
+    )`);
     await pool.query(`alter table fair_sales add column if not exists app_bps int not null default 2000`);
     await pool.query(`alter table fair_sales add column if not exists editors_bps int not null default 1000`);
     await pool.query(`alter table fair_sales add column if not exists app_minor bigint`);

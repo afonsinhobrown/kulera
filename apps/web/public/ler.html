@@ -27,6 +27,34 @@
 <script>
 const $=(id)=>document.getElementById(id);
 const t=new URLSearchParams(location.search).get('t')||'';
+function deviceKey(){
+  try{ const k=localStorage.getItem('kulera_device')||''; if(/^[a-f0-9]{64}$/.test(k)) return k; }catch{}
+  const a=new Uint8Array(32);
+  if(window.crypto&&crypto.getRandomValues) crypto.getRandomValues(a);
+  else for(let x=0;x<a.length;x++) a[x]=Math.floor(Math.random()*256);
+  const k=[...a].map(x=>x.toString(16).padStart(2,'0')).join('');
+  try{ localStorage.setItem('kulera_device',k); }catch{}
+  return k;
+}
+const d=deviceKey();
+let f='';
+async function deviceFingerprint(){
+  try{
+    const raw=[navigator.userAgent,navigator.platform,navigator.language,(navigator.languages||[]).join(','),
+      screen.width+'x'+screen.height,screen.colorDepth,new Date().getTimezoneOffset(),
+      navigator.hardwareConcurrency||'',navigator.deviceMemory||'',navigator.maxTouchPoints||''].join('|');
+    if(!(window.crypto&&crypto.subtle)) return '';
+    const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw));
+    return [...new Uint8Array(buf)].map(x=>x.toString(16).padStart(2,'0')).join('');
+  }catch{ return ''; }
+}
+function deviceInfo(){
+  return {userAgent:navigator.userAgent,platform:navigator.platform,language:navigator.language,
+    languages:(navigator.languages||[]).join(','),timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||''),
+    screen:screen.width+'x'+screen.height,pixelRatio:String(window.devicePixelRatio||1),
+    touch:(navigator.maxTouchPoints||0)>0};
+}
+const deviceQuery=()=>'&d='+encodeURIComponent(d)+(f?'&f='+encodeURIComponent(f):'');
 let i=0,total=1,size=19;
 // Leitor de PDF próprio (pdf.js): sem o visualizador do browser, logo sem botão de download.
 if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -41,12 +69,47 @@ async function getSupport(){
     return String(c.supportWhatsApp||'').replace(/\D/g,'');
   }catch{ return ''; }
 }
+async function showSandbox(){
+  const sp=await getSupport();
+  $('page').innerHTML='<h1>Link de teste (sandbox)</h1>'+
+    '<p>Este link foi gerado em modo sandbox e não funciona em produção. Para ler este livro, faça uma compra real pelo preço de tabela.</p>'+
+    '<p><a class="btn" href="/">Comprar o livro</a></p>'+
+    (sp?'<p class="note">Precisa de ajuda? <a href="https://wa.me/'+sp+'">Fale connosco no WhatsApp</a>.</p>':'');
+}
+async function showDevice(error){
+  const sp=await getSupport();
+  const pending=error==='device_pending';
+  $('page').innerHTML='<h1>'+(pending?'Autorização pendente':'Outro dispositivo')+'</h1>'+
+    '<p>'+(pending
+      ?'O pedido para abrir este livro neste dispositivo foi enviado. Aguarde a aprovação da plataforma e volte a tentar.'
+      :'Este livro está associado a outro dispositivo. Para o abrir neste equipamento, peça autorização à plataforma.')+'</p>'+
+    (pending?'':'<p><button type="button" id="requestDeviceBtn" class="btn">Pedir autorização</button></p>')+
+    '<p class="note">'+(sp?'Precisa de ajuda? <a href="https://wa.me/'+sp+'">Fale connosco no WhatsApp</a>.':'')+'</p>';
+  if(pending) return;
+  const btn=$('requestDeviceBtn');
+  if(!btn) return;
+  btn.onclick=async()=>{
+    btn.disabled=true; btn.textContent='A enviar pedido...';
+    try{
+      const r=await fetch('/api/status',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action:'device_request',token:t,deviceKey:d,fingerprint:f,deviceInfo:deviceInfo()})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok){ showDevice('device_pending'); return; }
+      btn.disabled=false; btn.textContent='Pedir autorização';
+      if(j.error==='sandbox_only') return showSandbox();
+      $('page').insertAdjacentHTML('beforeend','<p class="note">Não foi possível enviar o pedido. Tente novamente.</p>');
+    }catch{
+      btn.disabled=false; btn.textContent='Pedir autorização';
+      $('page').insertAdjacentHTML('beforeend','<p class="note">Não foi possível ligar ao servidor.</p>');
+    }
+  };
+}
 async function openPdf(j){
   pdfTitle=j.title||'Livro'; pdfMark=j.watermark||'';
   $('page').classList.add('pdf');
   $('page').innerHTML='<p style="padding:20px">A carregar o documento…</p>';
   try{
-    pdfDoc=await pdfjsLib.getDocument({url:j.pdfUrl}).promise;
+    pdfDoc=await pdfjsLib.getDocument({url:j.pdfUrl+(j.pdfUrl.includes('?')?'&':'?')+deviceQuery().slice(1)}).promise;
     pdfTotal=pdfDoc.numPages;
     let saved=0; try{ saved=Number(localStorage.getItem('kulera_pg_'+t))||0 }catch{}
     pdfPage=Math.min(Math.max(1,saved||1),pdfTotal);
@@ -81,7 +144,8 @@ async function renderPdf(){
 function pdfGo(n){ if(!pdfDoc) return; pdfPage=Math.min(Math.max(1,n),pdfTotal); renderPdf(); }
 async function load(n){
   try{
-    const r=await fetch('/api/chapter?t='+encodeURIComponent(t)+'&i='+n);
+    const r=await fetch('/api/chapter?t='+encodeURIComponent(t)+'&i='+n+deviceQuery());
+    if(r.status===403){ const bad=await r.json().catch(()=>({})); if(bad.error==='sandbox_only') return showSandbox(); if(/^device_/.test(bad.error)) return showDevice(bad.error); }
     if(r.status===403) return $('page').innerHTML='<h1>Sem acesso</h1><p>Não encontrámos um pagamento confirmado para esta ligação. Abra o endereço que recebeu depois da compra.</p><p><a href="/">Voltar ao início</a></p>';
     const j=await r.json();
     if(r.status===409&&j.error==='pdf_not_supported'){
@@ -109,7 +173,8 @@ $('smaller').onclick=()=>{ if(pdfDoc){ pdfZoom=Math.max(0.5,pdfZoom-0.15); rende
 $('bigger').onclick=()=>{ if(pdfDoc){ pdfZoom=Math.min(2.5,pdfZoom+0.15); renderPdf(); return; } size=Math.min(28,size+1);setSize() };
 $('theme').onclick=()=>{const d=document.body.classList.toggle('dark');try{localStorage.setItem('kulera_dark',d?'1':'0')}catch{}};
 let rt=0; window.addEventListener('resize',()=>{ if(!pdfDoc) return; clearTimeout(rt); rt=setTimeout(()=>renderPdf(),250); });
-setSize(); load(i);
+setSize();
+(async()=>{ f=await deviceFingerprint(); load(i); })();
 </script>
 </body>
 </html>

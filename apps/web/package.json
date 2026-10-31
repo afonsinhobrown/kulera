@@ -7,7 +7,8 @@
     "node": ">=20"
   },
   "dependencies": {
-    "pg": "^8.13.0"
+    "pg": "^8.13.0",
+    "qrcode": "^1.5.4"
   },
   "scripts": {
     "test": "node --test test/flow.test.mjs test/lib.test.mjs"

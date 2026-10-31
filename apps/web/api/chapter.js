@@ -1,5 +1,7 @@
 import { pool } from '../lib/db.js';
 import { escapeHtml, splitChapters } from '../lib/content.js';
+import { isSandbox } from '../lib/payments.js';
+import { bindDevice, deviceHash, fingerprintHash, isDeviceKey, pendingDeviceChange } from '../lib/device.js';
 
 // O livro só sai daqui para quem tem um pagamento confirmado. Nunca há ficheiro nem link público.
 // Livros em PDF são desenhados pelo leitor da plataforma (pdf.js), página a página, com marca de
@@ -10,12 +12,34 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   const t = String(req.query?.t ?? '');
   if (!/^[a-f0-9]{64}$/.test(t)) return res.status(403).json({ error: 'forbidden' });
+  const sandboxOn = await isSandbox();
   const { rows } = await pool.query(
-    `select o.buyer_name, o.buyer_phone, b.title, b.content_html, b.kind from fair_orders o join fair_books b on b.id = o.book_id
+    `select o.id as order_id, o.buyer_name, o.buyer_phone, o.type, o.sandbox, o.device_key_hash,
+            b.title, b.content_html, b.kind from fair_orders o join fair_books b on b.id = o.book_id
       where o.token = $1 and o.status = 'paid' and (o.type is null or o.type!='physical')`, [t]);
   if (!rows[0]) return res.status(403).json({ error: 'forbidden' });
   const book = rows[0];
-  if (book.kind === 'physical') return res.status(403).json({ error: 'forbidden' });
+  if (book.kind === 'physical' || book.type === 'physical') return res.status(403).json({ error: 'forbidden' });
+
+  if (book.sandbox && !sandboxOn) {
+    return res.status(403).json({
+      error: 'sandbox_only',
+      message: 'Este link foi criado em modo sandbox e só funciona enquanto o modo sandbox estiver activo.',
+    });
+  }
+
+  const deviceKey = String(req.query?.d ?? '');
+  if (!isDeviceKey(deviceKey)) return res.status(403).json({ error: 'device_required' });
+  const keyHash = deviceHash(deviceKey);
+  const fpHash = fingerprintHash(req.query?.f);
+  if (!book.device_key_hash) {
+    if (!(await bindDevice(pool, book.order_id, keyHash, fpHash))) {
+      return res.status(403).json({ error: 'device_mismatch' });
+    }
+  } else if (book.device_key_hash !== keyHash) {
+    const pending = await pendingDeviceChange(pool, book.order_id, keyHash);
+    return res.status(403).json({ error: pending ? 'device_pending' : 'device_mismatch' });
+  }
 
   const mark = `Exemplar de ${escapeHtml(rows[0].buyer_name)} · ${escapeHtml(rows[0].buyer_phone)}`; // marca de água
   const raw = String(book.content_html ?? '');

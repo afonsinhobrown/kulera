@@ -66,13 +66,40 @@ function paid(type) {
     '<h1 class="ok">Pagamento confirmado</h1>' +
     '<p>Obrigado! O seu livro já está disponível.</p>' +
     '<a class="btn" href="' + read + '">Ler agora</a>' +
+    '<div id="qrBox" style="margin:18px 0;text-align:center"><p class="note">A gerar código QR...</p></div>' +
+    '<button type="button" class="btn sec" id="copyAccess" style="margin-top:10px">Copiar link de acesso</button>' +
+    '<a class="btn sec" style="margin-top:10px" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent('O meu livro Kulera+: ' + location.origin + read) + '">Enviar para o meu WhatsApp</a>' +
+    '<p class="note">O QR associa o livro ao primeiro dispositivo que o abrir. Use o telemóvel com que vai ler. Se mudar de dispositivo, pode pedir autorização no leitor.</p>' +
     '<p class="note">Guarde este endereço para voltar a ler noutro dispositivo:<br><span style="word-break:break-all">' + location.origin + read + '</span></p>'
   );
+  loadQr();
+  const copyBtn = document.getElementById('copyAccess');
+  if (copyBtn) copyBtn.onclick = async () => {
+    try { await navigator.clipboard.writeText(location.origin + read); } catch {}
+    copyBtn.textContent = 'Link copiado';
+    setTimeout(() => { copyBtn.textContent = 'Copiar link de acesso'; }, 1800);
+  };
+}
+
+async function loadQr() {
+  try {
+    const r = await fetch('/api/status?t=' + encodeURIComponent(t) + '&qr=1', { cache: 'no-store' });
+    const j = await r.json();
+    const box = document.getElementById('qrBox');
+    if (!box) return;
+    if (!j.qr) { box.innerHTML = '<p class="note">Não foi possível gerar o QR. Use o link acima.</p>'; return; }
+    box.innerHTML = '<img alt="Código QR para abrir o livro" style="width:220px;height:220px;max-width:80%;background:#fff;padding:8px;border-radius:8px;border:1px solid var(--line)" src="' + j.qr + '"><p class="note">Aponte a câmara do telemóvel para abrir o livro.</p>';
+  } catch {}
 }
 
 function failed() {
   stopped = true;
   show('<h1>O pagamento não foi concluído</h1><p>Nada foi cobrado. Pode tentar novamente.</p><a class="btn" href="/">Tentar novamente</a>');
+}
+
+function sandboxOnly() {
+  stopped = true;
+  show('<h1>Link de teste (sandbox)</h1><p>Este link foi gerado em modo sandbox e não funciona em produção. Para ler o livro, faça uma compra real pelo preço de tabela.</p><a class="btn" href="/">Comprar o livro</a>');
 }
 
 function late() {
@@ -119,6 +146,7 @@ async function check() {
   try {
     const r = await fetch('/api/status?t=' + t, { cache: 'no-store' });
     const j = await r.json();
+    if (r.status === 403 && j.error === 'sandbox_only') return sandboxOnly();
     if (j.sandbox) {
       const sb = document.getElementById('sandboxBox');
       if (sb) sb.hidden = false;

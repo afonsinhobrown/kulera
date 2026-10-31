@@ -236,6 +236,7 @@ function renderBookPage({ book: b, origin }) {
     <ul class="prices">${rows}</ul>
     <p class="pay-note">💳 Pague com <b>M-Pesa</b>, <b>e-Mola</b> ou <b>cartão Visa</b>. O livro abre logo a seguir ao pagamento.</p>
     <p class="note" id="have" hidden>Já comprou? <a id="haveLink" href="/ler.html">Abrir o meu livro</a></p>
+    <p class="note">Perdeu o link? <a href="/recuperar.html">Recuperar o acesso</a> com o telemóvel e o nome usados na compra.</p>
   </div>
 </div>
 <script>try{var t=localStorage.getItem('kulera_token');if(t){document.getElementById('have').hidden=false;document.getElementById('haveLink').href='/ler.html?t='+encodeURIComponent(t)}}catch(e){}</script>`;

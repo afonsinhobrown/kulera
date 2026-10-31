@@ -1,9 +1,58 @@
 import { pool } from '../lib/db.js';
-import { isSandbox, settleOrderPaid, getPaysuiteTokenFromDb } from '../lib/payments.js';
+import { ensurePaymentSchema, isSandbox, settleOrderPaid, getPaysuiteTokenFromDb, resolveSiteUrl } from '../lib/payments.js';
 import { getPaymentStatus } from '../lib/paysuite.js';
+import { recoverAccess } from '../lib/recovery.js';
+import { fingerprintHash, isDeviceKey, deviceHash, requestDeviceChange, sanitizeDeviceInfo } from '../lib/device.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
+
+  if (req.method === 'POST' && req.body?.action === 'recover') {
+    const ip = String(req.headers?.['x-forwarded-for'] ?? '').split(',')[0].trim() || req.socket?.remoteAddress || '';
+    try {
+      const result = await recoverAccess({ pool, phone: req.body?.phone, name: req.body?.name, ip });
+      return res.status(result.status).json(result.body);
+    } catch (e) {
+      console.error('recovery.error', e?.message || String(e));
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  }
+
+  if (req.method === 'POST' && req.body?.action === 'device_request') {
+    const token = String(req.body?.token ?? '');
+    if (!/^[a-f0-9]{64}$/.test(token)) return res.status(400).json({ error: 'invalid_token' });
+    if (!isDeviceKey(req.body?.deviceKey)) return res.status(400).json({ error: 'invalid_device' });
+    try {
+      await ensurePaymentSchema();
+      const { rows } = await pool.query('select id, status, type, sandbox, device_key_hash from fair_orders where token=$1', [token]);
+      const order = rows[0];
+      if (!order) return res.status(404).json({ error: 'not_found' });
+      if (order.status !== 'paid' || order.type === 'physical') return res.status(403).json({ error: 'forbidden' });
+      if (order.sandbox && !(await isSandbox())) {
+        return res.status(403).json({
+          error: 'sandbox_only',
+          message: 'Este link foi criado em modo sandbox e só funciona enquanto o modo sandbox estiver activo.',
+        });
+      }
+      const result = await requestDeviceChange(
+        pool,
+        order,
+        deviceHash(req.body.deviceKey),
+        fingerprintHash(req.body.fingerprint),
+        sanitizeDeviceInfo(req.body.deviceInfo),
+      );
+      if (result.status === 'mismatch') return res.status(409).json({ error: 'device_mismatch' });
+      return res.json({
+        ok: true,
+        status: result.status === 'requested' ? 'pending' : result.status,
+        requestId: result.id ?? null,
+      });
+    } catch (e) {
+      console.error('device.request.error', e?.message || String(e));
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  }
+
   const t = String(req.query?.t ?? req.body?.token ?? '');
   if (!/^[a-f0-9]{64}$/.test(t)) return res.status(400).json({ error: 'invalid_token' });
 
@@ -19,6 +68,13 @@ export default async function handler(req, res) {
     order = rows[0];
   }
   if (!order) return res.status(404).json({ error: 'not_found' });
+
+  if (order.sandbox && !(await isSandbox())) {
+    return res.status(403).json({
+      error: 'sandbox_only',
+      message: 'Este link foi criado em modo sandbox e só funciona enquanto o modo sandbox estiver activo.',
+    });
+  }
 
   // Simulação explícita em modo Sandbox (quando a conta PaySuite ainda não é empresarial ou em testes).
   if (req.method === 'POST' && req.body?.simulate && order.id) {
@@ -67,9 +123,24 @@ export default async function handler(req, res) {
     }
   }
 
+  let qr = null;
+  if (req.query?.qr === '1' && order.status === 'paid' && (order.type || 'book') !== 'physical') {
+    try {
+      const QRCode = (await import('qrcode')).default;
+      qr = await QRCode.toDataURL(`${resolveSiteUrl(req)}/ler.html?t=${t}`, {
+        margin: 1,
+        width: 240,
+        errorCorrectionLevel: 'M',
+      });
+    } catch (e) {
+      console.error('qr.error', e?.message || String(e));
+    }
+  }
+
   res.json({
     status: order.status,
     type: order.type || 'book',
     sandbox: Boolean(order.sandbox || String(order.provider_payment_id || '').startsWith('sim_')),
+    ...(qr ? { qr } : {}),
   });
 }

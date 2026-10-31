@@ -317,6 +317,10 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
 
         <div class="pane-title" style="font-size:18px;margin-top:24px">Histórico Completo de Vendas</div>
         <div class="table-card"><div class="table-wrap"><table id="orders"></table></div></div>
+
+        <div class="pane-title" style="font-size:18px;margin-top:24px">Pedidos de Autorização de Dispositivo</div>
+        <div class="pane-sub">Quando um comprador muda de dispositivo, o novo equipamento só abre o livro depois de aprovado aqui.</div>
+        <div class="table-card"><div class="table-wrap"><table id="deviceRequests"></table></div></div>
       </div>
 
       <!-- TAB 7: LEADS -->
@@ -661,6 +665,46 @@ async function load(){
   };
   fill($('recentOrders'), ['Data', 'Comprador', 'Telefone', 'Item', 'Formato / Endereço de Entrega', 'Valor', 'Estado'], (j.orders || []).slice(0, 8), renderOrders);
   fill($('orders'), ['Data', 'Comprador', 'Telefone', 'Item', 'Formato / Endereço de Entrega', 'Valor', 'Estado'], j.orders || [], renderOrders);
+
+  const resolveDevice = async (id, approve) => {
+    const verb = approve ? 'aprovar' : 'rejeitar';
+    if (!confirm(`Tem a certeza que quer ${verb} este novo dispositivo?`)) return;
+    const { ok, j: out } = await api({ action: approve ? 'approve_device_request' : 'reject_device_request', id });
+    if (!ok) alert(out.error || 'Não foi possível actualizar o pedido.');
+    await load();
+  };
+  const renderDeviceRequests = r => {
+    const tr = document.createElement('tr');
+    const info = r.device_info || {};
+    const device = [info.platform, info.screen, info.timezone, info.userAgent].filter(Boolean).join(' · ');
+    tr.append(
+      cell(new Date(r.created_at).toLocaleString('pt-MZ')),
+      cell(r.buyer_name + (r.buyer_phone ? ' · ' + r.buyer_phone : '')),
+      cell(r.book || '—'),
+      cell(device || 'Dispositivo não identificado'),
+      cell(r.status === 'pending' ? 'Pendente' : r.status === 'approved' ? 'Aprovado' : 'Rejeitado')
+    );
+    const action = document.createElement('td');
+    if (r.status === 'pending') {
+      const approve = document.createElement('button');
+      approve.type = 'button';
+      approve.className = 'btn-action';
+      approve.textContent = 'Aprovar';
+      approve.onclick = () => resolveDevice(r.id, true);
+      const reject = document.createElement('button');
+      reject.type = 'button';
+      reject.className = 'btn-action';
+      reject.style.marginLeft = '6px';
+      reject.textContent = 'Rejeitar';
+      reject.onclick = () => resolveDevice(r.id, false);
+      action.append(approve, reject);
+    } else {
+      action.textContent = r.resolved_at ? new Date(r.resolved_at).toLocaleString('pt-MZ') : '—';
+    }
+    tr.appendChild(action);
+    return tr;
+  };
+  fill($('deviceRequests'), ['Data', 'Comprador', 'Livro', 'Dispositivo', 'Estado', 'Acção'], j.deviceRequests || [], renderDeviceRequests);
 
   // Leads
   fill($('leads'), ['Data', 'Nome / Organização', 'Tipo', 'Telemóvel / WhatsApp', 'Livros', 'Estado'], j.leads, l => {

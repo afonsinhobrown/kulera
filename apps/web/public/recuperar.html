@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Os meus livros | Kulera+</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="top">
+  <a href="index.html" style="color:#fff;text-decoration:none">Kulera<span>+</span></a>
+  <a href="index.html" style="color:#fff;text-decoration:none;font:600 15px system-ui;margin-left:auto">Loja</a>
+</div>
+<main>
+  <div class="panel">
+    <h1>Os meus livros</h1>
+    <p>Perdeu o link de acesso? Indique o telemóvel e o nome que usou na compra para voltar a abrir os seus livros.</p>
+
+    <div id="saved" hidden style="margin:18px 0;padding:16px;background:#eef6f4;border:1px solid var(--line);border-radius:8px">
+      <strong>Livro guardado neste dispositivo</strong>
+      <p class="note" style="margin:6px 0 12px">Pode continuar a ler sem preencher o formulário.</p>
+      <a id="savedLink" class="btn" href="index.html">Continuar a ler</a>
+    </div>
+
+    <form id="form">
+      <label>Telemóvel usado na compra
+        <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="84 123 4567" required>
+      </label>
+      <label>Nome usado na compra
+        <input id="name" name="name" autocomplete="name" maxlength="80" placeholder="Nome e apelido" required>
+      </label>
+      <button id="submit" type="submit">Recuperar acesso</button>
+      <p class="msg" id="msg" aria-live="polite"></p>
+    </form>
+
+    <div id="results" hidden style="margin-top:20px"></div>
+
+    <p class="note">Só aparecem compras com pagamento confirmado. Se o nome ou o número estiverem diferentes, fale connosco.</p>
+    <p class="note" id="support" hidden></p>
+    <p class="note"><a href="index.html">Voltar à loja</a></p>
+  </div>
+</main>
+<script>
+const form = document.getElementById('form');
+const phone = document.getElementById('phone');
+const nameInput = document.getElementById('name');
+const submit = document.getElementById('submit');
+const msg = document.getElementById('msg');
+const results = document.getElementById('results');
+const saved = document.getElementById('saved');
+const savedLink = document.getElementById('savedLink');
+const support = document.getElementById('support');
+
+const readUrl = (token) => '/ler.html?t=' + encodeURIComponent(token);
+
+function showSaved() {
+  let token = '';
+  try { token = localStorage.getItem('kulera_token') || ''; } catch {}
+  if (!/^[a-f0-9]{64}$/.test(token)) return;
+  savedLink.href = readUrl(token);
+  saved.hidden = false;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function formatDate(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+async function copyLink(button, url) {
+  const full = location.origin + url;
+  try {
+    await navigator.clipboard.writeText(full);
+  } catch {
+    const input = document.createElement('textarea');
+    input.value = full;
+    document.body.appendChild(input);
+    input.select();
+    try { document.execCommand('copy'); } catch {}
+    input.remove();
+  }
+  const original = button.textContent;
+  button.textContent = 'Link copiado';
+  setTimeout(() => { button.textContent = original; }, 1800);
+}
+
+function showBooks(books) {
+  results.innerHTML = '';
+  const title = document.createElement('h2');
+  title.textContent = books.length === 1 ? 'Encontrámos o seu livro' : 'Encontrámos os seus livros';
+  title.style.font = '700 22px Georgia,serif';
+  title.style.margin = '0 0 12px';
+  results.appendChild(title);
+
+  for (const book of books) {
+    const card = document.createElement('div');
+    card.style.cssText = 'margin:0 0 12px;padding:16px;border:1px solid var(--line);border-radius:8px;background:#fff';
+
+    const name = document.createElement('strong');
+    name.textContent = book.title || 'Livro';
+    card.appendChild(name);
+
+    const date = formatDate(book.paidAt);
+    if (date) {
+      const meta = document.createElement('p');
+      meta.className = 'note';
+      meta.style.margin = '4px 0 12px';
+      meta.textContent = 'Comprado em ' + date;
+      card.appendChild(meta);
+    }
+
+    const open = document.createElement('a');
+    open.className = 'btn';
+    open.href = book.url;
+    open.textContent = 'Ler agora';
+    card.appendChild(open);
+
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'btn sec';
+    copy.style.marginTop = '10px';
+    copy.textContent = 'Copiar link';
+    copy.onclick = () => copyLink(copy, book.url);
+    card.appendChild(copy);
+
+    results.appendChild(card);
+  }
+
+  results.hidden = false;
+  results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  msg.className = 'msg';
+  msg.textContent = '';
+  results.hidden = true;
+  submit.disabled = true;
+  submit.textContent = 'A procurar...';
+
+  try {
+    const response = await fetch('/api/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'recover', phone: phone.value, name: nameInput.value }),
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (response.ok && data.ok && Array.isArray(data.books) && data.books.length) {
+      const first = String(data.books[0].url || '').replace('/ler.html?t=', '');
+      try { if (/^[a-f0-9]{64}$/.test(first)) localStorage.setItem('kulera_token', first); } catch {}
+      showSaved();
+      showBooks(data.books);
+      return;
+    }
+
+    if (response.status === 429) {
+      msg.className = 'msg err';
+      msg.textContent = 'Demasiadas tentativas. Aguarde 15 minutos e tente novamente.';
+      return;
+    }
+
+    msg.className = 'msg err';
+    if (data.error === 'invalid_phone') msg.textContent = 'Introduza um número de telemóvel válido.';
+    else if (data.error === 'invalid_name') msg.textContent = 'Introduza o nome que usou na compra.';
+    else msg.textContent = 'Não encontrámos compras com esses dados. Confirme o número e o nome usados na compra.';
+  } catch {
+    msg.className = 'msg err';
+    msg.textContent = 'Não foi possível ligar ao servidor. Tente novamente.';
+  } finally {
+    submit.disabled = false;
+    submit.textContent = 'Recuperar acesso';
+  }
+});
+
+showSaved();
+
+fetch('/api/book')
+  .then((r) => r.json())
+  .then((book) => {
+    if (!book.supportWhatsApp) return;
+    support.innerHTML = 'Precisa de ajuda? <a href="https://wa.me/' + encodeURIComponent(book.supportWhatsApp) + '">Fale connosco no WhatsApp</a>.';
+    support.hidden = false;
+  })
+  .catch(() => {});
+</script>
+</body>
+</html>

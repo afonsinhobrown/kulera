@@ -1,9 +1,10 @@
 import { timingSafeEqual } from 'node:crypto';
 import { pool } from '../lib/db.js';
 import { PUBLICATION_FEE_MINOR } from '../lib/pricing.js';
-import { isSandbox, setSandbox, getAdminKeyFromDb, getPaysuiteTokenFromDb, resolveSiteUrl, settleOrderPaid } from '../lib/payments.js';
+import { ensurePaymentSchema, isSandbox, setSandbox, getAdminKeyFromDb, getPaysuiteTokenFromDb, resolveSiteUrl, settleOrderPaid } from '../lib/payments.js';
 import { createPayment, getPaymentStatus } from '../lib/paysuite.js';
 import { ensurePlanSchema } from '../lib/plans.js';
+import { approveDeviceRequest, rejectDeviceRequest } from '../lib/device.js';
 
 const sameKey = (a, b) => {
   const ax = String(a ?? '').trim();
@@ -157,6 +158,16 @@ async function action(b) {
       await setSandbox(b.enabled === true || b.enabled === 'true');
       return [200, { ok: true, sandbox: await isSandbox() }];
     }
+    case 'approve_device_request': {
+      if (!uuid(b.id)) return [400, { error: 'invalid' }];
+      const result = await approveDeviceRequest(pool, b.id);
+      return result.ok ? [200, { ok: true }] : [409, { error: result.error }];
+    }
+    case 'reject_device_request': {
+      if (!uuid(b.id)) return [400, { error: 'invalid' }];
+      const result = await rejectDeviceRequest(pool, b.id);
+      return result.ok ? [200, { ok: true }] : [409, { error: 'not_pending' }];
+    }
     case 'reconcile_payments': {
       // A PaySuite só aceita um webhook por conta (partilhado com outros sistemas), por isso
       // confirmamos os pedidos pendentes perguntando directamente à PaySuite.
@@ -268,6 +279,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'unauthorized' });
   }
   try {
+    await ensurePaymentSchema();
     if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
 
     const totals = (await pool.query(
@@ -288,6 +300,17 @@ export default async function handler(req, res) {
       orders = (await pool.query(`select o.created_at, o.paid_at, o.buyer_name, o.buyer_phone, o.buyer_email, b.title as book, o.amount_minor, o.currency, o.status
           from fair_orders o left join fair_books b on b.id = o.book_id order by o.created_at desc limit 500`)).rows.map(x=>({...x,type:'book',shipping_name:null,shipping_phone:null,shipping_address:null,shipping_city:null}));
     }
+    let deviceRequests = [];
+    try {
+      deviceRequests = (await pool.query(
+        `select r.id, r.order_id, r.status, r.created_at, r.resolved_at, r.device_info,
+                o.buyer_name, o.buyer_phone, o.buyer_email, coalesce(b.title,'Livro') as book
+           from fair_device_requests r
+           join fair_orders o on o.id = r.order_id
+           left join fair_books b on b.id = o.book_id
+          order by r.created_at desc limit 200`,
+      )).rows;
+    } catch {}
     let books;
     try {
       books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content, kind, stock, requires_shipping, has_digital, has_physical, (to_jsonb(fair_books)->>'price_physical_minor')::bigint as price_physical_minor, publication_fee_minor, publication_fee_paid_at, updated_at from fair_books order by created_at desc`)).rows;
@@ -325,7 +348,7 @@ export default async function handler(req, res) {
     }
     res.json({ totals: { ...totals, paid_minor: Number(totals.paid_minor), app_minor: Number(split.a), editors_minor: Number(split.e),
         kulera_minor: Number(split.a) + Number(split.e), partners_minor: Number(split.p), fees_minor: Number(publicationFees.f) },
-      leads, orders, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor), publication_fee_minor: Number(x.publication_fee_minor || 0) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
+      leads, orders, deviceRequests, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor), publication_fee_minor: Number(x.publication_fee_minor || 0) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
       submissions, plans: plans.map((x)=>({...x,price_minor:Number(x.price_minor)})), subscriptions: subs,
       withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})),
       sandbox, paysuiteTokenHint });

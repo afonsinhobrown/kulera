@@ -78,6 +78,9 @@ const call = async (h, req) => {
   await h(req, r);
   return r;
 };
+const DK = 'a'.repeat(64);
+const DF = 'b'.repeat(64);
+const readChapter = (token, extra = {}) => call(chapter, { query: { t: token, d: DK, f: DF, ...extra } });
 const hook = async (event, data, sig) => {
   const raw = JSON.stringify({ event, data });
   const req = (async function* () {
@@ -144,8 +147,8 @@ const token = c1.body.token;
 assert.equal((await call(status, { query: { t: token } })).body.status, 'pending');
 
 // Sem pagamento, o livro não abre
-assert.equal((await call(chapter, { query: { t: token, i: '0' } })).code, 403);
-assert.equal((await call(chapter, { query: { t: 'x'.repeat(64) } })).code, 403);
+assert.equal((await readChapter(token, { i: '0' })).code, 403);
+assert.equal((await readChapter('x'.repeat(64))).code, 403);
 
 // Webhook inválido não muda nada
 assert.equal((await hook('payment.success', { id: 'ps_1' }, 'errada')).code, 401);
@@ -165,12 +168,50 @@ assert.equal((await hook('payment.success', { id: 'ps_1' })).body.result, 'dupli
 assert.equal(S.sales.length, 1);
 
 // Leitura após pagamento, com marca de água e capítulos
-const ch = await call(chapter, { query: { t: token, i: '1' } });
+const ch = await readChapter(token, { i: '1' });
 assert.equal(ch.code, 200);
 assert.equal(ch.body.total, 2);
 assert.deepEqual(ch.body.toc, ['Cap Um', 'Cap Dois']);
 assert.ok(ch.body.html.includes('Cap Dois') && ch.body.html.includes('Exemplar de Ana Silva'));
-assert.equal((await call(chapter, { query: { t: token, i: '9' } })).code, 400);
+assert.equal((await readChapter(token, { i: '9' })).code, 400);
+
+// QR de acesso ao livro
+const withQr = await call(status, { query: { t: token, qr: '1' } });
+assert.ok(String(withQr.body.qr).startsWith('data:image/png;base64,'));
+
+// Recuperação do link com telemóvel + nome
+const recovered = await call(status, {
+  method: 'POST',
+  body: { action: 'recover', phone: '84 123 4567', name: 'Ana' },
+});
+assert.equal(recovered.code, 200);
+assert.ok(recovered.body.books.some((b) => b.url === '/ler.html?t=' + token));
+const recoveredWrong = await call(status, {
+  method: 'POST',
+  body: { action: 'recover', phone: '84 123 4567', name: 'Outra Pessoa' },
+});
+assert.equal(recoveredWrong.code, 404);
+
+// Mudança de dispositivo: pede autorização e só abre depois de aprovada no Admin
+const NEW_DK = 'c'.repeat(64);
+const mismatch = await call(chapter, { query: { t: token, i: '0', d: NEW_DK, f: DF } });
+assert.equal(mismatch.code, 403);
+assert.equal(mismatch.body.error, 'device_mismatch');
+const deviceReq = await call(status, {
+  method: 'POST',
+  body: { action: 'device_request', token, deviceKey: NEW_DK, fingerprint: 'novo-dispositivo', deviceInfo: { platform: 'Teste' } },
+});
+assert.equal(deviceReq.code, 200);
+assert.equal(deviceReq.body.status, 'pending');
+assert.equal(S.deviceRequests.length, 1);
+const approved = await call(admin, {
+  method: 'POST',
+  headers: { 'x-admin-key': 'kulera' },
+  body: { action: 'approve_device_request', id: deviceReq.body.requestId },
+});
+assert.equal(approved.code, 200);
+assert.equal((await call(chapter, { query: { t: token, i: '0', d: NEW_DK, f: DF } })).code, 200);
+assert.equal((await readChapter(token, { i: '0' })).body.error, 'device_mismatch');
 
 // 3. Livro da própria Kulera: 20% App + 80% Editores (0% parceiro)
 const c2 = await call(checkout, { method: 'POST', body: { ...body, bookId: U + '12' } });
@@ -230,9 +271,18 @@ const simConfirm = await call(status, {
 });
 assert.equal(simConfirm.code, 200);
 assert.equal(simConfirm.body.status, 'paid');
+assert.equal((await readChapter(cSim.body.token)).code, 200);
 failWithCompanyError = false;
 await setSandbox(false);
 assert.equal((await call(bookCfg, { method: 'GET' })).body.sandbox, false);
+
+// Links gerados em sandbox deixam de funcionar quando o modo produção está activo
+const sandboxBlocked = await readChapter(cSim.body.token);
+assert.equal(sandboxBlocked.code, 403);
+assert.equal(sandboxBlocked.body.error, 'sandbox_only');
+const sandboxStatus = await call(status, { query: { t: cSim.body.token } });
+assert.equal(sandboxStatus.code, 403);
+assert.equal(sandboxStatus.body.error, 'sandbox_only');
 
 // 8. Modificar capa do livro no Admin actualiza imediatamente a montra (/api/books sem cache antigo) e venda física exige endereço
 const newCover = 'data:image/jpeg;base64,' + 'B'.repeat(2500);
@@ -395,12 +445,12 @@ const c12 = await call(checkout, { method: 'POST', body: { ...body, bookId: U + 
 assert.equal(c12.code, 200);
 const o12 = S.orders.find((o) => o.token === c12.body.token);
 await hook('payment.success', { id: o12.provider_payment_id });
-const pdfMeta = await call(chapter, { query: { t: c12.body.token } });
+const pdfMeta = await readChapter(c12.body.token);
 assert.equal(pdfMeta.code, 200);
 assert.equal(pdfMeta.body.pdf, true);
 assert.equal(pdfMeta.body.pdfUrl, '/api/chapter?t=' + c12.body.token + '&pdf=1');
 assert.ok(String(pdfMeta.body.watermark).includes('Exemplar de'));
-const pdfBytes = await call(chapter, { query: { t: c12.body.token, pdf: '1' } });
+const pdfBytes = await readChapter(c12.body.token, { pdf: '1' });
 assert.equal(pdfBytes.code, 200);
 assert.ok(String(pdfBytes.h['Content-Type']).includes('application/pdf'));
 assert.ok(Buffer.isBuffer(pdfBytes.body) && pdfBytes.body.length > 10);
@@ -419,7 +469,7 @@ S.books.push({
 const c13 = await call(checkout, { method: 'POST', body: { ...body, bookId: U + '23' } });
 const o13 = S.orders.find((o) => o.token === c13.body.token);
 await hook('payment.success', { id: o13.provider_payment_id });
-const pdfLegacy = await call(chapter, { query: { t: c13.body.token } });
+const pdfLegacy = await readChapter(c13.body.token);
 assert.equal(pdfLegacy.code, 409);
 assert.equal(pdfLegacy.body.error, 'pdf_not_supported');
 

@@ -9,6 +9,8 @@ export const S = {
   events: [],
   sales: [],
   publicationFees: [],
+  recoveryAttempts: [],
+  deviceRequests: [],
   settings: {},
 };
 
@@ -341,6 +343,147 @@ async function q(sql, p = []) {
             : null;
         })
         .filter(Boolean),
+    );
+  }
+  if (s.startsWith('select count(*)::int as n from fair_recovery_attempts')) {
+    const now = Date.now();
+    return rows([
+      {
+        n: S.recoveryAttempts.filter(
+          (a) => !a.ok && now - new Date(a.created_at).getTime() < 15 * 60 * 1000 && (a.phone_hash === p[1] || a.ip_hash === p[2]),
+        ).length,
+      },
+    ]);
+  }
+  if (s.startsWith('insert into fair_recovery_attempts')) {
+    S.recoveryAttempts.push({ phone_hash: p[0], ip_hash: p[1], ok: p[2] === true, created_at: new Date().toISOString() });
+    return rows([{}]);
+  }
+  if (s.startsWith('select o.token, o.buyer_name, o.paid_at')) {
+    return rows(
+      S.orders
+        .filter((o) => o.buyer_phone === p[0] && o.status === 'paid' && (!o.type || o.type === 'book'))
+        .map((o) => {
+          const bk = S.books.find((b) => b.id === o.book_id);
+          return {
+            token: o.token,
+            buyer_name: o.buyer_name,
+            paid_at: o.paid_at ?? null,
+            created_at: o.created_at ?? null,
+            sandbox: Boolean(o.sandbox),
+            title: bk?.title || 'Livro',
+          };
+        }),
+    );
+  }
+  if (s.startsWith('select id, status, type, sandbox, device_key_hash from fair_orders where token=$1')) {
+    return rows(
+      S.orders
+        .filter((o) => o.token === p[0])
+        .map((o) => ({
+          id: o.id,
+          status: o.status,
+          type: o.type || 'book',
+          sandbox: Boolean(o.sandbox),
+          device_key_hash: o.device_key_hash ?? null,
+        })),
+    );
+  }
+  if (s.startsWith('select o.id as order_id, o.buyer_name, o.buyer_phone, o.type, o.sandbox, o.device_key_hash')) {
+    return rows(
+      S.orders
+        .filter((o) => o.token === p[0] && o.status === 'paid' && o.type !== 'physical')
+        .map((o) => {
+          const bk = S.books.find((b) => b.id === o.book_id);
+          return bk
+            ? {
+                order_id: o.id,
+                buyer_name: o.buyer_name,
+                buyer_phone: o.buyer_phone,
+                type: o.type || 'book',
+                sandbox: Boolean(o.sandbox),
+                device_key_hash: o.device_key_hash ?? null,
+                title: bk.title,
+                content_html: bk.content_html,
+                kind: bk.kind || 'ebook',
+              }
+            : null;
+        })
+        .filter(Boolean),
+    );
+  }
+  if (s.startsWith('update fair_orders set device_key_hash')) {
+    const o = S.orders.find((x) => x.id === p[0]);
+    if (!o) return { rows: [], rowCount: 0 };
+    const isEmpty = !o.device_key_hash;
+    if (s.includes("coalesce(device_key_hash,'')=''") && !isEmpty) return { rows: [], rowCount: 0 };
+    o.device_key_hash = p[1];
+    o.device_fingerprint_hash = p[2] ?? null;
+    o.device_bound_at = new Date().toISOString();
+    return rows([{ id: o.id }]);
+  }
+  if (s.startsWith('select status from fair_device_requests')) {
+    return rows(
+      S.deviceRequests.filter((r) => r.order_id === p[0] && r.requested_key_hash === p[1] && r.status === 'pending'),
+    );
+  }
+  if (s.startsWith('insert into fair_device_requests')) {
+    const req = {
+      id: '00000000-0000-4000-8000-000000000d' + String(S.deviceRequests.length + 1).padStart(2, '0'),
+      order_id: p[0],
+      requested_key_hash: p[1],
+      requested_fingerprint_hash: p[2] ?? null,
+      device_info: typeof p[3] === 'string' ? JSON.parse(p[3]) : p[3] ?? null,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      resolved_at: null,
+    };
+    S.deviceRequests.push(req);
+    return rows([{ id: req.id }]);
+  }
+  if (s.startsWith('select id, order_id, requested_key_hash, requested_fingerprint_hash, status from fair_device_requests')) {
+    return rows(S.deviceRequests.filter((r) => r.id === p[0]));
+  }
+  if (s.startsWith("update fair_device_requests set status='approved'")) {
+    const r = S.deviceRequests.find((x) => x.id === p[0] && x.status === 'pending');
+    if (r) {
+      r.status = 'approved';
+      r.resolved_at = new Date().toISOString();
+    }
+    return { rows: r ? [{ id: r.id }] : [], rowCount: r ? 1 : 0 };
+  }
+  if (s.startsWith("update fair_device_requests set status='rejected'")) {
+    if (s.includes('id<>$2')) {
+      let n = 0;
+      S.deviceRequests.forEach((r) => {
+        if (r.order_id === p[0] && r.id !== p[1] && r.status === 'pending') {
+          r.status = 'rejected';
+          r.resolved_at = new Date().toISOString();
+          n++;
+        }
+      });
+      return { rows: [], rowCount: n };
+    }
+    const r = S.deviceRequests.find((x) => x.id === p[0] && x.status === 'pending');
+    if (r) {
+      r.status = 'rejected';
+      r.resolved_at = new Date().toISOString();
+    }
+    return { rows: r ? [{ id: r.id }] : [], rowCount: r ? 1 : 0 };
+  }
+  if (s.startsWith('select r.id, r.order_id, r.status, r.created_at, r.resolved_at, r.device_info')) {
+    return rows(
+      S.deviceRequests.map((r) => {
+        const o = S.orders.find((x) => x.id === r.order_id);
+        const bk = S.books.find((b) => b.id === o?.book_id);
+        return {
+          ...r,
+          buyer_name: o?.buyer_name,
+          buyer_phone: o?.buyer_phone,
+          buyer_email: o?.buyer_email,
+          book: bk?.title || 'Livro',
+        };
+      }),
     );
   }
   throw new Error('SQL não previsto no teste: ' + s.slice(0, 80));
