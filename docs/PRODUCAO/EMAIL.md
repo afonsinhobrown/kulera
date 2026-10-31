@@ -19,41 +19,46 @@ Usar **um** dos dois. `EMAIL_PROVIDER` só é necessário se houver as duas chav
 
 ## 2. Verificar o domínio (Resend)
 
-1. resend.com → **Domains → Add Domain** → `kulera.tecnoincubadora.org`.
-2. Copiar os registos DNS que o Resend mostra e criá-los no **Cloudflare** (zona `tecnoincubadora.org`):
-   - **MX** + **TXT/SPF** no subdomínio `send.kulera` (como o Resend indicar);
-   - **TXT DKIM** em `resend._domainkey.kulera` (valor `p=...` que o Resend dá);
-   - recomendado **DMARC**: `TXT _dmarc.kulera` = `v=DMARC1; p=none; rua=mailto:livros@kulera.tecnoincubadora.org`.
-3. Cloudflare: deixar estes registos em **DNS only** (nuvem cinzenta), não proxied.
-4. Voltar ao Resend e carregar em **Verify**. Estado tem de ficar *Verified*.
-5. **API Keys → Create** (permissão de envio) e copiar a chave (`re_...`).
+O subdomínio **`doremi.tecnoincubadora.org`** já está verificado no Resend e é usado por omissão
+como remetente (`livros@doremi.tecnoincubadora.org`). **Não é preciso criar/alterar registos DNS.**
 
-> Enquanto o domínio não estiver verificado, só se consegue enviar para o próprio email da conta.
+Se um dia quiser enviar de outro domínio:
+1. resend.com → **Domains → Add Domain** → o domínio.
+2. Copiar os registos DNS que o Resend mostra e criá-los no **Cloudflare** (DNS only):
+   - **MX** + **TXT/SPF** no subdomínio `send.<dominio>`;
+   - **TXT DKIM** em `resend._domainkey.<dominio>`;
+   - recomendado **DMARC**: `TXT _dmarc.<dominio>` = `v=DMARC1; p=none; rua=mailto:livros@<dominio>`.
+3. **Verify** no Resend até ficar *Verified*.
+4. **API Keys → Create** e copiar a chave (`re_...`).
 
 ## 3. Variáveis na Vercel
 
-Projecto do site → **Settings → Environment Variables** (Production e Preview):
+Basta **uma** variável obrigatória (`RESEND_API_KEY`). Projecto → **Settings → Environment Variables**
+(Production **e** Preview) e depois **Redeploy**:
+
+```
+RESEND_API_KEY=re_...
+```
+
+Opcionais (só se quiser personalizar):
 
 ```
 EMAIL_PROVIDER=resend
-RESEND_API_KEY=re_...
-EMAIL_FROM=Kulera+ <livros@kulera.tecnoincubadora.org>
+EMAIL_FROM=Kulera+ <livros@doremi.tecnoincubadora.org>
 EMAIL_REPLY_TO=livros@kulera.tecnoincubadora.org
 EMAIL_UNSUBSCRIBE_SECRET=<segredo longo>
 MARKETING_ENABLED=true
 SITE_URL=https://kulera.tecnoincubadora.org
 ```
 
-Gerar o segredo (correr no computador e colar o resultado):
+Gerar o segredo de cancelamento (se quiser separá-lo do webhook):
 
 ```
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
 `EMAIL_UNSUBSCRIBE_SECRET` assina os links de cancelamento (`/sair.html?e=...&s=...`).
-Sem ele, a assinatura usa o segredo do webhook (menos isolado, mas funciona).
-
-Depois de guardar, **Redeploy** (as variáveis só entram em builds novos).
+Sem ele, a assinatura usa o segredo do webhook (funciona, mas fica menos isolado).
 
 ## 4. Confirmar
 

@@ -9,9 +9,13 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 export const SITE_BASE = () =>
   String(process.env.SITE_URL || 'https://kulera.tecnoincubadora.org').replace(/\/+$/, '');
 
+// Remetente por omissão: usa o subdomínio já verificado no Resend (doremi.tecnoincubadora.org).
+// Pode ser trocado com EMAIL_FROM sem mexer no código.
+const DEFAULT_FROM = 'Kulera+ <livros@doremi.tecnoincubadora.org>';
+
 export function emailConfig() {
   const key = String(process.env.RESEND_API_KEY || process.env.BREVO_API_KEY || '').trim();
-  const from = String(process.env.EMAIL_FROM || '').trim();
+  const from = String(process.env.EMAIL_FROM || DEFAULT_FROM).trim();
   if (!key || !from) return null;
   const provider = String(process.env.EMAIL_PROVIDER || (process.env.RESEND_API_KEY ? 'resend' : 'brevo'))
     .trim()
