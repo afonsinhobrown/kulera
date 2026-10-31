@@ -297,6 +297,10 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
         <div class="pane-sub">Registo, comissões acordadas e gestão de estado de contas de parceiros.</div>
         <div class="table-card"><div class="table-wrap"><table id="partners"></table></div></div>
 
+        <div class="pane-title" style="font-size:18px;margin-top:24px">Duplicados detectados</div>
+        <div class="pane-sub">Se a mesma editora/escritor aparece mais de uma vez, junte aqui: os livros, vendas, contas e submissões passam para o registo que ficar.</div>
+        <div class="form-card"><div id="dupesCard"><p class="pane-sub" style="margin:0">A verificar…</p></div></div>
+
         <div class="form-card">
           <h3 id="partnerFormTitle">Registar Novo Parceiro</h3>
           <form class="f" id="partnerForm">
@@ -637,9 +641,50 @@ async function load(){
     return tr;
   });
 
+  // Duplicados de parceiros
+  const dupesBox = $('dupesCard');
+  if (dupesBox) {
+    dupesBox.innerHTML = '';
+    const ds = j.duplicates || [];
+    if (!ds.length) {
+      const p = document.createElement('p');
+      p.className = 'pane-sub';
+      p.style.margin = '0';
+      p.textContent = 'Nenhum duplicado detectado.';
+      dupesBox.appendChild(p);
+    } else {
+      ds.forEach((group) => {
+        const keep = group.partners[0];
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid #e2e8e6';
+        const info = document.createElement('div');
+        info.textContent = group.partners.map((p) => p.name + (p.email ? ' · ' + p.email : '')).join('   |   ');
+        const act = document.createElement('button');
+        act.type = 'button';
+        act.className = 'btn-secondary';
+        act.style.fontSize = '12px';
+        act.textContent = 'Juntar em "' + keep.name + '"';
+        act.onclick = async () => {
+          if (!confirm('Juntar ' + (group.partners.length - 1) + ' registo(s) em "' + keep.name + '"?\nOs livros, vendas e contas passam para esse registo; os outros são apagados.')) return;
+          act.disabled = true;
+          act.textContent = 'A juntar...';
+          for (const p of group.partners.slice(1)) {
+            const { ok, j: out } = await api({ action: 'merge_partners', keepId: keep.id, mergeId: p.id });
+            if (!ok) {
+              alert('Falhou: ' + (out.error || 'erro'));
+              break;
+            }
+          }
+          await load();
+        };
+        row.append(info, act);
+        dupesBox.appendChild(row);
+      });
+    }
+  }
+
   // Payouts
-  fill($('payouts'), ['Parceiro', 'Vendas Realizadas', 'Faturação Bruta', 'Saldo Devido ao Parceiro'], j.payouts, x => {
-    const tr = document.createElement('tr');
+  fill($('payouts'), ['Parceiro', 'Vendas Realizadas', 'Faturação Bruta', 'Saldo Devido ao Parceiro'], j.payouts, x => {    const tr = document.createElement('tr');
     tr.append(cell(x.name), cell(x.sales), cell(fmt(x.gross)), cell(fmt(x.owed)));
     return tr;
   });

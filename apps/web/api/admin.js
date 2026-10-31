@@ -219,6 +219,38 @@ async function action(b) {
       await setSetting(pool, 'publication_fee_minor', fee);
       return [200, { ok: true, settings: { publication_fee_minor: await getPublicationFeeMinor(pool) } }];
     }
+    case 'merge_partners': {
+      if (!uuid(b.keepId) || !uuid(b.mergeId) || b.keepId === b.mergeId) return [400, { error: 'invalid' }];
+      const keep = (await pool.query('select id from fair_partners where id=$1', [b.keepId])).rows[0];
+      const merge = (await pool.query('select id from fair_partners where id=$1', [b.mergeId])).rows[0];
+      if (!keep || !merge) return [404, { error: 'not_found' }];
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const moves = [
+          'update fair_books set partner_id=$2 where partner_id=$1',
+          'update fair_sales set partner_id=$2 where partner_id=$1',
+          'update fair_partner_users set partner_id=$2 where partner_id=$1',
+          'update fair_partner_withdrawals set partner_id=$2 where partner_id=$1',
+          'update fair_submissions set partner_id=$2 where partner_id=$1',
+          'update fair_subscriptions set partner_id=$2 where partner_id=$1',
+          'update fair_orders set partner_id=$2 where partner_id=$1',
+          'update fair_publication_fees set partner_id=$2 where partner_id=$1',
+        ];
+        for (const sql of moves) {
+          try { await client.query(sql, [b.mergeId, b.keepId]); } catch {}
+        }
+        await client.query('delete from fair_partners where id=$1', [b.mergeId]);
+        await client.query('COMMIT');
+        return [200, { ok: true }];
+      } catch (e) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.error('merge_partners.error', e?.message || String(e));
+        return [500, { error: 'merge_failed' }];
+      } finally {
+        client.release();
+      }
+    }
     case 'withdrawal_status': {
       if (!uuid(b.id) || !['requested', 'processing', 'paid', 'rejected'].includes(b.status)) return [400, { error: 'invalid' }];
       await pool.query("update fair_partner_withdrawals set status=$2, paid_at=case when $2='paid' then coalesce(paid_at, now()) else paid_at end where id=$1", [b.id, b.status]);
@@ -342,7 +374,35 @@ export default async function handler(req, res) {
     } catch {
       books = (await pool.query(`select id, title, author, description, language, price_minor, currency, partner_id, status, cover_url, content_html is not null as has_content from fair_books order by created_at desc`)).rows.map(x=>({...x,kind:'ebook',stock:null,requires_shipping:false,has_digital:true,has_physical:false,publication_fee_minor:0,publication_fee_paid_at:null,updated_at:null}));
     }
-    const partners = (await pool.query('select id, name, kind, phone, email, commission_bps, status from fair_partners order by created_at desc')).rows;
+    const partners = (await pool.query('select id, name, kind, phone, email, commission_bps, status, created_at from fair_partners order by created_at desc')).rows;
+    // Detectar parceiros duplicados (nome, email ou telemóvel iguais).
+    const normKey = (s) =>
+      String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const buckets = new Map();
+    for (const p of partners) {
+      const ks = new Set([normKey(p.name)]);
+      if (p.email) ks.add('e:' + normKey(p.email));
+      if (p.phone) ks.add('p:' + String(p.phone).replace(/\D/g, ''));
+      for (const k of ks) {
+        if (!k || k === 'e:' || k === 'p:') continue;
+        if (!buckets.has(k)) buckets.set(k, new Set());
+        buckets.get(k).add(p.id);
+      }
+    }
+    const dupSeen = new Set();
+    const duplicates = [];
+    for (const [, ids] of buckets) {
+      if (ids.size < 2) continue;
+      const sig = [...ids].sort().join(',');
+      if (dupSeen.has(sig)) continue;
+      dupSeen.add(sig);
+      duplicates.push({
+        partners: partners
+          .filter((p) => ids.has(p.id))
+          .map((p) => ({ id: p.id, name: p.name, kind: p.kind, email: p.email, phone: p.phone, created_at: p.created_at }))
+          .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))),
+      });
+    }
     const payouts = (await pool.query(`select p.name, count(*)::int as sales, sum(s.gross_minor)::bigint as gross, sum(s.partner_minor)::bigint as owed
         from fair_sales s join fair_partners p on p.id = s.partner_id group by p.name order by owed desc`)).rows;
     let submissions = [];
@@ -382,7 +442,7 @@ export default async function handler(req, res) {
     }
     res.json({ totals: { ...totals, paid_minor: Number(totals.paid_minor), app_minor: Number(split.a), editors_minor: Number(split.e),
         kulera_minor: Number(split.a) + Number(split.e), partners_minor: Number(split.p), fees_minor: Number(publicationFees.f) },
-      leads, orders, deviceRequests, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor), publication_fee_minor: Number(x.publication_fee_minor || 0) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
+      leads, orders, deviceRequests, duplicates, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor), publication_fee_minor: Number(x.publication_fee_minor || 0) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
       submissions, plans: plans.map((x)=>({...x,price_minor:Number(x.price_minor)})), subscriptions: subs,
       withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})),
       subscribers, emailReady: emailConfigured(), emailFrom: emailConfig()?.from || null, emailSupport: emailConfig()?.replyTo || null, promotions,
