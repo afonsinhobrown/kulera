@@ -123,7 +123,7 @@ export async function announceBook(pool, bookId) {
       email,
       coverUrl: book.cover_url && /^https?:\/\//i.test(book.cover_url) ? book.cover_url : null,
     });
-    const res = await sendEmail({ to: email, ...mail });
+    const res = await sendEmail({ to: email, ...mail, replyTo: '' });
     if (res.ok) sent++;
     else failed++;
   }

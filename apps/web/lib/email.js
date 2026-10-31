@@ -1,10 +1,10 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 // Email transaccional e de novidades. Configuração só por variáveis de ambiente:
-//   EMAIL_PROVIDER=resend|brevo   RESEND_API_KEY / BREVO_API_KEY
-//   EMAIL_FROM="Kulera+ <livros@kulera.tecnoincubadora.org>"   EMAIL_REPLY_TO=...
-//   EMAIL_UNSUBSCRIBE_SECRET=<segredo longo>   MARKETING_ENABLED=true
-// Sem chave/remetente, o envio é simplesmente ignorado (o site continua a funcionar).
+//  EMAIL_SUPPORT_TO=email-real (respostas das compras)   EMAIL_FROM="Kulera+ <livros@doremi...>"
+//  EMAIL_UNSUBSCRIBE_SECRET=<segredo longo>   MARKETING_ENABLED=true
+// Respostas: só o email de compra leva "responder para"; as promoções não pedem resposta.
+// Sem chave, o envio é simplesmente ignorado (o site continua a funcionar).
 
 export const SITE_BASE = () =>
   String(process.env.SITE_URL || 'https://kulera.tecnoincubadora.org').replace(/\/+$/, '');
@@ -24,7 +24,7 @@ export function emailConfig() {
     provider: provider === 'brevo' ? 'brevo' : 'resend',
     key,
     from,
-    replyTo: String(process.env.EMAIL_REPLY_TO || '').trim() || undefined,
+    replyTo: String(process.env.EMAIL_SUPPORT_TO || process.env.EMAIL_REPLY_TO || '').trim() || undefined,
   };
 }
 
@@ -43,6 +43,8 @@ export async function sendEmail({ to, subject, html, text, replyTo }) {
   if (!cfg) return { ok: false, error: 'email_not_configured' };
   const recipients = (Array.isArray(to) ? to : [to]).map((x) => String(x || '').trim()).filter(Boolean);
   if (!recipients.length) return { ok: false, error: 'no_recipients' };
+  // replyTo: undefined = usa o endereço de suporte; '' = sem "responder para" (promoções).
+  const reply = replyTo === undefined ? cfg.replyTo : String(replyTo || '').trim() || undefined;
   const bodyText = text || 'Veja este email num leitor com HTML.';
   try {
     if (cfg.provider === 'brevo') {
@@ -56,7 +58,7 @@ export async function sendEmail({ to, subject, html, text, replyTo }) {
           subject,
           htmlContent: html,
           textContent: bodyText,
-          replyTo: cfg.replyTo ? { email: cfg.replyTo } : undefined,
+          replyTo: reply ? { email: reply } : undefined,
         }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -72,7 +74,7 @@ export async function sendEmail({ to, subject, html, text, replyTo }) {
         subject,
         html,
         text: bodyText,
-        reply_to: cfg.replyTo,
+        reply_to: reply,
       }),
       signal: AbortSignal.timeout(15_000),
     });
@@ -156,7 +158,7 @@ export function announcementEmail({ title, author, priceMinor, currency, link, e
     extra: coverUrl
       ? `<p style="margin:0 0 12px"><img src="${esc(coverUrl)}" alt="Capa de ${esc(title)}" width="180" style="max-width:180px;border-radius:8px"></p>`
       : '',
-    footer: `Está a receber novidades da Kulera+ porque autorizou no momento da compra. <a href="${esc(unsubscribeUrl(email))}" style="color:#5b747c">Cancelar subscrição</a>`,
+    footer: `Está a receber novidades da Kulera+ porque autorizou no momento da compra. Não é preciso responder a este email. <a href="${esc(unsubscribeUrl(email))}" style="color:#5b747c">Cancelar subscrição</a>`,
   });
   return {
     subject: `Novo livro na Kulera+: ${title}`,
