@@ -11,7 +11,7 @@ export const SITE_BASE = () =>
 
 // Remetente por omissão: usa o subdomínio já verificado no Resend (doremi.tecnoincubadora.org).
 // Pode ser trocado com EMAIL_FROM sem mexer no código.
-const DEFAULT_FROM = 'DoReMi <no-reply@doremi.tecnoincubadora.org>';
+const DEFAULT_FROM = 'Kulera+ <no-reply@doremi.tecnoincubadora.org>';
 // Respostas dos compradores (só no email de compra). As promoções nunca levam "responder para".
 const DEFAULT_SUPPORT = 'tecnoincubadora.info@tecnoincubadora.org';
 
