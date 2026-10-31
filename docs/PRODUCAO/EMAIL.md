@@ -44,7 +44,7 @@ Opcionais (só se quiser personalizar):
 
 ```
 EMAIL_PROVIDER=resend
-EMAIL_FROM=Kulera+ <no-reply@doremi.tecnoincubadora.org>
+EMAIL_FROM=Kulera+ <no-reply@kulera.tecnoincubadora.org>
 EMAIL_SUPPORT_TO=tecnoincubadora.info@tecnoincubadora.org   # padrão; só o email de compra pede resposta
 EMAIL_UNSUBSCRIBE_SECRET=<segredo longo>
 MARKETING_ENABLED=true
