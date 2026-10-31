@@ -1,10 +1,10 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="pt">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Leitor · Kulera+</title>
+<title>Leitor Â· Kulera+</title>
 <link rel="stylesheet" href="style.css">
 <style>
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0}
@@ -22,13 +22,13 @@
 <body>
 <div class="top"><a href="/" style="color:#fff;text-decoration:none">Kulera<span style="color:var(--gold)">+</span></a> <a href="/" style="color:#fff;margin-left:auto;text-decoration:none;font-weight:600;font-size:15px">Ver livros</a></div>
 <main>
-  <h1 style="font-size:30px">Área do leitor</h1>
-  <p class="how">Guarde os seus livros, veja o saldo e carregue quando quiser. Carregamentos de <b>1.000 MT ou mais</b> recebem <b>10% de bónus</b>.</p>
+  <h1 style="font-size:30px">Ãrea do leitor</h1>
+  <p class="how">Guarde os seus livros, veja o saldo e carregue quando quiser. Carregamentos de <b>1.000 MT ou mais</b> recebem <b>10% de bÃ³nus</b>.</p>
 
   <div class="tabs" id="tabs">
     <button type="button" class="tab active" data-pane="login">Entrar</button>
     <button type="button" class="tab" data-pane="register">Criar conta</button>
-    <button type="button" class="tab" data-pane="account" id="tabAccount" hidden>A minha conta</button>
+    <button type="button" class="tab" data-pane="account" id="tabAccount" hidden>Leitor</button>
   </div>
 
   <section class="panel pane active" data-pane="login" style="max-width:460px;margin:0">
@@ -45,19 +45,19 @@
     <h2 style="font:700 22px Georgia,serif;margin:0 0 10px">Criar conta</h2>
     <form id="registerForm">
       <label>Nome completo<input name="name" autocomplete="name" required maxlength="80"></label>
-      <label>Telemóvel <small>(para M-Pesa / e-Mola)</small><input name="phone" type="tel" inputmode="tel" placeholder="84 000 0000" required></label>
+      <label>TelemÃ³vel <small>(para M-Pesa / e-Mola)</small><input name="phone" type="tel" inputmode="tel" placeholder="84 000 0000" required></label>
       <label>Email<input name="email" type="email" autocomplete="email" required></label>
-      <label>Palavra-passe <small>(mín. 6 caracteres)</small><input name="password" type="password" autocomplete="new-password" required minlength="6"></label>
+      <label>Palavra-passe <small>(mÃ­n. 6 caracteres)</small><input name="password" type="password" autocomplete="new-password" required minlength="6"></label>
       <p class="msg" id="registerMsg" role="alert"></p>
       <button type="submit">Criar conta</button>
     </form>
-    <p class="note">A conta serve para guardar os livros comprados e o saldo. Não altera o preço dos livros.</p>
+    <p class="note">A conta serve para guardar os livros comprados e o saldo. NÃ£o altera o preÃ§o dos livros.</p>
   </section>
 
   <section class="pane" data-pane="account">
     <div class="balance">
-      <span>Saldo disponível</span>
-      <b id="balanceText">—</b>
+      <span>Saldo disponÃ­vel</span>
+      <b id="balanceText">â€”</b>
       <span id="bonusHint"></span>
     </div>
 
@@ -118,10 +118,10 @@ async function loadAccount() {
   const j = await r.json();
   $('tabAccount').hidden = false;
   $('balanceText').textContent = money(j.balance);
-  $('bonusHint').textContent = 'Carregue 1.000 MT ou mais e receba 10% de bónus.';
+  $('bonusHint').textContent = 'Carregue 1.000 MT ou mais e receba 10% de bÃ³nus.';
   showPane('account');
 
-  const kinds = { topup: 'Carregamento', bonus: 'Bónus', grant: 'Crédito Kulera', purchase: 'Compra', refund: 'Devolução', hold: 'Reserva' };
+  const kinds = { topup: 'Carregamento', bonus: 'BÃ³nus', grant: 'CrÃ©dito Kulera', purchase: 'Compra', refund: 'DevoluÃ§Ã£o', hold: 'Reserva' };
   const led = $('ledger');
   led.innerHTML = '<tr><th>Data</th><th>Tipo</th><th>Valor</th><th>Nota</th></tr>';
   (j.ledger || []).forEach((x) => {
@@ -130,7 +130,7 @@ async function loadAccount() {
     amt.className = x.amount_minor >= 0 ? 'pos' : 'neg';
     amt.textContent = (x.amount_minor >= 0 ? '+' : '') + money(x.amount_minor);
     tr.append(
-      Object.assign(document.createElement('td'), { textContent: x.created_at ? new Date(x.created_at).toLocaleString('pt-MZ') : '—' }),
+      Object.assign(document.createElement('td'), { textContent: x.created_at ? new Date(x.created_at).toLocaleString('pt-MZ') : 'â€”' }),
       Object.assign(document.createElement('td'), { textContent: kinds[x.kind] || x.kind }),
       amt,
       Object.assign(document.createElement('td'), { textContent: x.note || '' }),
@@ -138,7 +138,7 @@ async function loadAccount() {
     led.appendChild(tr);
   });
   if (!(j.ledger || []).length) {
-    led.insertAdjacentHTML('beforeend', '<tr><td colspan="4">Ainda não há movimentos.</td></tr>');
+    led.insertAdjacentHTML('beforeend', '<tr><td colspan="4">Ainda nÃ£o hÃ¡ movimentos.</td></tr>');
   }
 
   const books = $('books');
@@ -160,14 +160,14 @@ async function loadAccount() {
     books.appendChild(tr);
   });
   if (!(j.books || []).length) {
-    books.insertAdjacentHTML('beforeend', '<tr><td colspan="3">Ainda não comprou livros com esta conta. <a href="/">Ver a loja</a>.</td></tr>');
+    books.insertAdjacentHTML('beforeend', '<tr><td colspan="3">Ainda nÃ£o comprou livros com esta conta. <a href="/">Ver a loja</a>.</td></tr>');
   }
 }
 
 $('loginForm').onsubmit = async (e) => {
   e.preventDefault();
   const f = e.target, msg = $('loginMsg');
-  msg.className = 'msg'; msg.textContent = 'A entrar…';
+  msg.className = 'msg'; msg.textContent = 'A entrarâ€¦';
   const { ok, j } = await api({ action: 'reader_login', email: f.email.value, password: f.password.value });
   if (!ok || !j.ok) { msg.className = 'msg err'; msg.textContent = 'Email ou palavra-passe incorrectos.'; return; }
   TOKEN = j.token; localStorage.setItem('kulera_reader', TOKEN);
@@ -178,11 +178,11 @@ $('loginForm').onsubmit = async (e) => {
 $('registerForm').onsubmit = async (e) => {
   e.preventDefault();
   const f = e.target, msg = $('registerMsg');
-  msg.className = 'msg'; msg.textContent = 'A criar conta…';
+  msg.className = 'msg'; msg.textContent = 'A criar contaâ€¦';
   const { ok, j } = await api({ action: 'reader_register', name: f.name.value, phone: f.phone.value, email: f.email.value, password: f.password.value });
   if (!ok || !j.ok) {
     msg.className = 'msg err';
-    msg.textContent = j.error === 'exists' ? 'Já existe uma conta com este email. Use “Entrar”.'
+    msg.textContent = j.error === 'exists' ? 'JÃ¡ existe uma conta com este email. Use â€œEntrarâ€.'
       : j.error === 'weak_password' ? 'A palavra-passe precisa de 6 ou mais caracteres.'
       : 'Verifique os dados e tente outra vez.';
     return;
@@ -197,17 +197,17 @@ $('topupForm').onsubmit = async (e) => {
   const f = e.target, msg = $('topupMsg'), btn = f.querySelector('button');
   const amountMinor = Math.round(Number(f.amount.value) * 100);
   const bonus = amountMinor >= 100000 ? Math.round(amountMinor * 0.1) : 0;
-  if (!Number.isFinite(amountMinor) || amountMinor < 1000) { msg.className = 'msg err'; msg.textContent = 'Valor mínimo: 10 MT.'; return; }
+  if (!Number.isFinite(amountMinor) || amountMinor < 1000) { msg.className = 'msg err'; msg.textContent = 'Valor mÃ­nimo: 10 MT.'; return; }
   msg.className = 'msg';
-  msg.textContent = 'A abrir pagamento…' + (bonus ? ' (ganha ' + money(bonus) + ' de bónus)' : '');
+  msg.textContent = 'A abrir pagamentoâ€¦' + (bonus ? ' (ganha ' + money(bonus) + ' de bÃ³nus)' : '');
   btn.disabled = true;
   const { ok, j } = await api({ action: 'reader_topup', amountMinor });
   if (!ok || !j.ok) {
     btn.disabled = false;
     msg.className = 'msg err';
-    msg.textContent = j.error === 'invalid_phone' ? 'Preencha o telemóvel na conta (é preciso para o M-Pesa).'
-      : j.error === 'payment_unavailable' ? 'Não foi possível abrir o pagamento. Tente outra vez.'
-      : 'Não foi possível carregar.';
+    msg.textContent = j.error === 'invalid_phone' ? 'Preencha o telemÃ³vel na conta (Ã© preciso para o M-Pesa).'
+      : j.error === 'payment_unavailable' ? 'NÃ£o foi possÃ­vel abrir o pagamento. Tente outra vez.'
+      : 'NÃ£o foi possÃ­vel carregar.';
     return;
   }
   location.href = j.checkoutUrl;
@@ -224,3 +224,4 @@ if (TOKEN) loadAccount(); else showPane('login');
 </script>
 </body>
 </html>
+
