@@ -6,7 +6,7 @@ import { createPayment, getPaymentStatus } from '../lib/paysuite.js';
 import { ensurePlanSchema } from '../lib/plans.js';
 import { approveDeviceRequest, rejectDeviceRequest } from '../lib/device.js';
 import { announceBook, subscriberCount } from '../lib/marketing.js';
-import { emailConfigured, sendEmail } from '../lib/email.js';
+import { emailConfig, emailConfigured, sendEmail } from '../lib/email.js';
 
 const sameKey = (a, b) => {
   const ax = String(a ?? '').trim();
@@ -379,7 +379,7 @@ export default async function handler(req, res) {
       leads, orders, deviceRequests, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor), publication_fee_minor: Number(x.publication_fee_minor || 0) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
       submissions, plans: plans.map((x)=>({...x,price_minor:Number(x.price_minor)})), subscriptions: subs,
       withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})),
-      subscribers, emailReady: emailConfigured(), promotions,
+      subscribers, emailReady: emailConfigured(), emailFrom: emailConfig()?.from || null, emailSupport: emailConfig()?.replyTo || null, promotions,
       sandbox, paysuiteTokenHint });
   } catch (e) {
     console.error('admin.error', e?.message || String(e));

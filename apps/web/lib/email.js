@@ -40,15 +40,26 @@ const parseFrom = (from) => {
   return { name: 'Kulera+', email: from };
 };
 
+const mask = (email) => {
+  const s = String(email || '');
+  const at = s.indexOf('@');
+  if (at < 1) return '***';
+  return s.slice(0, Math.min(2, at)) + '***' + s.slice(at);
+};
+
 /** Envia um email. Devolve {ok} e nunca lança. */
 export async function sendEmail({ to, subject, html, text, replyTo }) {
   const cfg = emailConfig();
-  if (!cfg) return { ok: false, error: 'email_not_configured' };
+  if (!cfg) {
+    console.warn('email.skip not_configured (falta RESEND_API_KEY/BREVO_API_KEY)');
+    return { ok: false, error: 'email_not_configured' };
+  }
   const recipients = (Array.isArray(to) ? to : [to]).map((x) => String(x || '').trim()).filter(Boolean);
   if (!recipients.length) return { ok: false, error: 'no_recipients' };
   // replyTo: undefined = usa o endereço de suporte; '' = sem "responder para" (promoções).
   const reply = replyTo === undefined ? cfg.replyTo : String(replyTo || '').trim() || undefined;
   const bodyText = text || 'Veja este email num leitor com HTML.';
+  console.log('email.send', cfg.provider, 'from=' + cfg.from, 'to=' + recipients.map(mask).join(','), 'subject=' + subject.slice(0, 80));
   try {
     if (cfg.provider === 'brevo') {
       const sender = parseFrom(cfg.from);
@@ -65,8 +76,14 @@ export async function sendEmail({ to, subject, html, text, replyTo }) {
         }),
         signal: AbortSignal.timeout(15_000),
       });
-      if (!r.ok) return { ok: false, error: `brevo_${r.status}:${(await r.text().catch(() => '')).slice(0, 160)}` };
-      return { ok: true, id: (await r.json().catch(() => ({})))?.messageId || null };
+      if (!r.ok) {
+        const detail = `brevo_${r.status}:${(await r.text().catch(() => '')).slice(0, 160)}`;
+        console.error('email.fail', detail);
+        return { ok: false, error: detail };
+      }
+      const id = (await r.json().catch(() => ({})))?.messageId || null;
+      console.log('email.ok brevo id=' + id);
+      return { ok: true, id };
     }
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -81,10 +98,18 @@ export async function sendEmail({ to, subject, html, text, replyTo }) {
       }),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!r.ok) return { ok: false, error: `resend_${r.status}:${(await r.text().catch(() => '')).slice(0, 160)}` };
-    return { ok: true, id: (await r.json().catch(() => ({})))?.id || null };
+    if (!r.ok) {
+      const detail = `resend_${r.status}:${(await r.text().catch(() => '')).slice(0, 160)}`;
+      console.error('email.fail', detail);
+      return { ok: false, error: detail };
+    }
+    const id = (await r.json().catch(() => ({})))?.id || null;
+    console.log('email.ok resend id=' + id);
+    return { ok: true, id };
   } catch (e) {
-    return { ok: false, error: String(e?.message || e) };
+    const detail = String(e?.message || e);
+    console.error('email.fail', detail);
+    return { ok: false, error: detail };
   }
 }
 

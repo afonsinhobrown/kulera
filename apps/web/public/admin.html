@@ -730,8 +730,8 @@ if (bookSel) {
 }
 const emailSum = $('emailSummary');
 if (emailSum) emailSum.textContent = j.emailReady
-  ? `Email configurado · ${j.subscribers || 0} subscritor(es) activos. Limite de anúncios por livro/mês: Básico 1×, Profissional 2×, Premium 4×.`
-  : 'Email ainda não configurado (defina RESEND_API_KEY e EMAIL_FROM na Vercel).';
+  ? `Email configurado · remetente ${j.emailFrom || '—'} · respostas ${j.emailSupport || '—'} · ${j.subscribers || 0} subscritor(es) activos. Limite de anúncios por livro/mês: Básico 1×, Profissional 2×, Premium 4×.`
+  : 'Email NÃO configurado neste deployment: falta RESEND_API_KEY ou o Redeploy depois de a adicionar.';
 fill($('promotions'), ['Data', 'Livro', 'Emails enviados'], j.promotions || [], p => {
   const tr = document.createElement('tr');
   tr.append(cell(p.sent_at ? new Date(p.sent_at).toLocaleString('pt-MZ') : '—'), cell(p.book || '—'), cell(p.recipients || 0));
