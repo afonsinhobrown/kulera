@@ -159,8 +159,9 @@ async function action(b) {
       return [200,{ok:true,id:r.rows[0].id}];
     }
     case 'set_sandbox': {
-      await setSandbox(b.enabled === true || b.enabled === 'true');
-      return [200, { ok: true, sandbox: await isSandbox() }];
+      // Sandbox é controlado apenas por variável de ambiente SANDBOX=true
+      // Não pode ser alterado via painel admin.
+      return [200, { ok: true, sandbox: await isSandbox(), message: 'Sandbox é controlado apenas por variável de ambiente (SANDBOX=true).' }];
     }
     case 'approve_device_request': {
       if (!uuid(b.id)) return [400, { error: 'invalid' }];
@@ -448,7 +449,6 @@ export default async function handler(req, res) {
       plans = (await pool.query('select id,code,name,description,price_minor,currency,interval,status,max_publications,showcase_priority from fair_plans order by showcase_priority desc, price_minor asc')).rows;
     } catch {}
     const sandbox = await isSandbox();
-    const sandboxFromEnv = process.env.SANDBOX === 'true';
     const currentTok = await getPaysuiteTokenFromDb();
     const paysuiteTokenHint = currentTok ? `${currentTok.slice(0, 8)}…${currentTok.slice(-4)}` : '';
     let subs = [];
@@ -492,7 +492,7 @@ export default async function handler(req, res) {
       withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})),
       subscribers, emailReady: emailConfigured(), emailFrom: emailConfig()?.from || null, emailSupport: emailConfig()?.replyTo || null, promotions, readers,
       settings: { publication_fee_minor: await getPublicationFeeMinor(pool) },
-      sandbox, sandboxFromEnv, paysuiteTokenHint });
+      sandbox, paysuiteTokenHint });
   } catch (e) {
     console.error('admin.error', e?.message || String(e));
     return res.status(500).json({ error: 'internal_error' });
