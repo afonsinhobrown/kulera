@@ -139,18 +139,13 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
           <h3>Configuração & Diagnóstico PaySuite</h3>
           <p style="font-size:13px;color:#5b747c;margin:0 0 12px">
             Token em uso: <strong id="psTokenHint">—</strong><br>
-            Se a PaySuite devolver <code>403: API access is only available for company accounts</code>, gere um novo Token na conta empresarial da PaySuite (<em>Settings → API Access</em>) e guarde-o abaixo, ou active o <strong>Modo Sandbox</strong> no topo direito para testar pagamentos com o simulador integrado.
+            O token da PaySuite é configurado exclusivamente via variável de ambiente <code>PAYSUITE_API_TOKEN</code> no servidor (Vercel/Deployment).
+            Para testar pagamentos, use o <strong>Modo Sandbox</strong> no topo direito (cobra apenas 10,00 MZN).
           </p>
-          <div style="display:grid;gap:10px">
-            <label style="font-size:14px;font-weight:600;display:grid;gap:4px">Novo Token API PaySuite (opcional — substitui o do servidor)
-              <input id="psTokenInput" placeholder="Cole aqui o token da conta empresarial da PaySuite" style="font:inherit;padding:9px 12px;border:1.5px solid #9db3b0;border-radius:6px">
-            </label>
-            <div style="display:flex;gap:10px;flex-wrap:wrap">
-              <button type="button" id="psSaveBtn" class="btn-primary">Guardar Novo Token</button>
-              <button type="button" id="psTestBtn" class="btn-secondary">Testar Ligação à PaySuite</button>
-            </div>
-            <p class="msg" id="psDiagMsg" style="margin:0"></p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button type="button" id="psTestBtn" class="btn-secondary">Testar Ligação à PaySuite (token do servidor)</button>
           </div>
+          <p class="msg" id="psDiagMsg" style="margin:0"></p>
         </div>
       </div>
 
@@ -408,7 +403,12 @@ $('logoutBtn').onclick = () => {
 };
 
 // Sandbox toggle
+let sandboxFromEnv = false;
 async function toggleSandbox(forceVal){
+  if (sandboxFromEnv) {
+    alert('O Modo Sandbox está controlado pela variável de ambiente SANDBOX=true no servidor e não pode ser alterado pelo painel.');
+    return;
+  }
   const current = DATA?.sandbox === true;
   const next = forceVal !== undefined ? forceVal : !current;
   const promptTxt = next
@@ -423,14 +423,30 @@ async function toggleSandbox(forceVal){
 }
 $('sandboxToggle').onclick = () => toggleSandbox();
 
-function renderSandbox(isSandbox){
+function renderSandbox(isSandbox, fromEnv){
+  sandboxFromEnv = fromEnv === true;
   const b = $('sandboxToggle'), txt = $('sandboxStatusText'), alert = $('sandboxAlert');
-  if(isSandbox){
+  if(sandboxFromEnv){
+    b.className = 'sandbox-badge inactive';
+    b.style.opacity = '0.6';
+    b.style.cursor = 'not-allowed';
+    b.title = 'Controlado por variável de ambiente SANDBOX=true';
+    txt.textContent = 'Controlado por ENV';
+    alert.hidden = false;
+    alert.querySelector('button').hidden = true;
+  } else if(isSandbox){
     b.className = 'sandbox-badge active';
+    b.style.opacity = '1';
+    b.style.cursor = 'pointer';
+    b.title = 'Clique para alternar o modo sandbox';
     txt.textContent = 'ATIVO (10 MT)';
     alert.hidden = false;
+    alert.querySelector('button').hidden = false;
   } else {
     b.className = 'sandbox-badge inactive';
+    b.style.opacity = '1';
+    b.style.cursor = 'pointer';
+    b.title = 'Clique para alternar o modo sandbox';
     txt.textContent = 'Desactivado';
     alert.hidden = true;
   }
@@ -444,7 +460,7 @@ async function load(){
   }
   const j = await r.json();
   DATA = j;
-  renderSandbox(j.sandbox);
+  renderSandbox(j.sandbox, j.sandboxFromEnv);
   if($('psTokenHint')) $('psTokenHint').textContent = j.paysuiteTokenHint || 'Não configurado';
 
   // KPIs
@@ -1171,23 +1187,11 @@ if(gpf){
   });
 }
 
-if($('psSaveBtn')){
-  $('psSaveBtn').onclick = async () => {
-    const tok = ($('psTokenInput').value || '').trim();
-    const m = $('psDiagMsg');
-    m.className = 'msg'; m.textContent = 'A guardar token...';
-    const { ok } = await api({ action: 'save_paysuite_token', token: tok });
-    m.className = ok ? 'msg' : 'msg err';
-    m.textContent = ok ? (tok ? 'Novo token PaySuite guardado na base de dados!' : 'Token reposto para a variável de ambiente do servidor.') : 'Erro ao guardar token.';
-    if(ok){ $('psTokenInput').value = ''; load(); }
-  };
-}
 if($('psTestBtn')){
   $('psTestBtn').onclick = async () => {
-    const tok = ($('psTokenInput').value || '').trim();
     const m = $('psDiagMsg');
-    m.className = 'msg'; m.textContent = 'A testar ligação real com https://paysuite.tech/api/v1/payments...';
-    const { ok, j } = await api({ action: 'test_paysuite', token: tok || undefined });
+    m.className = 'msg'; m.textContent = 'A testar ligação real com https://paysuite.tech/api/v1/payments (usando token do servidor)...';
+    const { ok, j } = await api({ action: 'test_paysuite' });
     if(ok && j.ok){
       m.className = 'msg';
       m.textContent = '✓ Ligação PaySuite OK! Checkout gerado com sucesso (' + j.providerPaymentId + ').';
@@ -1355,12 +1359,11 @@ async function tryInit(){
       if(!document.activeElement || !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) load().catch(()=>{});
     }, 30000);
   } catch(err){
-    if(err?.message === 'auth'){
-      $('login').hidden = false;
-      $('app').hidden = true;
-      sessionStorage.removeItem('kulera_admin_key');
-      KEY = '';
-    }
+    // Sempre mostrar login se falhar - nunca auto-login sem credenciais
+    $('login').hidden = false;
+    $('app').hidden = true;
+    sessionStorage.removeItem('kulera_admin_key');
+    KEY = '';
   }
 }
 tryInit();

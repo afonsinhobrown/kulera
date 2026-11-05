@@ -86,9 +86,11 @@ function bookShareUrl(b){
 function bookSharePrices(b){
   const hasD = b.hasDigital !== false;
   const hasP = b.hasPhysical === true || b.requiresShipping === true;
+  const hasStock = hasP && (b.stock == null || Number(b.stock) > 0);
   const parts = [];
   if(hasD) parts.push('E-book ' + money(b.digitalPriceMinor ?? b.priceMinor, b.currency));
-  if(hasP) parts.push('Físico ' + money(b.physicalPriceMinor ?? b.priceMinor, b.currency));
+  if(hasStock) parts.push('Físico ' + money(b.physicalPriceMinor ?? b.priceMinor, b.currency));
+  else if(hasP) parts.push('Físico (Esgotado)');
   return parts.join(' · ');
 }
 
@@ -160,12 +162,16 @@ fetch('/api/books?_='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(list
     const a=document.createElement('p');a.textContent=b.author;
     const hasD = b.hasDigital !== false;
     const hasP = b.hasPhysical === true || b.requiresShipping === true;
+    const hasStock = hasP && (b.stock == null || Number(b.stock) > 0);
     const badge = document.createElement('p'); badge.style.fontSize='13px'; badge.style.fontWeight='600'; badge.style.color = hasP ? '#7a3b00' : '#0b5c63';
-    badge.textContent = [hasD?'E-book':null,hasP?'Físico':null].filter(Boolean).join(' + ') + (hasP?' • Entrega':(hasD?' • Digital':''));
+    badge.textContent = [hasD?'E-book':null,hasStock?'Físico':(hasP?'Físico (Esgotado)':null)].filter(Boolean).join(' + ') + (hasStock?' • Entrega':(hasD?' • Digital':''));
     const p=document.createElement('div');p.className='prices';
     const addPrice=(label,v)=>{if(v==null)return;const s=document.createElement('span');s.textContent=label;const bb=document.createElement('b');bb.textContent=money(v,b.currency);s.appendChild(bb);p.appendChild(s)};
     if(hasD)addPrice('Digital',b.digitalPriceMinor??b.priceMinor);
-    if(hasP)addPrice('Físico',b.physicalPriceMinor??b.priceMinor);
+    if(hasStock)addPrice('Físico',b.physicalPriceMinor??b.priceMinor);
+    else if(hasP && !hasStock) {
+      const s=document.createElement('span');s.textContent='Físico';const bb=document.createElement('b');bb.textContent='Esgotado';bb.style.color='#b02a37';s.appendChild(bb);p.appendChild(s);
+    }
     const act=document.createElement('div');act.className='card-actions';
     const btn=document.createElement('button');btn.type='button';btn.textContent='Comprar';btn.onclick=()=>choose(b);
     const shBtn=document.createElement('button');shBtn.type='button';shBtn.className='btn-share';shBtn.title='Partilhar este livro';shBtn.textContent='🔗';
@@ -183,7 +189,9 @@ fetch('/api/books?_='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(list
 function choose(b,scroll=true){
   current=b;
   const hasD=b.hasDigital!==false,hasP=b.hasPhysical===true||b.requiresShipping===true;
-  const parts=[hasD?'Digital: '+money(b.digitalPriceMinor??b.priceMinor,b.currency):null,hasP?'Físico (c/ entrega): '+money(b.physicalPriceMinor??b.priceMinor,b.currency):null].filter(Boolean);
+  // Verificar stock para livros físicos
+  const hasStock = hasP && (b.stock == null || Number(b.stock) > 0);
+  const parts=[hasD?'Digital: '+money(b.digitalPriceMinor??b.priceMinor,b.currency):null,hasStock?'Físico (c/ entrega): '+money(b.physicalPriceMinor??b.priceMinor,b.currency):(hasP?'Físico (Esgotado)':null)].filter(Boolean);
   $('buy').hidden=false;
   const covBox=$('bCover');
   if(covBox){
@@ -196,14 +204,31 @@ function choose(b,scroll=true){
   $('bPrice').textContent=parts.join(' · ');
   const buyDigitalBtn = $('goBuy');
   const buyPhysBtn = $('goBuyPhysical');
-  if(hasD && hasP){
+  if(hasD && hasStock){
     buyDigitalBtn.href='comprar.html?id='+encodeURIComponent(b.id)+'&fmt=digital';
     buyDigitalBtn.textContent='📱 Comprar E-book';
     buyPhysBtn.href='comprar.html?id='+encodeURIComponent(b.id)+'&fmt=physical';
     buyPhysBtn.hidden=false;
-  } else if(hasP){
+  } else if(hasD && hasP && !hasStock) {
+    // Tem digital e físico mas físico sem stock
+    buyDigitalBtn.href='comprar.html?id='+encodeURIComponent(b.id)+'&fmt=digital';
+    buyDigitalBtn.textContent='📱 Comprar E-book';
+    buyPhysBtn.hidden=false;
+    buyPhysBtn.textContent='📦 Físico (Esgotado)';
+    buyPhysBtn.style.opacity = '0.5';
+    buyPhysBtn.style.pointerEvents = 'none';
+    buyPhysBtn.href = '#';
+  } else if(hasStock){
     buyDigitalBtn.href='comprar.html?id='+encodeURIComponent(b.id)+'&fmt=physical';
     buyDigitalBtn.textContent='📦 Comprar Físico (Entrega)';
+    buyPhysBtn.hidden=true;
+  } else if(hasP && !hasStock) {
+    // Só tem físico mas sem stock
+    buyDigitalBtn.href='comprar.html?id='+encodeURIComponent(b.id)+'&fmt=physical';
+    buyDigitalBtn.textContent='📦 Físico (Esgotado)';
+    buyDigitalBtn.style.opacity = '0.5';
+    buyDigitalBtn.style.pointerEvents = 'none';
+    buyDigitalBtn.href = '#';
     buyPhysBtn.hidden=true;
   } else {
     buyDigitalBtn.href='comprar.html?id='+encodeURIComponent(b.id);

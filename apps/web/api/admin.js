@@ -327,13 +327,6 @@ async function action(b) {
          on conflict (key) do update set value=excluded.value, updated_at=now()`, [newKey]);
       return [200, { ok: true }];
     }
-    case 'save_paysuite_token': {
-      const tok = clip(b.token, 200);
-      await pool.query(
-        `insert into fair_settings (key,value,updated_at) values ('paysuite_token',$1,now())
-         on conflict (key) do update set value=excluded.value, updated_at=now()`, [tok]);
-      return [200, { ok: true }];
-    }
     case 'test_paysuite': {
       const tok = clip(b.token, 200) || (await getPaysuiteTokenFromDb());
       try {
@@ -455,6 +448,7 @@ export default async function handler(req, res) {
       plans = (await pool.query('select id,code,name,description,price_minor,currency,interval,status,max_publications,showcase_priority from fair_plans order by showcase_priority desc, price_minor asc')).rows;
     } catch {}
     const sandbox = await isSandbox();
+    const sandboxFromEnv = process.env.SANDBOX === 'true';
     const currentTok = await getPaysuiteTokenFromDb();
     const paysuiteTokenHint = currentTok ? `${currentTok.slice(0, 8)}…${currentTok.slice(-4)}` : '';
     let subs = [];
@@ -498,7 +492,7 @@ export default async function handler(req, res) {
       withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})),
       subscribers, emailReady: emailConfigured(), emailFrom: emailConfig()?.from || null, emailSupport: emailConfig()?.replyTo || null, promotions, readers,
       settings: { publication_fee_minor: await getPublicationFeeMinor(pool) },
-      sandbox, paysuiteTokenHint });
+      sandbox, sandboxFromEnv, paysuiteTokenHint });
   } catch (e) {
     console.error('admin.error', e?.message || String(e));
     return res.status(500).json({ error: 'internal_error' });

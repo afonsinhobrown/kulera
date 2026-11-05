@@ -102,6 +102,14 @@ function applyFmt(){
   } else {
     $('go').textContent=(physical?'Pagar (entrega) ':'Pagar ')+money(charged,b.currency);
   }
+  // Desabilitar botão se formato físico sem stock
+  const physicalRadio = document.querySelector('[name=fmt][value=physical]');
+  const noPhysicalStock = physical && physicalRadio && physicalRadio.disabled;
+  $('go').disabled = noPhysicalStock;
+  if (noPhysicalStock) {
+    $('go').textContent = 'Esgotado — apenas E-book disponível';
+    $('go').style.opacity = '0.6';
+  }
   syncWallet();
 }
 function showSandbox(){
@@ -115,9 +123,11 @@ async function load(){
   b=(list||[]).find(x=>x.id===id);
   if(!b){$('info').innerHTML='<p class="msg err">Livro não encontrado.</p>'; $('form').hidden=true; return;}
   const hasD=b.hasDigital!==false, hasP=b.hasPhysical===true||b.requiresShipping===true;
-  if(requestedFmt==='physical' && hasP) fmt='physical';
+  // Verificar stock para livros físicos
+  const hasStock = hasP && (b.stock == null || Number(b.stock) > 0);
+  if(requestedFmt==='physical' && hasStock) fmt='physical';
   else if(requestedFmt==='digital' && hasD) fmt='digital';
-  else fmt=hasD?'digital':'physical';
+  else fmt=hasD?'digital':(hasStock?'physical':'digital');
   const badge=[hasD?'E-book':null,hasP?'Físico':null].filter(Boolean).join(' + ');
   const info=$('info');
   info.innerHTML='';
@@ -149,7 +159,10 @@ async function load(){
 
   const meta=document.createElement('div');
   let html='<p style="margin:4px 0"><b id="bTitleText"></b><br><span style="color:#557077" id="bAuthorText"></span><br><small style="color:var(--sea);font-weight:600">'+badge+'</small><br><span class="price" id="fmtPrice" style="font-size:24px;display:inline-block;margin:10px 0 4px"></span></p>';
-  if(hasD&&hasP){html+='<p style="margin:10px 0"><b>Escolha o formato:</b><br><label style="display:inline-flex;gap:6px;align-items:center;font-weight:400;margin:4px 8px"><input type="radio" name="fmt" value="digital" '+(fmt==='digital'?'checked':'')+' style="width:auto"> 📱 E-book (digital) — '+money(priceFor('digital'),b.currency)+'</label> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400;margin:4px 8px"><input type="radio" name="fmt" value="physical" '+(fmt==='physical'?'checked':'')+' style="width:auto"> 📦 Físico (entrega) — '+money(priceFor('physical'),b.currency)+'</label></p>';}
+  if(hasD&&hasP){
+      const stockMsg = hasStock ? '' : ' <span style="color:#b02a37;font-weight:700">(Esgotado)</span>';
+      html+='<p style="margin:10px 0"><b>Escolha o formato:</b><br><label style="display:inline-flex;gap:6px;align-items:center;font-weight:400;margin:4px 8px"><input type="radio" name="fmt" value="digital" '+(fmt==='digital'?'checked':'')+' style="width:auto"> 📱 E-book (digital) — '+money(priceFor('digital'),b.currency)+'</label> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400;margin:4px 8px;opacity:'+(hasStock?'1':'0.5')+'"><input type="radio" name="fmt" value="physical" '+(fmt==='physical'?'checked':'')+' style="width:auto" '+(hasStock?'':'disabled')+'> 📦 Físico (entrega) — '+money(priceFor('physical'),b.currency)+stockMsg+'</label></p>';
+    }
   meta.innerHTML=html;
   info.appendChild(meta);
   $('bTitleText').textContent=b.title;
