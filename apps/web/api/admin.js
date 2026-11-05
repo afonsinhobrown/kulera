@@ -8,6 +8,7 @@ import { grantCredit } from '../lib/reader.js';
 import { approveDeviceRequest, rejectDeviceRequest } from '../lib/device.js';
 import { announceBook, subscriberCount } from '../lib/marketing.js';
 import { emailConfig, emailConfigured, sendEmail } from '../lib/email.js';
+import { markSubscriptionPaymentFailed, markSubscriptionPaymentRecovered, runDailyMaintenance } from '../lib/lifecycle.js';
 
 const sameKey = (a, b) => {
   const ax = String(a ?? '').trim();
@@ -279,11 +280,30 @@ async function action(b) {
         await pool.query(
           `update fair_subscriptions
               set status='active',
+                  grace_ends_at = null,
+                  last_payment_failed_at = null,
+                  warning_72h_sent_at = null,
+                  warning_24h_sent_at = null,
                   ends_at = greatest(coalesce(ends_at, now()), now()) + ($2 || ' days')::interval
             where id=$1`, [b.id, days]);
         return [200, { ok: true }];
       }
+      if (actionType === 'payment_failed') {
+        const r = await markSubscriptionPaymentFailed(pool, b.id);
+        if (!r) return [404, { error: 'not_found' }];
+        return [200, { ok: true, subscription: r }];
+      }
+      if (actionType === 'payment_recovered') {
+        const days = Number(b.days) || 30;
+        const r = await markSubscriptionPaymentRecovered(pool, b.id, new Date(), days);
+        if (!r) return [404, { error: 'not_found' }];
+        return [200, { ok: true, subscription: r }];
+      }
       return [400, { error: 'invalid_subscription_action' }];
+    }
+    case 'run_maintenance': {
+      const result = await runDailyMaintenance(pool, new Date());
+      return [200, { ok: true, ...result }];
     }
     case 'grant_subscription': {
       if (!uuid(b.partnerId) || !uuid(b.planId)) return [400, { error: 'invalid' }];
@@ -352,9 +372,13 @@ export default async function handler(req, res) {
     const split = (await pool.query(`select
         coalesce(sum(coalesce(app_minor, commission_minor)),0)::bigint a,
         coalesce(sum(coalesce(editors_minor,0)),0)::bigint e,
-        coalesce(sum(partner_minor),0)::bigint p from fair_sales`)).rows[0];
+        coalesce(sum(partner_minor),0)::bigint p,
+        coalesce(sum(coalesce(gateway_minor,0)),0)::bigint g,
+        coalesce(sum(coalesce(app_net_minor, coalesce(app_minor, commission_minor))),0)::bigint an from fair_sales`)).rows[0];
     let publicationFees = { f: 0 };
     try { publicationFees = (await pool.query('select coalesce(sum(amount_minor),0)::bigint f from fair_publication_fees where paid_at is not null')).rows[0]; } catch {}
+    let creditTotals = { g: 0, n: 0 };
+    try { creditTotals = (await pool.query('select coalesce(sum(gateway_minor),0)::bigint g, coalesce(sum(net_minor),0)::bigint n from fair_partner_credits')).rows[0]; } catch {}
     const leads = (await pool.query('select id, created_at, name, organisation, kind, phone, email, titles_count, message, status from partner_leads order by created_at desc limit 500')).rows;
     let orders;
     try {
@@ -424,7 +448,7 @@ export default async function handler(req, res) {
     const paysuiteTokenHint = currentTok ? `${currentTok.slice(0, 8)}…${currentTok.slice(-4)}` : '';
     let subs = [];
     try {
-      subs = (await pool.query(`select s.id,s.buyer_name,s.buyer_phone,s.status,s.starts_at,s.ends_at,s.partner_id,pl.name as plan, p.name as partner_name,
+      subs = (await pool.query(`select s.id,s.buyer_name,s.buyer_phone,s.status,s.starts_at,s.ends_at,s.partner_id,s.grace_ends_at,s.last_payment_failed_at,pl.name as plan, p.name as partner_name,
           case when s.ends_at < now() then true else false end as is_expired
           from fair_subscriptions s
           left join fair_plans pl on pl.id=s.plan_id
@@ -456,7 +480,8 @@ export default async function handler(req, res) {
       return res.send(toCsv(req.query.type === 'orders' ? orders : req.query.type === 'payouts' ? payouts : leads));
     }
     res.json({ totals: { ...totals, paid_minor: Number(totals.paid_minor), app_minor: Number(split.a), editors_minor: Number(split.e),
-        kulera_minor: Number(split.a) + Number(split.e), partners_minor: Number(split.p), fees_minor: Number(publicationFees.f) },
+        kulera_minor: Number(split.a) + Number(split.e), partners_minor: Number(split.p), fees_minor: Number(publicationFees.f),
+        gateway_minor: Number(split.g) + Number(creditTotals.g), app_net_minor: Number(split.an) + Number(creditTotals.n) },
       leads, orders, deviceRequests, duplicates, books: books.map((x) => ({ ...x, price_minor: Number(x.price_minor), publication_fee_minor: Number(x.publication_fee_minor || 0) })), partners, payouts: payouts.map((x) => ({ ...x, gross: Number(x.gross), owed: Number(x.owed) })),
       submissions, plans: plans.map((x)=>({...x,price_minor:Number(x.price_minor)})), subscriptions: subs,
       withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})),

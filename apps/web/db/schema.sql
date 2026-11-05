@@ -74,6 +74,11 @@ alter table fair_books add column if not exists shipping_info text;
 alter table fair_books add column if not exists has_digital boolean not null default true;
 alter table fair_books add column if not exists has_physical boolean not null default false;
 alter table fair_books add column if not exists price_physical_minor bigint check (price_physical_minor is null or price_physical_minor > 0);
+alter table fair_books add column if not exists active_until timestamptz;
+alter table fair_books add column if not exists suspended_at timestamptz;
+alter table fair_books add column if not exists suspended_reason text;
+alter table fair_books add column if not exists warning_72h_sent_at timestamptz;
+alter table fair_books add column if not exists warning_24h_sent_at timestamptz;
 update fair_books set has_physical = true where coalesce(kind,'ebook')='physical' or coalesce(requires_shipping,false);
 update fair_books set has_digital = false where coalesce(kind,'ebook')='physical' and content_html is null;
 alter table fair_orders add column if not exists book_id uuid references fair_books (id);
@@ -119,6 +124,9 @@ alter table fair_sales add column if not exists app_bps int not null default 200
 alter table fair_sales add column if not exists editors_bps int not null default 1000;
 alter table fair_sales add column if not exists app_minor bigint;
 alter table fair_sales add column if not exists editors_minor bigint;
+alter table fair_sales add column if not exists gateway_bps int not null default 700;
+alter table fair_sales add column if not exists gateway_minor bigint;
+alter table fair_sales add column if not exists app_net_minor bigint;
 update fair_sales set app_minor = coalesce(app_minor, commission_minor), editors_minor = coalesce(editors_minor, 0);
 do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'fair_sales_three_way_check') then
@@ -198,9 +206,46 @@ create table if not exists fair_subscriptions (
   buyer_email text,
   plan_id uuid not null references fair_plans (id),
   order_id uuid references fair_orders (id),
-  status text not null default 'active' check (status in ('active','cancelled','expired')),
+  status text not null default 'active' check (status in ('active','past_due','cancelled','expired')),
   starts_at timestamptz not null default now(),
   ends_at timestamptz not null,
+  partner_id uuid,
+  grace_ends_at timestamptz,
+  last_payment_failed_at timestamptz,
+  warning_72h_sent_at timestamptz,
+  warning_24h_sent_at timestamptz,
+  created_at timestamptz not null default now()
+);
+alter table fair_subscriptions add column if not exists partner_id uuid;
+alter table fair_subscriptions add column if not exists grace_ends_at timestamptz;
+alter table fair_subscriptions add column if not exists last_payment_failed_at timestamptz;
+alter table fair_subscriptions add column if not exists warning_72h_sent_at timestamptz;
+alter table fair_subscriptions add column if not exists warning_24h_sent_at timestamptz;
+alter table fair_subscriptions drop constraint if exists fair_subscriptions_status_check;
+alter table fair_subscriptions add constraint fair_subscriptions_status_check
+  check (status in ('active','past_due','cancelled','expired'));
+
+-- Créditos de publicação temporária (Bronze/Prata/Ouro)
+create table if not exists fair_partner_credits (
+  id uuid primary key default gen_random_uuid(),
+  partner_id uuid not null references fair_partners (id) on delete cascade,
+  pack text not null,
+  price_minor bigint not null,
+  gateway_minor bigint not null default 0,
+  net_minor bigint,
+  slots_total int not null,
+  slots_used int not null default 0,
+  days int not null,
+  purchased_at timestamptz not null default now()
+);
+
+-- Histórico de mudanças de estado dos livros (suspensão/reactivação sem apagar conteúdo)
+create table if not exists fair_book_status_events (
+  id bigserial primary key,
+  book_id uuid not null references fair_books (id) on delete cascade,
+  from_status text,
+  to_status text not null,
+  reason text,
   created_at timestamptz not null default now()
 );
 

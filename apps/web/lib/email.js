@@ -176,6 +176,57 @@ export function accessEmail({ name, bookTitle, link, email }) {
   };
 }
 
+export function subscriptionFailedEmail({ name, graceEndsAt, link }) {
+  const date = new Date(graceEndsAt);
+  const when = Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleString('pt-MZ', { dateStyle: 'short', timeStyle: 'short' });
+  const html = layout({
+    title: 'Não foi possível cobrar a sua assinatura',
+    intro: `Olá${name ? ' ' + esc(String(name).split(' ')[0]) : ''}, a cobrança da sua assinatura Kulera+ falhou. Tem ${3} dias de tolerância${when ? ' até ' + esc(when) : ''} para regularizar.`,
+    cta: link,
+    ctaLabel: 'Actualizar pagamento',
+    extra: '<p style="margin:0 0 8px;color:#33505a;font-size:14px">As suas obras continuam disponíveis durante a tolerância. Se o pagamento não for regularizado, os livros passam a SUSPENSO e deixam de estar na montra. Os ficheiros e o histórico financeiro são preservados.</p>',
+    footer: 'Kulera+ · aviso de cobrança',
+  });
+  return {
+    subject: 'Cobrança da assinatura falhou — Kulera+',
+    html,
+    text: `A cobrança da sua assinatura falhou. Tem 3 dias de tolerância${when ? ' até ' + when : ''} para regularizar: ${link}`,
+  };
+}
+
+export function expiryWarningEmail({ name, title, endsAt, hoursLeft, kind, link }) {
+  const date = new Date(endsAt);
+  const when = Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleString('pt-MZ', { dateStyle: 'short', timeStyle: 'short' });
+  const isCredit = kind === 'credit';
+  const intro = isCredit
+    ? `Olá${name ? ' ' + esc(String(name).split(' ')[0]) : ''}, a publicação temporária de <b>${esc(title)}</b> termina em ${hoursLeft} horas${when ? ' (' + esc(when) + ')' : ''}.`
+    : `Olá${name ? ' ' + esc(String(name).split(' ')[0]) : ''}, a sua assinatura <b>${esc(title)}</b> expira em ${hoursLeft} horas${when ? ' (' + esc(when) + ')' : ''}.`;
+  const extra = isCredit
+    ? '<p style="margin:0 0 8px;color:#33505a;font-size:14px">Depois do prazo, o livro passa a SUSPENSO e deixa de estar disponível na montra. Os ficheiros, metadados e o histórico financeiro ficam guardados. Pode reactivar comprando novo crédito ou aderindo a um plano mensal.</p>'
+    : '<p style="margin:0 0 8px;color:#33505a;font-size:14px">Renove antes do fim do período. Se a cobrança falhar, existe uma tolerância de 3 dias antes de as obras serem suspensas.</p>';
+  const html = layout({
+    title: isCredit ? 'A publicação está a terminar' : 'A sua assinatura está a terminar',
+    intro,
+    cta: link,
+    ctaLabel: isCredit ? 'Ver créditos' : 'Renovar plano',
+    extra,
+    footer: 'Kulera+ · aviso automático de expiração',
+  });
+  return {
+    subject: isCredit
+      ? `A publicação de "${title}" termina em ${hoursLeft}h — Kulera+`
+      : `A sua assinatura expira em ${hoursLeft}h — Kulera+`,
+    html,
+    text: isCredit
+      ? `A publicação de "${title}" termina em ${hoursLeft} horas${when ? ' (' + when + ')' : ''}. ${link}`
+      : `A sua assinatura "${title}" expira em ${hoursLeft} horas${when ? ' (' + when + ')' : ''}. ${link}`,
+  };
+}
+
 export function announcementEmail({ title, author, priceMinor, currency, link, email, coverUrl }) {
   const price = priceMinor != null ? money(priceMinor, currency) : '';
   const html = layout({

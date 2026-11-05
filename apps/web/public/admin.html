@@ -230,7 +230,8 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
       <!-- TAB 4: PLANOS -->
       <div id="tab-plans" class="tab-content">
         <div class="pane-title">Planos de Subscrição Mensal</div>
-        <div class="pane-sub">Configuração dos planos oficiais (Básico 3.000 MT, Profissional 5.000 MT, Premium 7.000 MT), limites de publicação e prioridade na montra.</div>
+        <div class="pane-sub">Configuração dos planos oficiais (Básico 500 MT · 2 livros, Padrão 2.500 MT · 15 livros, Premium 7.500 MT · ilimitado), limites de publicação e prioridade na montra.</div>
+        <div class="row" style="margin:8px 0 12px"><button type="button" class="btn-secondary" id="runMaintenance">Executar manutenção diária (expirações + avisos)</button></div>
         <div class="table-card"><div class="table-wrap"><table id="plans"></table></div></div>
 
         <div class="form-card" style="margin-top:16px">
@@ -247,11 +248,11 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
           <h3>Configurar Plano</h3>
           <form class="f" id="planForm">
             <input type="hidden" name="id">
-            <div class="row"><label>Código do Plano<input name="code" required placeholder="ex: basic, pro, premium"></label><label>Nome Apresentado<input name="name" required placeholder="ex: Básico, Profissional"></label></div>
+            <div class="row"><label>Código do Plano<input name="code" required placeholder="ex: basic, pro, premium"></label><label>Nome Apresentado<input name="name" required placeholder="ex: Básico, Padrão"></label></div>
             <label>Descrição detalhada dos benefícios<input name="description" placeholder="ex: Até 3 publicações mensais · Posição normal"></label>
             <div class="row">
               <label>Preço Mensal (MZN)<input name="price" type="number" min="0" step="0.01" required></label>
-              <label>Limite Publicações / Mês <small>(vazio = ilimitado)</small><input name="maxPublications" type="number" min="1" placeholder="ex: 3, 10"></label>
+              <label>Limite de Livros Activos <small>(vazio = ilimitado)</small><input name="maxPublications" type="number" min="1" placeholder="ex: 2, 15"></label>
             </div>
             <div class="row">
               <label>Prioridade na Montra <small>(1=normal, 2=prioritário, 3=topo)</small><input name="showcasePriority" type="number" min="0" max="10" value="1"></label>
@@ -453,6 +454,8 @@ async function load(){
     ['Total de Vendas Pagas', T.paid],
     ['Volume Bruto Faturado', fmt(T.paid_minor)],
     ['Receita Kulera+', fmt(T.kulera_minor)],
+    ['Receita líquida Kulera+ (após gateway)', fmt(T.app_net_minor || 0)],
+    ['Custos Gateway (7%)', fmt(T.gateway_minor || 0)],
     ['Saldo a Pagar a Parceiros', fmt(T.partners_minor)],
     ['Taxas Publicação Recebidas', fmt(T.fees_minor || 0)],
     ['Pagamentos Pendentes', T.open_orders]
@@ -579,7 +582,10 @@ async function load(){
   fill($('subsList'), ['Parceiro / Titular', 'Telefone', 'Plano', 'Início', 'Término', 'Estado', 'Ações'], j.subscriptions || [], s => {
     const tr = document.createElement('tr');
     const isExp = s.is_expired;
-    let stText = s.status === 'active' ? (isExp ? '⚠️ Expirado' : '✓ Activo') : (s.status === 'cancelled' ? '⛔ Bloqueado' : s.status);
+    const isPastDue = s.status === 'past_due';
+    let stText = s.status === 'active' ? (isExp ? '⚠️ Expirado' : '✓ Activo')
+      : isPastDue ? `⏳ Tolerância${s.grace_ends_at ? ' até ' + new Date(s.grace_ends_at).toLocaleDateString('pt-MZ') : ''}`
+      : (s.status === 'cancelled' ? '⛔ Bloqueado' : s.status);
     tr.append(
       cell(s.partner_name || s.buyer_name),
       cell(s.buyer_phone),
@@ -602,6 +608,31 @@ async function load(){
       if(res.ok) load(); else alert('Erro ao renovar plano.');
     };
     actionsTd.appendChild(btnRenew);
+
+    if (s.status === 'active' || isPastDue) {
+      const btnFail = document.createElement('button');
+      btnFail.type = 'button'; btnFail.className = 'btn-action'; btnFail.style.color = '#a00';
+      btnFail.textContent = 'Falha de cobrança';
+      btnFail.onclick = async () => {
+        if(!confirm(`Registar falha de cobrança para "${s.partner_name || s.buyer_name}"? Inicia tolerância de 3 dias.`)) return;
+        btnFail.disabled = true;
+        const res = await api({ action: 'subscription_status', id: s.id, actionType: 'payment_failed' });
+        if(res.ok) load(); else alert('Erro ao registar falha.');
+      };
+      actionsTd.appendChild(btnFail);
+    }
+    if (isPastDue || s.status === 'expired') {
+      const btnRecover = document.createElement('button');
+      btnRecover.type = 'button'; btnRecover.className = 'btn-action';
+      btnRecover.textContent = 'Regularizar (+30d)';
+      btnRecover.onclick = async () => {
+        if(!confirm(`Confirmar regularização de "${s.partner_name || s.buyer_name}" por mais 30 dias?`)) return;
+        btnRecover.disabled = true;
+        const res = await api({ action: 'subscription_status', id: s.id, actionType: 'payment_recovered', days: 30 });
+        if(res.ok) load(); else alert('Erro ao regularizar.');
+      };
+      actionsTd.appendChild(btnRecover);
+    }
 
     // Botão Bloquear / Desbloquear
     if(s.status === 'active'){
@@ -792,7 +823,7 @@ if (bookSel) {
 }
 const emailSum = $('emailSummary');
 if (emailSum) emailSum.textContent = j.emailReady
-  ? `Email configurado · remetente ${j.emailFrom || '—'} · respostas ${j.emailSupport || '—'} · ${j.subscribers || 0} subscritor(es) activos. Limite de anúncios por livro/mês: Básico 1×, Profissional 2×, Premium 4×.`
+  ? `Email configurado · remetente ${j.emailFrom || '—'} · respostas ${j.emailSupport || '—'} · ${j.subscribers || 0} subscritor(es) activos. Limite de anúncios por livro/mês: Básico 1×, Padrão 2×, Premium 4×.`
   : 'Email NÃO configurado neste deployment: falta RESEND_API_KEY ou o Redeploy depois de a adicionar.';
 fill($('promotions'), ['Data', 'Livro', 'Emails enviados'], j.promotions || [], p => {
   const tr = document.createElement('tr');
@@ -1213,6 +1244,22 @@ $('settingsForm').onsubmit = async e => {
   }
 };
 $('planReset').onclick = () => { $('planForm').reset(); $('planForm').id.value = ''; $('planMsg').textContent = ''; };
+$('runMaintenance').onclick = async () => {
+  const btn = $('runMaintenance');
+  if(!confirm('Executar agora a manutenção diária? Expira créditos, aplica a tolerância das assinaturas e envia avisos.')) return;
+  btn.disabled = true; const label = btn.textContent;
+  btn.textContent = 'A executar…';
+  try {
+    const res = await api({ action: 'run_maintenance' });
+    if (!res.ok) throw new Error(res.error || 'falha');
+    alert(`Manutenção concluída:\nAssinaturas: ${res.subscriptions?.pastDue || 0} em tolerância, ${res.subscriptions?.expired || 0} expiradas.\nLivros suspensos: ${res.subscriptions?.suspendedBooks || 0}.\nCréditos expirados: ${res.credits?.expired || 0}.\nAvisos 72h/24h: ${(res.subscriptions?.warnings72 || 0) + (res.creditWarnings?.warnings72 || 0)} / ${(res.subscriptions?.warnings24 || 0) + (res.creditWarnings?.warnings24 || 0)}.`);
+    load();
+  } catch {
+    alert('Erro ao executar a manutenção.');
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+};
 
 // Login form
 $('loginForm').addEventListener('submit', async e => {

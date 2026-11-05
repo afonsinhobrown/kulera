@@ -1,10 +1,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { pool } from './db.js';
 import { createPayment, resolvePaysuiteToken } from './paysuite.js';
-import { computeSplit } from './split.js';
-import { APP_BPS, EDITORS_BPS } from './pricing.js';
+import { computeNet, gatewayFee } from './split.js';
+import { APP_BPS, EDITORS_BPS, GATEWAY_BPS } from './pricing.js';
 import { ensureReaderSchema, topupBonus } from './reader.js';
 import { ensureCreditSchema, packByPrice } from './credits.js';
+import { ensureLifecycleSchema, markSubscriptionPaymentRecovered, resumePartnerBooks } from './lifecycle.js';
 
 // Em modo sandbox TODOS os pagamentos cobram 10 MT (1000 minor, = 10,00 MZN).
 export const SANDBOX_AMOUNT_MINOR = 1000;
@@ -48,6 +49,9 @@ export async function ensurePaymentSchema() {
     await pool.query(`alter table fair_sales add column if not exists editors_bps int not null default 1000`);
     await pool.query(`alter table fair_sales add column if not exists app_minor bigint`);
     await pool.query(`alter table fair_sales add column if not exists editors_minor bigint`);
+    await pool.query(`alter table fair_sales add column if not exists gateway_bps int not null default 700`);
+    await pool.query(`alter table fair_sales add column if not exists gateway_minor bigint`);
+    await pool.query(`alter table fair_sales add column if not exists app_net_minor bigint`);
     await pool.query(`create table if not exists fair_publication_fees (
       order_id uuid primary key references fair_orders (id),
       book_id uuid not null references fair_books (id) on delete cascade,
@@ -58,6 +62,7 @@ export async function ensurePaymentSchema() {
     )`);
     await ensureReaderSchema(pool);
     await ensureCreditSchema(pool);
+    await ensureLifecycleSchema(pool);
   } catch {}
   ensured = true;
 }
@@ -235,10 +240,12 @@ export async function settleOrderPaid(client, orderId, providerId = null) {
       days: 10,
       priceMinor: Number(x.list_amount_minor),
     };
+    const priceMinor = Number(x.list_amount_minor);
+    const gw = gatewayFee(priceMinor); // 7% suportado pela plataforma
     await client.query(
-      `insert into fair_partner_credits (partner_id, pack, price_minor, slots_total, slots_used, days)
-       values ($1,$2,$3,$4,0,$5)`,
-      [x.order_partner_id, pack.code, Number(x.list_amount_minor), pack.slots || 1, pack.days || 10],
+      `insert into fair_partner_credits (partner_id, pack, price_minor, gateway_minor, net_minor, slots_total, slots_used, days)
+       values ($1,$2,$3,$4,$5,$6,0,$7)`,
+      [x.order_partner_id, pack.code, priceMinor, gw, priceMinor - gw, pack.slots || 1, pack.days || 10],
     );
     return true;
   }
@@ -278,13 +285,13 @@ export async function settleOrderPaid(client, orderId, providerId = null) {
   } else if (x.book_id) {
     // Compra pode ter parte paga com saldo (wallet_minor) + parte na PaySuite (amount_minor).
     const gross = Number(x.amount_minor) + Number(x.wallet_minor || 0);
-    const sp = computeSplit(gross, !!x.partner_id);
+    const net = computeNet(gross, !!x.partner_id);
     const editorsBps = x.partner_id ? EDITORS_BPS : 10000 - APP_BPS;
     const commissionBps = APP_BPS + editorsBps;
     await client.query(
-      `insert into fair_sales (order_id, book_id, partner_id, gross_minor, commission_bps, commission_minor, partner_minor, app_bps, editors_bps, app_minor, editors_minor)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) on conflict do nothing`,
-      [orderId, x.book_id, x.partner_id, gross, commissionBps, sp.app + sp.editors, sp.partner, APP_BPS, editorsBps, sp.app, sp.editors],
+      `insert into fair_sales (order_id, book_id, partner_id, gross_minor, commission_bps, commission_minor, partner_minor, app_bps, editors_bps, app_minor, editors_minor, gateway_bps, gateway_minor, app_net_minor)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) on conflict do nothing`,
+      [orderId, x.book_id, x.partner_id, gross, commissionBps, net.app + net.editors, net.partner, APP_BPS, editorsBps, net.app, net.editors, GATEWAY_BPS, net.gateway, net.appNet],
     );
     if (Number(x.wallet_minor || 0) > 0) {
       await client.query(
@@ -305,15 +312,26 @@ export async function settleOrderPaid(client, orderId, providerId = null) {
     if (b) {
       await client.query('alter table fair_subscriptions add column if not exists partner_id uuid');
       const cur = b.partner_id
-        ? await client.query("select max(ends_at) e from fair_subscriptions where partner_id=$1 and status='active' and ends_at>now()", [b.partner_id])
+        ? await client.query(
+            `select id, ends_at from fair_subscriptions
+              where partner_id = $1 and status in ('active','past_due')
+                and ends_at > now() - interval '10 days'
+              order by ends_at desc limit 1 for update`,
+            [b.partner_id],
+          )
         : { rows: [] };
-      const start = cur.rows[0]?.e || null;
-      await client.query(
-        `insert into fair_subscriptions (buyer_name,buyer_phone,buyer_email,plan_id,order_id,status,starts_at,ends_at,partner_id)
-         values ($1,$2,$3,$4,$5,'active',coalesce($7::timestamptz,now()),coalesce($7::timestamptz,now())+($6)::interval,$8)
-         on conflict do nothing`,
-        [b.buyer_name, b.buyer_phone, b.buyer_email, x.plan_id, orderId, days + ' days', start, b.partner_id],
-      );
+      if (cur.rows[0]) {
+        // Renovação/regularização: mantém a mesma assinatura e limpa a tolerância.
+        await markSubscriptionPaymentRecovered(client, cur.rows[0].id, new Date(), days);
+      } else {
+        await client.query(
+          `insert into fair_subscriptions (buyer_name,buyer_phone,buyer_email,plan_id,order_id,status,starts_at,ends_at,partner_id)
+           values ($1,$2,$3,$4,$5,'active',now(),now()+($6)::interval,$7)
+           on conflict do nothing`,
+          [b.buyer_name, b.buyer_phone, b.buyer_email, x.plan_id, orderId, days + ' days', b.partner_id],
+        );
+        if (b.partner_id) await resumePartnerBooks(client, b.partner_id, new Date());
+      }
     }
   }
   return true;

@@ -39,7 +39,9 @@ form.f input{padding:10px;border:1.5px solid #9db3b0;border-radius:6px;font:inhe
   </div>
   <div class="grid" id="plans"><p style="text-align:center;color:#5b747c">A carregar planos...</p></div>
   <div class="notice">
-    <strong>Como funciona a subscrição?</strong> Os planos são mensais. Quanto maior o plano, mais livros pode publicar por mês e maior a prioridade de apresentação dos seus títulos na montra. O pagamento é feito via M-Pesa / e-Mola / Visa através da PaySuite.
+    <strong>Como funciona a subscrição?</strong> Os planos são mensais: Básico 500 MT (2 livros), Padrão 2.500 MT (15 livros) e Premium 7.500 MT (catálogo ilimitado). Quanto maior o plano, mais livros pode manter activos e maior a prioridade na montra. O pagamento é feito via M-Pesa / e-Mola / Visa através da PaySuite.
+    <br><br>
+    <strong>Prefere pagar só quando publica?</strong> Existem créditos temporários: Bronze 200 MT (1 livro · 10 dias), Prata 600 MT (2 livros · 15 dias) e Ouro 1.000 MT (5 livros · 20 dias). No fim do prazo, os livros ficam suspensos mas os ficheiros e o histórico são preservados.
   </div>
 
   <dialog id="dlg">
@@ -72,7 +74,7 @@ async function load(){
 
   plans.forEach(p => {
     const card = document.createElement('div');
-    const isFeatured = p.code === 'pro' || p.price_minor === 500000;
+    const isFeatured = p.code === 'pro' || p.price_minor === 250000;
     card.className = 'card' + (isFeatured ? ' featured' : '');
     if(isFeatured){ const t = document.createElement('span'); t.className='tag'; t.textContent='Mais popular'; card.appendChild(t); }
 
@@ -81,7 +83,7 @@ async function load(){
     pr.innerHTML = money(p.price_minor, p.currency) + ' <small>/ mês</small>';
 
     const ul = document.createElement('ul');
-    const pubTxt = p.max_publications ? `Até <strong>${p.max_publications} publicações</strong> por mês` : '<strong>Publicações ilimitadas</strong> por mês';
+    const pubTxt = p.max_publications ? `Até <strong>${p.max_publications} livros activos</strong> simultaneamente` : '<strong>Catálogo ilimitado</strong>';
     const prioTxt = p.showcase_priority >= 3 ? '<strong>Destaque máximo</strong> no topo da montra' : (p.showcase_priority >= 2 ? '<strong>Prioridade destacada</strong> na montra' : 'Posição normal na montra');
     ul.innerHTML = `<li>${pubTxt}</li><li>${prioTxt}</li><li>Relatórios de vendas em tempo real</li><li>Saques para M-Pesa / e-Mola / Banco</li>`;
 

@@ -61,6 +61,18 @@ async function q(sql, p = []) {
     return rows([]);
   }
   if (/^update fair_plans set status='archived'/i.test(s)) return rows([]);
+  if (/^update fair_plans set name=\$2/i.test(s)) {
+    const [code, name, description, price_minor, max_publications, showcase_priority, legacy] = p;
+    const plan = S.plans.find((x) => x.code === code);
+    if (plan && Array.isArray(legacy) && legacy.map(Number).includes(Number(plan.price_minor))) {
+      plan.name = name;
+      plan.description = description;
+      plan.price_minor = price_minor;
+      plan.max_publications = max_publications;
+      plan.showcase_priority = showcase_priority;
+    }
+    return rows([]);
+  }
   if (/^select id,code,name,description,price_minor,currency,interval,max_publications,showcase_priority from fair_plans/i.test(s)) {
     return rows(S.plans.filter((x) => x.status === 'active'));
   }
@@ -292,6 +304,15 @@ async function q(sql, p = []) {
   if (s.startsWith('select max(ends_at) e from fair_subscriptions')) {
     return rows([{ e: null }]);
   }
+  if (/^select s\.id as subscription_id, s\.starts_at, s\.ends_at/i.test(s)) {
+    return rows([]);
+  }
+  if (/^select id, ends_at from fair_subscriptions/i.test(s)) {
+    return rows(S.subscriptions.filter((x) => x.partner_id === p[0] && x.status === 'active'));
+  }
+  if (/^select p\.max_publications/i.test(s)) {
+    return rows([]);
+  }
   if (s.startsWith('insert into fair_subscriptions')) {
     S.subscriptions.push({
       id: 'sub_' + (S.subscriptions.length + 1),
@@ -303,8 +324,25 @@ async function q(sql, p = []) {
       status: 'active',
       starts_at: new Date().toISOString(),
       ends_at: new Date(Date.now() + 30 * 86400000).toISOString(),
-      partner_id: p[7],
+      partner_id: p[6],
+      grace_ends_at: null,
+      last_payment_failed_at: null,
     });
+    return rows([{}]);
+  }
+  if (/^update fair_subscriptions set status = 'active', grace_ends_at = null/i.test(s)) {
+    const sub = S.subscriptions.find((x) => x.id === p[0]);
+    if (sub) {
+      sub.status = 'active';
+      sub.grace_ends_at = null;
+      sub.last_payment_failed_at = null;
+      sub.warning_72h_sent_at = null;
+      sub.warning_24h_sent_at = null;
+      sub.ends_at = new Date(Date.now() + Number(p[2] || 30) * 86400000).toISOString();
+    }
+    return rows(sub ? [{ id: sub.id, status: sub.status, ends_at: sub.ends_at, partner_id: sub.partner_id }] : []);
+  }
+  if (s.startsWith('insert into fair_partner_credits')) {
     return rows([{}]);
   }
   if (

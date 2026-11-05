@@ -147,3 +147,65 @@ test('leitor: bónus de carregamento (10% a partir de 1.000 MT) e palavra-passe'
   assert.ok(!verifyHash('errada', h));
 });
 
+test('Revisão V3: planos mensais e créditos temporários', async () => {
+  const { DEFAULT_PLANS } = await import('../lib/plans.js');
+  assert.deepEqual(
+    DEFAULT_PLANS.map((p) => [p.code, p.name, p.price_minor, p.max_publications]),
+    [
+      ['basic', 'Básico', 50000, 2],
+      ['pro', 'Padrão', 250000, 15],
+      ['premium', 'Premium', 750000, null],
+    ],
+  );
+
+  const { CREDIT_PACKS, packByCode, packByPrice } = await import('../lib/credits.js');
+  assert.deepEqual(
+    CREDIT_PACKS.map((p) => [p.code, p.priceMinor, p.slots, p.days]),
+    [
+      ['bronze', 20000, 1, 10],
+      ['prata', 60000, 2, 15],
+      ['ouro', 100000, 5, 20],
+    ],
+  );
+  assert.equal(packByCode('bronze').slots, 1);
+  assert.equal(packByCode('p600').code, 'prata'); // código antigo continua válido
+  assert.equal(packByPrice(100000).slots, 5);
+});
+
+test('gateway 7%: o exemplo Bronze + venda dá 316 MT (26,3% do fluxo)', async () => {
+  const { gatewayFee, computeNet } = await import('../lib/split.js');
+  assert.equal(gatewayFee(20000), 1400); // 200 MT -> 14 MT
+  assert.equal(gatewayFee(100000), 7000); // 1.000 MT -> 70 MT
+
+  const bronzeNet = 20000 - gatewayFee(20000); // 186 MT
+  const sale = computeNet(100000, true); // comissão 20% = 200 MT
+  assert.equal(sale.app, 20000);
+  assert.equal(sale.gateway, 7000);
+  assert.equal(sale.appNet, 13000); // 130 MT depois do gateway
+  const combined = bronzeNet + sale.appNet;
+  assert.equal(combined, 31600);
+  assert.ok(Math.abs((combined / 120000) * 100 - 26.333) < 0.01);
+});
+
+test('tolerância de 3 dias, cobertura durante a tolerância e avisos 72h/24h', async () => {
+  const { addDays, graceDeadline, warningDue, subscriptionCovers } = await import('../lib/lifecycle.js');
+  const now = new Date('2026-11-05T12:00:00Z');
+  assert.equal(graceDeadline(now).toISOString(), '2026-11-08T12:00:00.000Z');
+
+  assert.ok(subscriptionCovers({ status: 'active', ends_at: addDays(now, 1) }, now));
+  assert.ok(
+    subscriptionCovers(
+      { status: 'past_due', ends_at: addDays(now, -1), grace_ends_at: addDays(now, 2) },
+      now,
+    ),
+  );
+  assert.ok(!subscriptionCovers({ status: 'expired', ends_at: addDays(now, -1) }, now));
+  assert.ok(!subscriptionCovers({ status: 'past_due', ends_at: addDays(now, -1), grace_ends_at: addDays(now, -1) }, now));
+
+  assert.equal(warningDue(addDays(now, 3), now), 72);
+  assert.equal(warningDue(addDays(now, 0.5), now), 24);
+  assert.equal(warningDue(addDays(now, -1), now), null);
+  assert.equal(warningDue(addDays(now, 3), now, { h72: true }), null);
+  assert.equal(warningDue(addDays(now, 0.5), now, { h24: true }), null);
+});
+

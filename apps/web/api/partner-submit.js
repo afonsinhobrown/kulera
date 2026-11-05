@@ -102,7 +102,7 @@ export default async function handler(req,res){
       if(!pay.ok)return res.status(502).json({error:"payment_unavailable", detail: pay.errorDetail});
       return res.json({ok:true,checkoutUrl:pay.checkoutUrl,amountMinor:pay.amountMinor,sandbox:pay.sandbox,simulated:Boolean(pay.simulated)});
     }
-    // Publicar exige plano activo OU créditos de publicação; o plano tem limite mensal.
+    // Publicar exige plano activo OU créditos de publicação; o plano limita os livros activos.
     const plan = await activePlan(pid);
     const credit = await availableCredit(pool, pid).catch(()=>null);
     if(!plan && !credit)return res.status(402).json({error:"no_plan"});
