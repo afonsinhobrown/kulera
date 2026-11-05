@@ -357,6 +357,17 @@ async function action(b) {
 // Painel da Kulera. A chave é lida da base de dados (tabela fair_settings, chave 'admin_key', default: 'kulera').
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
+  // Cron diário da Vercel (chega como GET com Authorization: Bearer <CRON_SECRET>).
+  const cronSecret = String(process.env.CRON_SECRET || '').trim();
+  const auth = String(req.headers?.authorization || '');
+  if (req.method === 'GET' && cronSecret && auth === `Bearer ${cronSecret}`) {
+    try {
+      return res.json({ ok: true, ...(await runDailyMaintenance(pool, new Date())) });
+    } catch (e) {
+      console.error('cron.error', e?.message || String(e));
+      return res.status(500).json({ ok: false, error: 'internal_error' });
+    }
+  }
   const expectedKey = await getAdminKeyFromDb();
   const provided = req.headers?.['x-admin-key'];
   if (!sameKey(provided, expectedKey)) {
