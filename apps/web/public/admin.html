@@ -402,10 +402,19 @@ $('logoutBtn').onclick = () => {
   }
 };
 
-// Sandbox toggle - controlado apenas por variável de ambiente SANDBOX=true
+// Sandbox toggle
 async function toggleSandbox(forceVal){
-  alert('O Modo Sandbox é controlado exclusivamente pela variável de ambiente SANDBOX=true no servidor (Vercel/Deployment).\nNão pode ser alterado pelo painel administrativo.');
-  return;
+  const current = DATA?.sandbox === true;
+  const next = forceVal !== undefined ? forceVal : !current;
+  const promptTxt = next
+    ? 'Ativar MODO SANDBOX?\n\nTodos os pagamentos no site cobrarão apenas 10.00 MZN para testes reais na PaySuite.'
+    : 'Desativar MODO SANDBOX e voltar aos preços reais de tabela?';
+  if(!confirm(promptTxt)) return;
+  const { ok, j } = await api({ action: 'set_sandbox', enabled: next });
+  if(ok){
+    DATA.sandbox = j.sandbox;
+    renderSandbox(j.sandbox);
+  }
 }
 $('sandboxToggle').onclick = () => toggleSandbox();
 
@@ -413,17 +422,10 @@ function renderSandbox(isSandbox){
   const b = $('sandboxToggle'), txt = $('sandboxStatusText'), alert = $('sandboxAlert');
   if(isSandbox){
     b.className = 'sandbox-badge active';
-    b.style.opacity = '0.6';
-    b.style.cursor = 'not-allowed';
-    b.title = 'Controlado por variável de ambiente SANDBOX=true';
-    txt.textContent = 'ATIVO (10 MT) — via ENV';
+    txt.textContent = 'ATIVO (10 MT)';
     alert.hidden = false;
-    alert.querySelector('button').hidden = true;
   } else {
     b.className = 'sandbox-badge inactive';
-    b.style.opacity = '1';
-    b.style.cursor = 'pointer';
-    b.title = 'Sandbox desactivado (configure SANDBOX=true no servidor para activar)';
     txt.textContent = 'Desactivado';
     alert.hidden = true;
   }

@@ -159,9 +159,8 @@ async function action(b) {
       return [200,{ok:true,id:r.rows[0].id}];
     }
     case 'set_sandbox': {
-      // Sandbox é controlado apenas por variável de ambiente SANDBOX=true
-      // Não pode ser alterado via painel admin.
-      return [200, { ok: true, sandbox: await isSandbox(), message: 'Sandbox é controlado apenas por variável de ambiente (SANDBOX=true).' }];
+      await setSandbox(b.enabled === true || b.enabled === 'true');
+      return [200, { ok: true, sandbox: await isSandbox() }];
     }
     case 'approve_device_request': {
       if (!uuid(b.id)) return [400, { error: 'invalid' }];

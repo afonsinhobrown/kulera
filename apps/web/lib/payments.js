@@ -67,16 +67,20 @@ export async function ensurePaymentSchema() {
   ensured = true;
 }
 
-// Sandbox controlado EXCLUSIVAMENTE por variável de ambiente (SANDBOX=true).
-// Não há toggle no painel, não há persistência em BD.
 export async function isSandbox() {
+  await ensurePaymentSchema();
+  const r = await pool.query("select value from fair_settings where key='sandbox'");
+  if (r.rows[0]?.value !== undefined) return r.rows[0].value === 'true';
   return process.env.SANDBOX === 'true';
 }
 
-// Função mantida para compatibilidade (no-op), mas não faz nada.
-export async function setSandbox(_on) {
-  // sandbox é apenas via ENV — ignorar tentativas de alterar via BD
-  return;
+export async function setSandbox(on) {
+  await ensurePaymentSchema();
+  await pool.query(
+    `insert into fair_settings (key,value,updated_at) values ('sandbox',$1,now())
+     on conflict (key) do update set value=excluded.value, updated_at=now()`,
+    [on ? 'true' : 'false'],
+  );
 }
 
 export async function getPaysuiteTokenFromDb() {
