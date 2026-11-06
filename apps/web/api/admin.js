@@ -361,15 +361,8 @@ export default async function handler(req, res) {
       return res.status(500).json({ ok: false, error: 'internal_error' });
     }
   }
-  // Aceita a chave guardada na base de dados (default: 'kulera') e, por
-  // compatibilidade, a ADMIN_KEY configurada nas variáveis de ambiente.
-  let expectedKey = 'kulera';
-  try { expectedKey = await getAdminKeyFromDb(); } catch {}
-  const envKey = String(process.env.ADMIN_KEY || '').trim();
-  const provided = req.headers?.['x-admin-key'];
-  if (!sameKey(provided, expectedKey) && !(envKey && sameKey(provided, envKey))) {
-    return res.status(401).json({ error: 'unauthorized' });
-  }
+  // Sem exigência de chave de admin: o painel está aberto para quem aceder ao domínio.
+  // (Se quiseres reativar, restaure o check de sameKey contra getAdminKeyFromDb().)
   try {
     await ensurePaymentSchema();
     if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
