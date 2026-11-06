@@ -355,7 +355,11 @@ let KEY = sessionStorage.getItem('kulera_admin_key') || '', DATA = null, content
 
 const fmt = m => (m/100).toLocaleString('pt-MZ', { minimumFractionDigits: 2 }) + ' MZN';
 const cell = v => { const td = document.createElement('td'); td.textContent = v ?? ''; return td; };
-const api = body => fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify(body) }).then(async r => ({ ok: r.ok, j: await r.json() }));
+const api = body => fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify(body) }).then(async r => {
+  const j = await r.json().catch(() => ({}));
+  if(r.status === 401){ forceLogout('A sua sessão expirou. Introduza novamente a chave de administração.'); return { ok: false, auth: true, j }; }
+  return { ok: r.ok, j };
+});
 
 function fill(t, heads, rows, make){
   t.innerHTML = '';
@@ -384,16 +388,22 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
 // Logout
 $('logoutBtn').onclick = () => {
   if(confirm('Terminar sessão de administração?')){
-    sessionStorage.removeItem('kulera_admin_key');
-    KEY = '';
-    DATA = null;
-    if(LOAD_INTERVAL){ clearInterval(LOAD_INTERVAL); LOAD_INTERVAL = null; }
-    $('app').hidden = true;
-    $('login').hidden = false;
-    $('key').value = '';
-    $('err').textContent = '';
+    forceLogout('');
   }
 };
+
+// Quando o servidor recusa a chave (401), volta ao ecrã de login em vez de
+// deixar o painel aberto com dados antigos.
+function forceLogout(message){
+  sessionStorage.removeItem('kulera_admin_key');
+  KEY = '';
+  DATA = null;
+  if(LOAD_INTERVAL){ clearInterval(LOAD_INTERVAL); LOAD_INTERVAL = null; }
+  $('app').hidden = true;
+  $('login').hidden = false;
+  $('key').value = '';
+  $('err').textContent = message || '';
+}
 
 // Sandbox toggle
 async function toggleSandbox(forceVal){
@@ -403,12 +413,12 @@ async function toggleSandbox(forceVal){
     ? 'Ativar MODO SANDBOX?\n\nTodos os pagamentos no site cobrarão apenas 10.00 MZN para testes reais na PaySuite.'
     : 'Desativar MODO SANDBOX e voltar aos preços reais de tabela?';
   if(!confirm(promptTxt)) return;
-  const { ok, j } = await api({ action: 'set_sandbox', enabled: next });
+  const { ok, j, auth } = await api({ action: 'set_sandbox', enabled: next });
   if(ok){
     DATA.sandbox = j.sandbox;
     renderSandbox(j.sandbox);
     if(!next){ $('sandboxAlert').hidden=true; alert('Modo Sandbox DESATIVADO. Pagamentos voltam aos preços reais.'); }
-  } else {
+  } else if(!auth) {
     alert('Erro ao alterar sandbox. Verifique se está autenticado como Admin e tente novamente.');
   }
 }
@@ -430,7 +440,8 @@ function renderSandbox(isSandbox){
 async function load(){
   const r = await fetch('/api/admin', { cache: 'no-store', headers: { 'x-admin-key': KEY } });
   if(!r.ok){
-    if(LOAD_INTERVAL){ clearInterval(LOAD_INTERVAL); LOAD_INTERVAL = null; }
+    if(r.status === 401) forceLogout('A sua sessão expirou. Introduza novamente a chave de administração.');
+    else if(LOAD_INTERVAL){ clearInterval(LOAD_INTERVAL); LOAD_INTERVAL = null; }
     throw new Error(r.status === 401 ? 'auth' : 'server');
   }
   const j = await r.json();
@@ -1261,6 +1272,7 @@ $('loginForm').addEventListener('submit', async e => {
 
 async function csv(t){
   const r = await fetch('/api/admin?format=csv&type=' + t, { cache: 'no-store', headers: { 'x-admin-key': KEY } });
+  if(r.status === 401){ forceLogout('A sua sessão expirou. Introduza novamente a chave de administração.'); return; }
   const b = await r.blob();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(b);

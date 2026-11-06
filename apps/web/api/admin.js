@@ -361,9 +361,13 @@ export default async function handler(req, res) {
       return res.status(500).json({ ok: false, error: 'internal_error' });
     }
   }
-  const expectedKey = await getAdminKeyFromDb();
+  // Aceita a chave guardada na base de dados (default: 'kulera') e, por
+  // compatibilidade, a ADMIN_KEY configurada nas variáveis de ambiente.
+  let expectedKey = 'kulera';
+  try { expectedKey = await getAdminKeyFromDb(); } catch {}
+  const envKey = String(process.env.ADMIN_KEY || '').trim();
   const provided = req.headers?.['x-admin-key'];
-  if (!sameKey(provided, expectedKey)) {
+  if (!sameKey(provided, expectedKey) && !(envKey && sameKey(provided, envKey))) {
     return res.status(401).json({ error: 'unauthorized' });
   }
   try {
