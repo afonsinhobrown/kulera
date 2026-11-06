@@ -361,8 +361,15 @@ export default async function handler(req, res) {
       return res.status(500).json({ ok: false, error: 'internal_error' });
     }
   }
-  // Sem exigência de chave de admin: o painel está aberto para quem aceder ao domínio.
-  // (Se quiseres reativar, restaure o check de sameKey contra getAdminKeyFromDb().)
+  // Autenticação: compara a chave enviada com a guardada na base de dados
+  // (tabela fair_settings, chave 'admin_key', default: 'kulera').
+  let expectedKey = 'kulera';
+  try { expectedKey = await getAdminKeyFromDb(); } catch {}
+  const envKey = String(process.env.ADMIN_KEY || '').trim();
+  const provided = req.headers?.['x-admin-key'] || '';
+  if (!sameKey(provided, expectedKey) && !(envKey && sameKey(provided, envKey))) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
   try {
     await ensurePaymentSchema();
     if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
