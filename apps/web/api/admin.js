@@ -498,6 +498,7 @@ export default async function handler(req, res) {
       sandbox, paysuiteTokenHint });
   } catch (e) {
     console.error('admin.error', e?.message || String(e));
+    console.error('admin.error.stack', e?.stack);
     return res.status(500).json({ error: 'internal_error' });
   }
 }
