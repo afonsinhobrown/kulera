@@ -124,7 +124,7 @@ async function load(){
   if(!b){$('info').innerHTML='<p class="msg err">Livro não encontrado.</p>'; $('form').hidden=true; return;}
   const hasD=b.hasDigital!==false, hasP=b.hasPhysical===true||b.requiresShipping===true;
   // Verificar stock para livros físicos
-  const hasStock = hasP && (b.stock == null || Number(b.stock) > 0);
+  const hasStock = hasP && (b.stock != null && Number(b.stock) > 0);
   if(requestedFmt==='physical' && hasStock) fmt='physical';
   else if(requestedFmt==='digital' && hasD) fmt='digital';
   else fmt=hasD?'digital':(hasStock?'physical':'digital');
@@ -150,6 +150,7 @@ async function load(){
     const im=document.createElement('img');
     im.src=src;
     im.alt='Capa de '+b.title;
+    im.style.cssText='width:100%;height:100%;object-fit:cover;object-position:center center;display:block;margin:0 auto';
     im.onerror=()=>showFallback();
     cv.appendChild(im);
   } else {
@@ -225,6 +226,13 @@ async function load(){
     e.preventDefault();const fd=new FormData(e.target),msg=$('msg'),btn=$('go');
     msg.className='msg';msg.textContent='';
     if(fmt==='physical'){
+      const curStock = (b && b.stock != null) ? Number(b.stock) : 0;
+      if(curStock <= 0){
+        msg.className = 'msg err';
+        msg.textContent = 'Este livro físico está esgotado e não pode ser encomendado.';
+        btn.disabled = true;
+        return;
+      }
       const addr=String(fd.get('shippingAddress')||'').trim();
       const city=String(fd.get('shippingCity')||'').trim();
       if(addr.length<5){
@@ -244,7 +252,14 @@ async function load(){
     try{
       const useMinor=wallet?Math.round(Math.max(0,Math.min(Number(fd.get('useBalance')||0),wallet.balance/100,priceFor(fmt)/100))*100):0;
       const body={bookId:b.id,format:fmt,name:fd.get('name'),phone:fd.get('phone'),email:fd.get('email'),marketing:fd.get('marketing')==='on',readerToken:wallet?wallet.token:undefined,useBalanceMinor:useMinor};
-      if(fmt==='physical'){body.shippingName=fd.get('shippingName')||fd.get('name');body.shippingPhone=fd.get('shippingPhone')||fd.get('phone');body.shippingAddress=fd.get('shippingAddress');body.shippingCity=fd.get('shippingCity');}
+      if(fmt==='physical'){
+      const curStock = (b && b.stock != null) ? Number(b.stock) : 0;
+      if(curStock <= 0){
+        msg.className = 'msg err';
+        msg.textContent = 'Este livro físico está esgotado e não pode ser encomendado.';
+        btn.disabled = true;
+        return;
+      }body.shippingName=fd.get('shippingName')||fd.get('name');body.shippingPhone=fd.get('shippingPhone')||fd.get('phone');body.shippingAddress=fd.get('shippingAddress');body.shippingCity=fd.get('shippingCity');}
       const rr=await fetch('/api/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const j=await rr.json();
       if(!rr.ok){const er=new Error(j.error||'payment_unavailable');er.detail=j.detail;throw er;}

@@ -86,7 +86,7 @@ function bookShareUrl(b){
 function bookSharePrices(b){
   const hasD = b.hasDigital !== false;
   const hasP = b.hasPhysical === true || b.requiresShipping === true;
-  const hasStock = hasP && (b.stock == null || Number(b.stock) > 0);
+  const hasStock = hasP && (b.stock != null && Number(b.stock) > 0);
   const parts = [];
   if(hasD) parts.push('E-book ' + money(b.digitalPriceMinor ?? b.priceMinor, b.currency));
   if(hasStock) parts.push('Físico ' + money(b.physicalPriceMinor ?? b.priceMinor, b.currency));
@@ -142,6 +142,10 @@ function makeCoverElement(book, maxWidth){
     im.src=src;
     im.alt='Capa de '+(book.title||'livro');
     im.loading='lazy';
+    im.style.objectFit='cover';
+    im.style.objectPosition='center center';
+    im.style.display='block';
+    im.style.margin='0 auto';
     im.onerror=()=>setPlaceholder();
     cv.appendChild(im);
   } else {
@@ -162,7 +166,7 @@ fetch('/api/books?_='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(list
     const a=document.createElement('p');a.textContent=b.author;
     const hasD = b.hasDigital !== false;
     const hasP = b.hasPhysical === true || b.requiresShipping === true;
-    const hasStock = hasP && (b.stock == null || Number(b.stock) > 0);
+    const hasStock = hasP && (b.stock != null && Number(b.stock) > 0);
     const badge = document.createElement('p'); badge.style.fontSize='13px'; badge.style.fontWeight='600'; badge.style.color = hasP ? '#7a3b00' : '#0b5c63';
     badge.textContent = [hasD?'E-book':null,hasStock?'Físico':(hasP?'Físico (Esgotado)':null)].filter(Boolean).join(' + ') + (hasStock?' • Entrega':(hasD?' • Digital':''));
     const p=document.createElement('div');p.className='prices';
@@ -173,7 +177,16 @@ fetch('/api/books?_='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(list
       const s=document.createElement('span');s.textContent='Físico';const bb=document.createElement('b');bb.textContent='Esgotado';bb.style.color='#b02a37';s.appendChild(bb);p.appendChild(s);
     }
     const act=document.createElement('div');act.className='card-actions';
-    const btn=document.createElement('button');btn.type='button';btn.textContent='Comprar';btn.onclick=()=>choose(b);
+        const btn=document.createElement('button');btn.type='button';
+    if(hasP && !hasD && !hasStock){
+      btn.textContent='Esgotado';
+      btn.disabled=true;
+      btn.style.opacity='0.6';
+      btn.style.cursor='not-allowed';
+    } else {
+      btn.textContent='Comprar';
+      btn.onclick=()=>choose(b);
+    }
     const shBtn=document.createElement('button');shBtn.type='button';shBtn.className='btn-share';shBtn.title='Partilhar este livro';shBtn.textContent='🔗';
     shBtn.onclick=(e)=>{e.stopPropagation();choose(b,false);shareBook(b,$('shareFeedback'));};
     act.append(btn,shBtn);
@@ -190,7 +203,7 @@ function choose(b,scroll=true){
   current=b;
   const hasD=b.hasDigital!==false,hasP=b.hasPhysical===true||b.requiresShipping===true;
   // Verificar stock para livros físicos
-  const hasStock = hasP && (b.stock == null || Number(b.stock) > 0);
+  const hasStock = hasP && (b.stock != null && Number(b.stock) > 0);
   const parts=[hasD?'Digital: '+money(b.digitalPriceMinor??b.priceMinor,b.currency):null,hasStock?'Físico (c/ entrega): '+money(b.physicalPriceMinor??b.priceMinor,b.currency):(hasP?'Físico (Esgotado)':null)].filter(Boolean);
   $('buy').hidden=false;
   const covBox=$('bCover');

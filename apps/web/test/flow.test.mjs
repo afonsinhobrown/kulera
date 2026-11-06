@@ -340,6 +340,23 @@ assert.equal(lastOrder.type, 'physical');
 assert.equal(lastOrder.shipping_address, 'Av. Julius Nyerere 123, Polana');
 assert.equal(lastOrder.shipping_city, 'Maputo');
 
+// Venda física com stock 0 deve falhar com 400 out_of_stock
+S.books.find((b) => b.id === U + '11').stock = 0;
+const physZeroStock = await call(checkout, {
+  method: 'POST',
+  body: {
+    bookId: U + '11',
+    format: 'physical',
+    name: 'Carlos',
+    phone: '841234567',
+    shippingAddress: 'Av. Julius Nyerere 123, Polana',
+    shippingCity: 'Maputo',
+  },
+});
+assert.equal(physZeroStock.code, 400);
+assert.equal(physZeroStock.body.error, 'out_of_stock');
+S.books.find((b) => b.id === U + '11').stock = 4;
+
 // 9. Validações e protecções de catálogo
 for (const id of [U + '13', U + '14', U + '99']) {
   assert.equal((await call(checkout, { method: 'POST', body: { ...body, bookId: id } })).code, 404);

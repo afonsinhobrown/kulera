@@ -62,7 +62,7 @@
         <label>Autor<input name="author" required maxlength="200"></label>
         <label>Sinopse<textarea name="description" rows="3" maxlength="2000"></textarea></label>
         <div class="row"><label>Idioma<input name="language" value="pt"></label><label>Capa (Imagem)<input type="file" id="coverFile" accept="image/*"></label></div>
-        <label>Ou Link da Capa (URL opcional)<input name="coverUrl" id="pCoverUrl" placeholder="https://..."></label>
+        <label>Ou Link da Capa (URL opcional) <small>— também pode colar uma imagem com Ctrl+V</small><input name="coverUrl" id="pCoverUrl" placeholder="https://..."></label>
         <div id="pCoverPreview"></div>
         <label>Ficheiro do Livro (.docx ou HTML)<input type="file" id="file" accept=".docx,.html,.htm"></label>
         <p class="msg" id="fmsg"></p>
@@ -234,13 +234,12 @@ function renderPartnerCoverPreview(){
   const box=$('pCoverPreview'); if(!box) return; box.innerHTML='';
   const v=($('pCoverUrl')?.value||'').trim(); if(!v) return;
   const im=document.createElement('img'); im.src=v; im.alt='Capa';
-  im.style.cssText='width:90px;height:135px;object-fit:cover;border-radius:6px;border:1px solid #9db3b0;display:block';
+  im.style.cssText='width:90px;height:135px;object-fit:cover;object-position:center center;border-radius:6px;border:1px solid #9db3b0;display:block;margin:8px auto 0';
   im.onerror=()=>{box.innerHTML='<small style="color:#a3261f">Não foi possível pré-visualizar a imagem deste link.</small>';};
   box.appendChild(im);
 }
-if($('pCoverUrl')) $('pCoverUrl').oninput=renderPartnerCoverPreview;
-if($('coverFile')) $('coverFile').onchange=e=>{
-  const file=e.target.files?.[0]; if(!file||!file.type.startsWith('image/'))return;
+function processPartnerCoverFile(file){
+  if(!file||!file.type.startsWith('image/'))return;
   const reader=new FileReader();
   reader.onload=()=>{
     const im=new Image();
@@ -255,7 +254,20 @@ if($('coverFile')) $('coverFile').onchange=e=>{
     im.src=reader.result;
   };
   reader.readAsDataURL(file);
-};
+}
+if($('pCoverUrl')){
+  $('pCoverUrl').oninput=renderPartnerCoverPreview;
+  $('pCoverUrl').addEventListener('paste',e=>{
+    const items=e.clipboardData?.items||[];
+    for(const item of items){
+      if(item.type&&item.type.startsWith('image/')){
+        const file=item.getAsFile();
+        if(file){e.preventDefault();processPartnerCoverFile(file);return;}
+      }
+    }
+  });
+}
+if($('coverFile')) $('coverFile').onchange=e=>{ processPartnerCoverFile(e.target.files?.[0]); };
 $('#reg').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-auth',{action:'register',name:f.name.value,kind:f.kind.value,phone:f.phone.value,email:f.email.value,password:f.password.value});const map={exists:'Já existe uma conta com este email. Use “Entrar”.',partner_exists:'Já existe uma conta para esta editora/escritor. Entre com o email do primeiro registo; se não tiver acesso, fale connosco.',invalid:'Verifique os dados (email válido e palavra-passe com 6+ caracteres).'};$('rmsg').textContent=ok?(j.pending?'Conta criada. Confirme o email (enviámos um link) para poder entrar.':'Conta criada ✅ Já pode entrar com o email e a palavra-passe.'):(map[j.error]||'Não foi possível criar a conta.');$('rmsg').className=ok?'msg':'msg err';if(ok&&!j.pending){const le=document.querySelector('#login input[name="email"]');if(le)le.value=f.email.value;const lp=document.querySelector('#login input[name="password"]');if(lp)lp.focus();}};
 $('#login').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-auth',{action:'login',email:f.email.value,password:f.password.value});if(ok){TOK=j.token;localStorage.setItem('ptok',TOK);loadMe();return;}if(j.error==='unverified'){$('lmsg').innerHTML='Confirme o email antes de entrar. <a href="#" id="resendP">Reenviar link</a>.';const rl=$('resendP');if(rl)rl.onclick=async ev=>{ev.preventDefault();await call('/api/status',{action:'resend_verification',email:f.email.value});$('lmsg').textContent='Se estiver pendente, enviámos um novo link.';};$('lmsg').className='msg err';return;}$('lmsg').textContent='Credenciais inválidas.';$('lmsg').className='msg err';};
 $('#sub').onsubmit=async e=>{e.preventDefault();const f=e.target;const {ok,j}=await call('/api/partner-submit',{title:f.title.value,author:f.author.value,description:f.description.value,language:f.language.value,coverUrl:f.coverUrl.value,contentHtml});

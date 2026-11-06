@@ -63,13 +63,19 @@ export default async function handler(req, res) {
 
   if (!isPhysical && !book.content_html) return res.status(404).json({ error: 'book_unavailable' });
   if (isPhysical) {
-    if (book.stock != null && Number(book.stock) <= 0) return res.status(404).json({ error: 'book_unavailable' });
+    const physicalStock = book.stock != null ? Number(book.stock) : 0;
+    if (physicalStock <= 0) {
+      return res.status(400).json({ error: 'out_of_stock', detail: 'Este exemplar físico está esgotado.' });
+    }
     if (!shippingAddress || shippingAddress.length < 5) return res.status(400).json({ error: 'invalid_address' });
   }
 
   const listMinor = isPhysical ? Number(book.price_physical_minor ?? book.price_minor) : Number(book.price_minor);
-  if (isPhysical && book.stock != null) {
-    await pool.query('update fair_books set stock = stock - 1 where id = $1 and stock >= 1', [book.id]);
+  if (isPhysical) {
+    const updated = await pool.query('update fair_books set stock = stock - 1 where id = $1 and coalesce(stock, 0) >= 1', [book.id]);
+    if (updated.rowCount === 0) {
+      return res.status(400).json({ error: 'out_of_stock', detail: 'Este exemplar físico acabou de esgotar.' });
+    }
   }
 
   // Saldo do leitor (só com sessão): pode pagar tudo ou parte; o resto vai para a PaySuite.
