@@ -1,8 +1,10 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { pool } from './db.js';
 import { createPayment, resolvePaysuiteToken } from './paysuite.js';
-import { computeNet, gatewayFee } from './split.js';
-import { APP_BPS, EDITORS_BPS, GATEWAY_BPS } from './pricing.js';
+import { gatewayFee, splitSale } from './split.js';
+import { ensureFinanceSchema, postSale, resolveSaleScenario } from './finance.js';
+import { ensureWithdrawalSchema } from './withdrawals.js';
+import { GATEWAY_BPS } from './pricing.js';
 import { ensureReaderSchema, topupBonus } from './reader.js';
 import { ensureCreditSchema, packByPrice } from './credits.js';
 import { ensureLifecycleSchema, markSubscriptionPaymentRecovered, resumePartnerBooks } from './lifecycle.js';
@@ -65,6 +67,8 @@ export async function ensurePaymentSchema() {
     await ensureReaderSchema(pool);
     await ensureCreditSchema(pool);
     await ensureLifecycleSchema(pool);
+    await ensureFinanceSchema(pool);
+    await ensureWithdrawalSchema(pool);
   } catch {}
   ensured = true;
 }
@@ -83,38 +87,6 @@ export async function setSandbox(on) {
      on conflict (key) do update set value=excluded.value, updated_at=now()`,
     [on ? 'true' : 'false'],
   );
-}
-
-/**
- * Chave de administração. Vive APENAS na base de dados (fair_settings.admin_key).
- * Não há valor por omissão nem variável de ambiente: se a chave não estiver
- * definida na BD, o painel recusa o acesso e diz o que fazer.
- *
- * Lê directamente a tabela (sem correr todo o bootstrap do schema) para o login
- * não depender de dezenas de DDL numa ligação fria; e tenta de novo uma vez em
- * falhas transitórias de ligação (Neon a acordar, ligação reciclada).
- */
-export async function getAdminKeyFromDb() {
-  const read = async () => {
-    const r = await pool.query("select value from fair_settings where key='admin_key'");
-    const raw = r.rows[0]?.value;
-    if (raw == null) return null;
-    const key = String(raw).trim();
-    return key || null;
-  };
-  try {
-    return await read();
-  } catch (e) {
-    if (e?.code === '42P01') {
-      await pool.query(`create table if not exists fair_settings (key text primary key, value text, updated_at timestamptz not null default now())`);
-      return read();
-    }
-    if (/ECONNRESET|ETIMEDOUT|ECONNREFUSED|terminated|timeout|Connection/i.test(String(e?.message || e))) {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      return read();
-    }
-    throw e;
-  }
 }
 
 /**
@@ -321,14 +293,48 @@ export async function settleOrderPaid(client, orderId, providerId = null) {
   } else if (x.book_id) {
     // Compra pode ter parte paga com saldo (wallet_minor) + parte na PaySuite (amount_minor).
     const gross = Number(x.amount_minor) + Number(x.wallet_minor || 0);
-    const net = computeNet(gross, !!x.partner_id);
-    const editorsBps = x.partner_id ? EDITORS_BPS : 10000 - APP_BPS;
-    const commissionBps = APP_BPS + editorsBps;
+    // A divisão passa a seguir as regras do promotor (cenários A, B e C).
+    const resolved = await resolveSaleScenario(client, { bookId: x.book_id, publisherId: x.partner_id });
+    const split = splitSale({
+      grossMinor: gross,
+      scenario: resolved.scenario,
+      authorShareBps: resolved.authorShareBps,
+      authorAmountMinor: resolved.authorAmountMinor,
+    });
+    if (!split.golden.ok) {
+      console.error('sale.golden_rule_violated', orderId, JSON.stringify(split.golden));
+    }
+    const bps = (minor) => (gross > 0 ? Math.min(10000, Math.round((minor * 10000) / gross)) : 0);
+    const commission = split.techNet + split.kulera + split.emilio;
     await client.query(
-      `insert into fair_sales (order_id, book_id, partner_id, gross_minor, commission_bps, commission_minor, partner_minor, app_bps, editors_bps, app_minor, editors_minor, gateway_bps, gateway_minor, app_net_minor)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) on conflict do nothing`,
-      [orderId, x.book_id, x.partner_id, gross, commissionBps, net.app + net.editors, net.partner, APP_BPS, editorsBps, net.app, net.editors, GATEWAY_BPS, net.gateway, net.appNet],
+      `insert into fair_sales (order_id, book_id, partner_id, gross_minor, commission_bps, commission_minor, partner_minor, app_bps, editors_bps, app_minor, editors_minor, gateway_bps, gateway_minor, app_net_minor, author_minor)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) on conflict do nothing`,
+      [
+        orderId,
+        x.book_id,
+        x.partner_id,
+        gross,
+        bps(commission),
+        commission,
+        split.publisher,
+        bps(split.techNet),
+        bps(split.kulera),
+        split.techNet,
+        split.kulera,
+        GATEWAY_BPS,
+        split.gateway,
+        split.techNet,
+        split.author,
+      ],
     );
+    // Livro de razão + saldos por entidade.
+    await postSale(client, {
+      orderId,
+      bookId: x.book_id,
+      publisherId: x.partner_id ?? null,
+      authorId: resolved.authorId,
+      split,
+    });
     if (Number(x.wallet_minor || 0) > 0) {
       await client.query(
         `update fair_reader_ledger set kind='purchase', note='Compra com saldo' where order_id=$1 and kind='hold'`,

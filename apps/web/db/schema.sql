@@ -258,8 +258,54 @@ create table if not exists fair_recovery_attempts (
   created_at timestamptz not null default now()
 );
 
--- Chave do painel /admin.html: gerida APENAS aqui na base de dados (não há ADMIN_KEY no ambiente nem valor por omissão no código).
--- Defina ou altere com:
--- insert into fair_settings (key, value) values ('admin_key', 'UMA-SENHA-LONGA-E-FORTE')
--- on conflict (key) do update set value = excluded.value, updated_at = now();
+-- ===== Administradores (dois: tecnoincubadora e kulera) =====
+-- A chave única de /admin.html foi substituída por contas com sessão em cookie.
+-- As contas criam-se com: node scripts/seed-admins.mjs (senhas fora do repositório).
+create table if not exists fair_admin_users (
+  id uuid primary key default gen_random_uuid(),
+  username text not null unique,
+  password_hash text not null,                     -- pbkdf2 com sal; nunca a senha
+  role text not null check (role in ('tecnoincubadora','kulera')),
+  display_name text not null,
+  can_change_password boolean not null default true, -- false = senha fixa (TecnoIncubadora)
+  status text not null default 'active' check (status in ('active','suspended')),
+  last_login_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists fair_admin_sessions (
+  token_hash text primary key,                     -- sha256 do token; o token só existe no cookie
+  user_id uuid not null references fair_admin_users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null
+);
+
+-- Dados bancários de cada sócio. Só se alteram na própria sessão; cada alteração deixa registo.
+create table if not exists fair_admin_bank (
+  user_id uuid primary key references fair_admin_users (id) on delete cascade,
+  holder text,
+  bank_name text,
+  account_number text,
+  nib text,
+  wallet text,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists fair_admin_bank_changes (
+  id bigserial primary key,
+  user_id uuid not null references fair_admin_users (id) on delete cascade,
+  before jsonb,
+  after jsonb,
+  ip_hash text,
+  created_at timestamptz not null default now()
+);
+
+-- Tentativas de entrada, para travar adivinhação de senhas.
+create table if not exists fair_admin_login_attempts (
+  id bigserial primary key,
+  username text not null,
+  ip_hash text not null,
+  ok boolean not null default false,
+  created_at timestamptz not null default now()
+);
 

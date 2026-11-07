@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { Pool, S } from './fake-pg.js';
+import { hashPassword } from '../lib/admin-auth.js';
 
 globalThis.__kuleraPool = new Pool(); // base de dados falsa: testa a lógica sem PostgreSQL
 process.env.PAYSUITE_WEBHOOK_SECRET = 'seg';
@@ -93,25 +94,40 @@ const hook = async (event, data, sig) => {
   return r;
 };
 
+// Sessão de administrador na base falsa: o cookie leva o token, a base guarda só o hash.
+const loginAs = (username = 'kulera') => {
+  const id = '00000000-0000-4000-8000-0000000000a' + (S.adminUsers.length + 1);
+  S.adminUsers.push({
+    id,
+    username,
+    password_hash: hashPassword('senha-de-teste'),
+    role: username,
+    display_name: username,
+    can_change_password: username !== 'tecnoincubadora',
+    status: 'active',
+  });
+  const token = 'tok-' + username + '-' + S.adminUsers.length;
+  S.adminSessions.push({
+    token_hash: createHash('sha256').update(token).digest('hex'),
+    user_id: id,
+    expires_at: new Date(Date.now() + 3600 * 1000),
+  });
+  return token;
+};
+const adminHeaders = (token) => ({ cookie: 'kadm=' + token, 'x-requested-with': 'kulera-admin' });
+
 const U = '00000000-0000-4000-8000-0000000000';
 
-// 0. Autenticação do painel: a chave vive só na base de dados.
-S.settings.admin_key = 'kulera';
-const postAdmin = (key, body) => call(admin, {
-  method: 'POST',
-  headers: key === undefined ? {} : { 'x-admin-key': key },
-  body,
-});
-delete S.settings.admin_key;
-const semChave = await postAdmin('kulera', { action: 'ping' });
-assert.equal(semChave.code, 503);
-assert.equal(semChave.body.error, 'admin_key_not_configured');
-S.settings.admin_key = 'segredo-da-bd';
-process.env.ADMIN_KEY = 'segredo-do-env';
-assert.equal((await postAdmin('segredo-do-env', { action: 'ping' })).code, 401); // ENV já não é aceite
-assert.equal((await postAdmin('segredo-da-bd', { action: 'ping' })).code, 400); // autenticado, acção inválida
-delete process.env.ADMIN_KEY;
-S.settings.admin_key = 'kulera';
+// 0. Autenticação do painel: dois administradores com sessão em cookie (a chave única acabou).
+const adminH = adminHeaders(loginAs('kulera'));
+const postAdmin = (headers, body) => call(admin, { method: 'POST', headers: headers || {}, body });
+assert.equal((await postAdmin({}, { action: 'ping' })).code, 401); // sem sessão
+assert.equal(
+  (await postAdmin({ cookie: 'kadm=inventado', 'x-requested-with': 'kulera-admin' }, { action: 'ping' })).code,
+  401,
+); // token inválido
+assert.equal((await postAdmin({ cookie: adminH.cookie }, { action: 'ping' })).code, 403); // falta o cabeçalho anti-CSRF
+assert.equal((await postAdmin(adminH, { action: 'ping' })).code, 400); // autenticado, acção inexistente
 
 S.partners.push({ id: U + '01', name: 'Editora Sol', phone: '841112223', email: 'sol@editora.mz', commission_bps: 3000, status: 'active' });
 S.partnerUsers.push({ id: U + '51', partner_id: U + '01', email: 'sol@editora.mz', status: 'active' });
@@ -176,11 +192,20 @@ assert.equal(S.orders[0].status, 'pending');
 await hook('payment.cancelled', { id: 'ps_1' });
 assert.notEqual(S.orders[0].status, 'paid');
 
-// Pagamento confirmado via webhook: activa e divide a receita (20% App + 10% Editores + 70% Parceiro)
+// Pagamento confirmado via webhook: activa e divide a receita.
+// Livro de editora do mercado (cenário C): 30% para a plataforma (gateway dentro) e 70% para a editora.
 const w1 = await hook('payment.success', { id: 'ps_1' });
 assert.equal(w1.body.result, 'applied');
 assert.equal(S.orders[0].status, 'paid');
-assert.deepEqual([S.sales[0].commission, S.sales[0].partner, S.sales[0].app, S.sales[0].editors], [21000, 49000, 14000, 7000]);
+assert.deepEqual([S.sales[0].commission, S.sales[0].partner, S.sales[0].app, S.sales[0].editors], [16100, 49000, 16100, 0]);
+assert.equal(S.sales[0].gateway, 4900);
+assert.equal(S.sales[0].author, 0);
+// Livro de razão e saldos: plataforma 161 MT líquidos, editora 490 MT, gateway 49 MT.
+const saldoPlataforma = S.balances.find((b) => b.entity === 'tecnoincubadora');
+const saldoEditora = S.balances.find((b) => b.entity === 'publisher' && b.entity_id === S.partners[0].id);
+assert.equal(saldoPlataforma.accrued, 16100);
+assert.equal(saldoEditora.accrued, 49000);
+assert.equal(S.ledger.filter((e) => e.kind === 'gateway_fee').reduce((s, e) => s + e.amount, 0), 4900);
 
 // Webhook repetido não duplica
 assert.equal((await hook('payment.success', { id: 'ps_1' })).body.result, 'duplicate');
@@ -225,18 +250,23 @@ assert.equal(deviceReq.body.status, 'pending');
 assert.equal(S.deviceRequests.length, 1);
 const approved = await call(admin, {
   method: 'POST',
-  headers: { 'x-admin-key': 'kulera' },
+  headers: adminH,
   body: { action: 'approve_device_request', id: deviceReq.body.requestId },
 });
 assert.equal(approved.code, 200);
 assert.equal((await call(chapter, { query: { t: token, i: '0', d: NEW_DK, f: DF } })).code, 200);
 assert.equal((await readChapter(token, { i: '0' })).body.error, 'device_mismatch');
 
-// 3. Livro da própria Kulera: 20% App + 80% Editores (0% parceiro)
+// 3. Livro da própria Kulera (cenário A) sem autor declarado: a TecnoIncubadora fica com
+// tudo menos o gateway (350 MT − 24,50 MT), e a editora não leva nada.
 const c2 = await call(checkout, { method: 'POST', body: { ...body, bookId: U + '12' } });
 assert.equal(c2.code, 200);
 await hook('payment.success', { id: 'ps_2' });
-assert.deepEqual([S.sales[1].commission, S.sales[1].partner, S.sales[1].partner_id, S.sales[1].app, S.sales[1].editors], [35000, 0, null, 7000, 28000]);
+assert.deepEqual(
+  [S.sales[1].commission, S.sales[1].partner, S.sales[1].partner_id, S.sales[1].app, S.sales[1].editors],
+  [32550, 0, null, 32550, 0],
+);
+assert.equal(S.sales[1].gateway, 2450);
 
 // 4. Verificação activa de pagamento (polling PaySuite no /api/status mesmo antes de chegar o webhook)
 const c3 = await call(checkout, { method: 'POST', body: { ...body, bookId: U + '12' } });
@@ -307,7 +337,7 @@ assert.equal(sandboxStatus.body.error, 'sandbox_only');
 const newCover = 'data:image/jpeg;base64,' + 'B'.repeat(2500);
 const admSave = await call(admin, {
   method: 'POST',
-  headers: { 'x-admin-key': 'kulera' },
+  headers: adminH,
   body: {
     action: 'save_book',
     id: U + '11',
@@ -487,7 +517,7 @@ assert.equal(order11.status, 'pending');
 remotePaidIds.add(order11.provider_payment_id);
 const rec = await call(admin, {
   method: 'POST',
-  headers: { 'x-admin-key': 'kulera' },
+  headers: adminH,
   body: { action: 'reconcile_payments' },
 });
 assert.equal(rec.code, 200);

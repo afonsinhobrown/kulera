@@ -12,6 +12,15 @@ export const S = {
   recoveryAttempts: [],
   deviceRequests: [],
   settings: {},
+  adminUsers: [],
+  adminSessions: [],
+  adminBank: [],
+  adminBankChanges: [],
+  adminAttempts: [],
+  authors: [],
+  bookAuthors: [],
+  ledger: [],
+  balances: [],
 };
 
 const rows = (r) => ({ rows: r, rowCount: r.length });
@@ -26,7 +35,53 @@ function canSellPartner(partnerId) {
 async function q(sql, p = []) {
   const s = sql.replace(/\s+/g, ' ').trim();
   if (/^(BEGIN|COMMIT|ROLLBACK)/i.test(s)) return rows([]);
-  if (/^(create table|alter table)/i.test(s)) return rows([]);
+  if (/^(create table|alter table|create unique index|create index|do \$\$)/i.test(s)) return rows([]);
+  // ===== Financeiro: autores, livro↔autor, razão e saldos =====
+  if (/^insert into fair_authors/i.test(s)) {
+    const id = '00000000-0000-4000-8000-00000000e2' + String(S.authors.length + 1).padStart(2, '0');
+    S.authors.push({ id, full_name: p[0], pen_name: p[1], nuit: p[2], bi_number: p[3], class: p[4], is_related: p[7] === true, owner_partner_id: p[5] });
+    return rows([{ id }]);
+  }
+  if (/^select id, nuit from fair_authors where nuit/i.test(s)) {
+    return rows(S.authors.filter((a) => a.nuit === p[0]).map((a) => ({ id: a.id, nuit: a.nuit })));
+  }
+  if (/^select is_related from fair_authors where id/i.test(s)) {
+    return rows(S.authors.filter((a) => a.id === p[0]).map((a) => ({ is_related: Boolean(a.is_related) })));
+  }
+  if (/^insert into fair_book_authors/i.test(s)) {
+    const i = S.bookAuthors.findIndex((x) => x.book_id === p[0] && x.author_id === p[1]);
+    const row = { book_id: p[0], author_id: p[1], role: p[2], share_bps: p[3], amount_minor: p[4] };
+    if (i >= 0) S.bookAuthors[i] = row;
+    else S.bookAuthors.push(row);
+    return rows([]);
+  }
+  if (/^select ba\.author_id, ba\.share_bps/i.test(s)) {
+    return rows(
+      S.bookAuthors
+        .filter((x) => x.book_id === p[0])
+        .map((x) => {
+          const a = S.authors.find((y) => y.id === x.author_id) || {};
+          return { author_id: x.author_id, share_bps: x.share_bps, amount_minor: x.amount_minor, is_related: Boolean(a.is_related) };
+        }),
+    );
+  }
+  if (/^insert into fair_ledger/i.test(s)) {
+    if (S.ledger.find((x) => x.entry_key === p[0])) return rows([]);
+    const gateway = s.includes("'gateway_fee'");
+    S.ledger.push(
+      gateway
+        ? { entry_key: p[0], kind: 'gateway_fee', entity: 'gateway', entity_id: null, order_id: p[1], book_id: p[2], amount: Number(p[3]) }
+        : { entry_key: p[0], kind: 'sale', entity: p[1], entity_id: p[2], order_id: p[3], book_id: p[4], amount: Number(p[5]) },
+    );
+    return s.includes('returning id') ? rows([{ id: S.ledger.length }]) : rows([]);
+  }
+  if (/^insert into fair_balances/i.test(s)) {
+    const [entity, entityId, currency, amount] = p;
+    const found = S.balances.find((b) => b.entity === entity && b.entity_id === entityId && b.currency === currency);
+    if (found) found.accrued += Number(amount);
+    else S.balances.push({ entity, entity_id: entityId, currency, accrued: Number(amount), paid: 0 });
+    return rows([]);
+  }
   if (/^insert into fair_settings/i.test(s)) {
     if (s.includes("'sandbox'")) S.settings.sandbox = p[0];
     else if (s.includes("'admin_key'") && p.length) S.settings.admin_key = p[0];
@@ -41,6 +96,78 @@ async function q(sql, p = []) {
   }
   if (/^select value from fair_settings where key='paysuite_token'/i.test(s)) {
     return S.settings.paysuite_token ? rows([{ value: S.settings.paysuite_token }]) : rows([]);
+  }
+  // ===== Administradores (fair_admin_users / fair_admin_sessions) =====
+  if (/^insert into fair_admin_users/i.test(s)) {
+    S.adminUsers.push({
+      id: '00000000-0000-4000-8000-0000000000a' + (S.adminUsers.length + 1),
+      username: p[0],
+      password_hash: p[1],
+      role: p[2],
+      display_name: p[3],
+      can_change_password: p[4] !== false,
+      status: 'active',
+      last_login_at: null,
+    });
+    return rows([]);
+  }
+  if (/^update fair_admin_users set password_hash = \$2, role/i.test(s)) {
+    const u = S.adminUsers.find((x) => x.username === p[0]);
+    if (u) Object.assign(u, { password_hash: p[1], role: p[2], display_name: p[3], can_change_password: p[4] !== false, status: 'active' });
+    return rows([]);
+  }
+  if (/^select id, username, password_hash.*from fair_admin_users where username/i.test(s)) {
+    return rows(S.adminUsers.filter((x) => x.username === p[0]));
+  }
+  if (/^select count\(\*\)::int as n from fair_admin_users/i.test(s)) return rows([{ n: S.adminUsers.length }]);
+  if (/^update fair_admin_users set last_login_at/i.test(s)) return rows([]);
+  if (/^update fair_admin_users set password_hash = \$2 where id/i.test(s)) {
+    const u = S.adminUsers.find((x) => x.id === p[0]);
+    if (u) u.password_hash = p[1];
+    return rows([]);
+  }
+  if (/^insert into fair_admin_sessions/i.test(s)) {
+    S.adminSessions.push({ token_hash: p[0], user_id: p[1], expires_at: p[2] });
+    return rows([]);
+  }
+  if (/^select s\.token_hash, u\.id/i.test(s)) {
+    const sess = S.adminSessions.find((x) => x.token_hash === p[0] && new Date(x.expires_at) > new Date());
+    if (!sess) return rows([]);
+    const u = S.adminUsers.find((x) => x.id === sess.user_id);
+    return rows(u ? [{ ...u, token_hash: sess.token_hash }] : []);
+  }
+  if (/^delete from fair_admin_sessions where token_hash/i.test(s)) {
+    const i = S.adminSessions.findIndex((x) => x.token_hash === p[0]);
+    if (i >= 0) S.adminSessions.splice(i, 1);
+    return rows([]);
+  }
+  if (/^delete from fair_admin_sessions where user_id/i.test(s)) {
+    for (let i = S.adminSessions.length - 1; i >= 0; i -= 1) {
+      if (S.adminSessions[i].user_id === p[0] && S.adminSessions[i].token_hash !== p[1]) S.adminSessions.splice(i, 1);
+    }
+    return rows([]);
+  }
+  if (/^insert into fair_admin_login_attempts/i.test(s)) {
+    S.adminAttempts.push({ username: p[0], ip_hash: p[1], ok: p[2] === true, created_at: new Date() });
+    return rows([]);
+  }
+  if (/^select count\(\*\)::int as n from fair_admin_login_attempts/i.test(s)) {
+    const n = S.adminAttempts.filter((a) => !a.ok && a.username === p[0] && a.ip_hash === p[1] && a.created_at > p[2]).length;
+    return rows([{ n }]);
+  }
+  if (/^select holder, bank_name/i.test(s)) {
+    return rows(S.adminBank.filter((b) => b.user_id === p[0]));
+  }
+  if (/^insert into fair_admin_bank_changes/i.test(s)) {
+    S.adminBankChanges.push({ user_id: p[0], before: p[1], after: p[2], ip_hash: p[3] });
+    return rows([]);
+  }
+  if (/^insert into fair_admin_bank/i.test(s)) {
+    const i = S.adminBank.findIndex((b) => b.user_id === p[0]);
+    const row = { user_id: p[0], holder: p[1], bank_name: p[2], account_number: p[3], nib: p[4], wallet: p[5] };
+    if (i >= 0) S.adminBank[i] = row;
+    else S.adminBank.push(row);
+    return rows([]);
   }
   if (/^insert into fair_plans/i.test(s)) {
     const [code, name, description, price_minor, max_publications, showcase_priority] = p;
@@ -288,6 +415,8 @@ async function q(sql, p = []) {
       editors_bps: p[8],
       app: p[9],
       editors: p[10],
+      gateway: p[12],
+      author: p[14],
     });
     return rows([{}]);
   }

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { pool } from '../lib/db.js';
-import { ensurePaymentSchema, isSandbox, setSandbox, getAdminKeyFromDb, resolveSiteUrl, settleOrderPaid, restoreReservedStock } from '../lib/payments.js';
+import { ensurePaymentSchema, isSandbox, setSandbox, resolveSiteUrl, settleOrderPaid, restoreReservedStock } from '../lib/payments.js';
 import { createPayment, getPaymentStatus, resolvePaysuiteToken } from '../lib/paysuite.js';
 import { ensurePlanSchema } from '../lib/plans.js';
 import { getPublicationFeeMinor, setSetting } from '../lib/settings.js';
@@ -9,6 +9,9 @@ import { approveDeviceRequest, rejectDeviceRequest } from '../lib/device.js';
 import { announceBook, subscriberCount } from '../lib/marketing.js';
 import { emailConfig, emailConfigured, sendEmail } from '../lib/email.js';
 import { markSubscriptionPaymentFailed, markSubscriptionPaymentRecovered, runDailyMaintenance } from '../lib/lifecycle.js';
+import { CSRF_HEADER, CSRF_VALUE, ensureAdminSchema, requireAdmin } from '../lib/admin-auth.js';
+import { ensureFinanceSchema, resolveSaleScenario, setBookAuthor, upsertAuthor } from '../lib/finance.js';
+import { splitSale } from '../lib/split.js';
 
 const sameKey = (a, b) => {
   const ax = String(a ?? '').trim();
@@ -91,6 +94,15 @@ async function saveBook(b) {
     const revContent = await pool.query("update fair_books set status='draft' where id=$1 and status='published' and coalesce(has_digital,true) and not coalesce(has_physical,false) and content_html is null", [id]);
     if (revContent.rowCount) warning = 'sem_conteudo_ficou_rascunho';
   } catch {}
+
+  // Livro à venda só com autor registado. A conta do autor é opcional; o registo não é.
+  try {
+    const autor = await pool.query('select 1 from fair_book_authors where book_id = $1 limit 1', [id]);
+    if (autor.rows.length === 0) {
+      const voltou = await pool.query("update fair_books set status='draft' where id=$1 and status='published'", [id]);
+      if (voltou.rowCount) warning = 'sem_autor_ficou_rascunho';
+    }
+  } catch {}
   return [200, { ok: true, id, warning }];
 }
 
@@ -124,6 +136,68 @@ async function action(b, req) {
         console.error('admin.save_book.error', e?.message || String(e));
         return [500, { error: 'save_failed' }];
       }
+    }
+    case 'save_author': {
+      try {
+        await ensureFinanceSchema(pool);
+        const out = await upsertAuthor(pool, {
+          fullName: clip(b.name, 120),
+          nuit: b.nuit ? clip(b.nuit, 24) : null,
+          biNumber: b.bi ? clip(b.bi, 30) : null,
+          class: b.klass === 'foreign' ? 'foreign' : 'national',
+          privateToPartner: b.klass === 'foreign',
+          allowMissingNuit: b.allowMissingNuit === true,
+        });
+        return [200, { ok: true, ...out }];
+      } catch (e) {
+        return [400, { error: 'invalid', detail: String(e?.message || e) }];
+      }
+    }
+    case 'link_book_author': {
+      if (!uuid(b.bookId) || !uuid(b.authorId)) return [400, { error: 'invalid' }];
+      try {
+        await ensureFinanceSchema(pool);
+        const out = await setBookAuthor(pool, {
+          bookId: b.bookId,
+          authorId: b.authorId,
+          role: b.role === 'coauthor' ? 'coauthor' : 'author',
+          shareBps: b.shareBps,
+          amountMinor: b.amountMinor === '' || b.amountMinor == null ? null : Number(b.amountMinor),
+        });
+        return [200, { ok: true, ...out }];
+      } catch (e) {
+        return [400, { error: 'invalid', detail: String(e?.message || e) }];
+      }
+    }
+    case 'unlink_book_author': {
+      if (!uuid(b.bookId) || !uuid(b.authorId)) return [400, { error: 'invalid' }];
+      await pool.query('delete from fair_book_authors where book_id = $1 and author_id = $2', [b.bookId, b.authorId]);
+      return [200, { ok: true }];
+    }
+    // Quanto fica para cada um, antes de gravar o livro (o painel mostra isto à editora).
+    case 'book_earnings': {
+      const gross = Math.round(Number(b.priceMinor) || 0);
+      if (!(gross > 0)) return [200, { ok: false }];
+      const publisherId = uuid(b.partnerId) ? b.partnerId : null;
+      const resolved = uuid(b.bookId)
+        ? await resolveSaleScenario(pool, { bookId: b.bookId, publisherId })
+        : { scenario: publisherId ? 'C' : 'A', authorShareBps: 0, authorAmountMinor: null };
+      const split = splitSale({
+        grossMinor: gross,
+        scenario: resolved.scenario,
+        authorShareBps: resolved.authorShareBps,
+        authorAmountMinor: resolved.authorAmountMinor,
+      });
+      return [200, {
+        ok: true,
+        scenario: split.scenario,
+        publisher: split.publisher,
+        author: split.author,
+        tech: split.techNet,
+        kulera: split.kulera,
+        gateway: split.gateway,
+        golden: split.golden,
+      }];
     }
     case 'delete_book': {
       if (!uuid(b.id)) return [400, { error: 'invalid' }];
@@ -378,26 +452,13 @@ export default async function handler(req, res) {
       return res.status(500).json({ ok: false, error: 'internal_error' });
     }
   }
-  // Autenticação: só a chave guardada na base de dados é aceite.
-  let expectedKey;
-  try {
-    expectedKey = await getAdminKeyFromDb();
-  } catch (e) {
-    console.error('admin.key.error', e?.message || String(e));
-    return res.status(503).json({ error: 'admin_key_unavailable' });
-  }
-  if (!expectedKey) {
-    // Detalhe operacional só no log privado do servidor; a resposta não revela
-    // tabelas, colunas nem SQL a quem abre a página de login.
-    console.error(
-      'admin.key.missing',
-      "Defina a chave com: insert into fair_settings (key,value) values ('admin_key','...') on conflict (key) do update set value=excluded.value, updated_at=now();",
-    );
-    return res.status(503).json({ error: 'admin_key_not_configured' });
-  }
-  const provided = req.headers?.['x-admin-key'] || '';
-  if (!sameKey(provided, expectedKey)) {
-    return res.status(401).json({ error: 'unauthorized' });
+  // Autenticação por sessão. Deixou de existir a chave única: o painel pertence a
+  // dois administradores — tecnoincubadora e kulera — cada um com a sua conta.
+  await ensureAdminSchema(pool).catch((e) => console.error('admin.schema.error', e?.message || String(e)));
+  const current = await requireAdmin(pool, req);
+  if (!current) return res.status(401).json({ error: 'unauthorized' });
+  if (req.method === 'POST' && req.headers?.[CSRF_HEADER] !== CSRF_VALUE) {
+    return res.status(403).json({ error: 'csrf' });
   }
   try {
     await ensurePaymentSchema();
@@ -510,6 +571,18 @@ export default async function handler(req, res) {
       )).rows;
     } catch {}
 
+    // Autores e a ligação livro↔autor (podem não existir em bases antigas).
+    let authors = [];
+    let bookAuthors = [];
+    try {
+      authors = (await pool.query(
+        'select id, full_name, pen_name, nuit, bi_number, class, status, is_related, default_share_bps, payout_method, payout_account, data_completed_at from fair_authors order by full_name',
+      )).rows.map((a) => ({ ...a, default_share_bps: Number(a.default_share_bps || 0) }));
+      bookAuthors = (await pool.query(
+        'select book_id, author_id, role, share_bps, amount_minor from fair_book_authors',
+      )).rows.map((r) => ({ ...r, share_bps: Number(r.share_bps), amount_minor: r.amount_minor == null ? null : Number(r.amount_minor) }));
+    } catch {}
+
     if (req.query?.format === 'csv') {
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       return res.send(toCsv(req.query.type === 'orders' ? orders : req.query.type === 'payouts' ? payouts : leads));
@@ -522,6 +595,7 @@ export default async function handler(req, res) {
       withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})),
       subscribers, emailReady: emailConfigured(), emailFrom: emailConfig()?.from || null, emailSupport: emailConfig()?.replyTo || null, promotions, readers,
       settings: { publication_fee_minor: await getPublicationFeeMinor(pool) },
+      authors, bookAuthors,
       sandbox });
   } catch (e) {
     console.error('admin.error', e?.message || String(e));

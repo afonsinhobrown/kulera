@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kulera+ — Área do Autor</title>
+<style>
+  :root{--ink:#073337;--muted:#5b747c;--line:#dfe7e5;--card:#fff;--bg:#f4f8f7;--accent:#0e7c66;--err:#b23c3c}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{background:#073337;color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+  header h1{margin:0;font:700 20px Georgia,serif}
+  header .who{font-size:13px;opacity:.85}
+  header button{border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;padding:8px 14px;border-radius:8px;font:inherit;cursor:pointer}
+  main{max-width:560px;margin:0 auto;padding:28px 20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:18px}
+  h2{font:700 18px Georgia,serif;margin:0 0 6px}
+  p.sub{color:var(--muted);font-size:14px;margin:0 0 18px}
+  label{display:grid;gap:6px;font-weight:600;font-size:14px;margin-bottom:12px}
+  input,select{padding:10px;border:1.5px solid #9db3b0;border-radius:8px;font:inherit;width:100%;background:#fff}
+  button.primary{width:100%;padding:12px;border:0;border-radius:8px;background:var(--accent);color:#fff;font:600 15px inherit;cursor:pointer}
+  button.ghost{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;font:inherit;cursor:pointer;margin-top:8px}
+  .msg{font-size:13px;margin:10px 0 0;min-height:18px}
+  .msg.err{color:var(--err)}
+  .msg.ok{color:#1a7f5a}
+  .lock{background:#fff7e6;border:1px solid #f0d9a8;color:#7a5a12;border-radius:10px;padding:12px 14px;font-size:14px;margin-bottom:16px}
+  .kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .kv:last-child{border:0}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Área do Autor</h1>
+  <div style="display:flex;gap:10px;align-items:center">
+    <span class="who" id="who"></span>
+    <button id="logout" hidden>Sair</button>
+  </div>
+</header>
+
+<main>
+  <!-- 1. Entrar ou criar conta -->
+  <section id="auth" hidden>
+    <div class="card">
+      <h2>Entrar</h2>
+      <p class="sub">Ter conta <b>não é obrigatório</b> para ser autor: basta estar registado por uma editora. A conta serve para ver e corrigir os seus próprios dados.</p>
+      <form id="loginForm">
+        <label>Email <input name="email" type="email" required autocomplete="username"></label>
+        <label>Senha <input name="password" type="password" required autocomplete="current-password"></label>
+        <button class="primary" type="submit">Entrar</button>
+        <p class="msg" id="loginMsg"></p>
+      </form>
+      <button class="ghost" id="toSignup">Quero criar conta (opcional)</button>
+    </div>
+
+    <div class="card" id="signupCard" hidden>
+      <h2>Criar conta de autor</h2>
+      <p class="sub">Opcional. Se já existir um registo seu criado por uma editora, os livros passam para a sua conta quando indicar o NUIT.</p>
+      <form id="signupForm">
+        <label>Nome completo <input name="name" required maxlength="120"></label>
+        <label>Email <input name="email" type="email" required autocomplete="username"></label>
+        <label>Senha (mínimo 8 caracteres) <input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+        <button class="primary" type="submit">Criar conta</button>
+        <p class="msg" id="signupMsg"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- 2. Dados em falta: nada mais está acessível -->
+  <section id="gate" hidden>
+    <div class="lock" id="lockMsg"></div>
+    <div class="card">
+      <h2>Completar dados</h2>
+      <p class="sub">Sem estes dados a conta não pode ser usada.</p>
+      <form id="completeForm">
+        <label>NUIT <input name="nuit" required maxlength="24" placeholder="9 dígitos"></label>
+        <label>Número do BI <input name="bi" required maxlength="30"></label>
+        <label>Percentagem que recebe na venda (%) <input name="share" type="number" min="0.01" max="100" step="0.01" required></label>
+        <label>Forma de recebimento
+          <select name="payoutMethod" required>
+            <option value="">Escolher…</option>
+            <option value="mpesa">M-Pesa</option>
+            <option value="emola">e-Mola</option>
+            <option value="nib">NIB (conta bancária)</option>
+          </select>
+        </label>
+        <label>Número da conta que vai receber <input name="payoutAccount" required maxlength="40" placeholder="ex.: 84xxxxxxx ou NIB"></label>
+        <label>Titular da conta <input name="payoutHolder" maxlength="120" placeholder="igual ao seu nome, se ficar vazio"></label>
+        <button class="primary" type="submit">Guardar e continuar</button>
+        <p class="msg" id="completeMsg"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- 3. Tudo em ordem -->
+  <section id="done" hidden>
+    <div class="card">
+      <h2>Conta em ordem</h2>
+      <p class="sub">Os seus dados estão completos.</p>
+      <div class="kv"><span>Nome</span><b id="dName"></b></div>
+      <div class="kv"><span>NUIT</span><b id="dNuit"></b></div>
+      <div class="kv"><span>Percentagem na venda</span><b id="dShare"></b></div>
+      <div class="kv"><span>Recebimento</span><b id="dPayout"></b></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const H = { 'Content-Type': 'application/json', 'x-requested-with': 'kulera-admin' };
+const post = (body) => fetch('/api/author-auth', { method: 'POST', headers: H, body: JSON.stringify(body) })
+  .then(async r => ({ ok: r.ok, status: r.status, j: await r.json().catch(() => ({})) }));
+
+function showOnly(name){
+  ['auth','gate','done'].forEach(s => { $(s).hidden = s !== name; });
+  $('logout').hidden = name === 'auth';
+}
+
+function showDone(a){
+  $('who').textContent = a?.name || '';
+  $('dName').textContent = a?.name || '—';
+  $('dNuit').textContent = a?.nuit || '—';
+  $('dShare').textContent = a ? (a.shareBps/100).toLocaleString('pt-MZ',{minimumFractionDigits:2,maxFractionDigits:2}) + '%' : '—';
+  $('dPayout').textContent = a ? (({mpesa:'M-Pesa',emola:'e-Mola',nib:'NIB'}[a.payoutMethod] || '—') + ' ' + (a.payoutAccount || '')) : '—';
+  showOnly('done');
+}
+
+async function boot(){
+  const r = await fetch('/api/author-auth', { cache: 'no-store' });
+  if(r.status === 401){ showOnly('auth'); return; }
+  const j = await r.json().catch(() => ({}));
+  if(!j.complete){
+    $('who').textContent = j.author?.name || '';
+    $('lockMsg').textContent = 'Falta preencher: ' + (j.missing || []).join(', ') + '. A conta só fica disponível depois disso.';
+    showOnly('gate');
+    return;
+  }
+  showDone(j.author);
+}
+
+$('toSignup').addEventListener('click', () => { $('signupCard').hidden = false; });
+
+$('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, m = $('loginMsg');
+  m.className = 'msg'; m.textContent = 'A entrar...';
+  const { ok, j } = await post({ action: 'login', email: f.email.value, password: f.password.value });
+  if(!ok){ m.className = 'msg err'; m.textContent = j.error === 'invalid_credentials' ? 'Email ou senha incorretos.' : 'Não foi possível entrar.'; return; }
+  m.textContent = '';
+  await boot();
+});
+
+$('signupForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, m = $('signupMsg');
+  m.className = 'msg'; m.textContent = 'A criar...';
+  const { ok, j } = await post({ action: 'signup', name: f.name.value, email: f.email.value, password: f.password.value });
+  if(!ok){ m.className = 'msg err'; m.textContent = j.detail || 'Não foi possível criar a conta.'; return; }
+  const login = await post({ action: 'login', email: f.email.value, password: f.password.value });
+  if(!login.ok){ m.className = 'msg err'; m.textContent = 'Conta criada. Entre com as suas credenciais.'; showOnly('auth'); return; }
+  await boot();
+});
+
+$('completeForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, m = $('completeMsg');
+  m.className = 'msg'; m.textContent = 'A guardar...';
+  const { ok, j } = await post({
+    action: 'complete',
+    nuit: f.nuit.value,
+    bi: f.bi.value,
+    shareBps: Math.round(Number(f.share.value) * 100),
+    payoutMethod: f.payoutMethod.value,
+    payoutAccount: f.payoutAccount.value,
+    payoutHolder: f.payoutHolder.value,
+  });
+  if(!ok){ m.className = 'msg err'; m.textContent = j.detail || 'Não foi possível guardar.'; return; }
+  m.className = 'msg ok'; m.textContent = 'Dados guardados.';
+  await boot();
+});
+
+$('logout').addEventListener('click', async () => { await post({ action: 'logout' }); location.reload(); });
+
+boot();
+</script>
+</body>
+</html>

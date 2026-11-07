@@ -94,10 +94,16 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
   <!-- Login Screen -->
   <div id="login" style="max-width:400px;margin:80px auto;background:#fff;padding:32px;border-radius:12px;border:1px solid var(--border-c);box-shadow:0 8px 24px rgba(0,0,0,0.06)">
     <h2 style="font:700 24px Georgia,serif;margin:0 0 8px;color:#073337">Acesso ao Painel</h2>
-    <p style="font-size:14px;color:#5b747c;margin:0 0 20px">Insira a chave de administração da Kulera+.</p>
+    <p style="font-size:14px;color:#5b747c;margin:0 0 20px">Entre com a sua conta de administração.</p>
     <form id="loginForm" style="display:grid;gap:14px">
-      <label style="display:grid;gap:6px;font-weight:600;font-size:14px">Chave de acesso
-        <input id="key" type="password" autocomplete="off" spellcheck="false" required style="padding:10px;border:1.5px solid #9db3b0;border-radius:6px;font:inherit">
+      <label style="display:grid;gap:6px;font-weight:600;font-size:14px">Conta
+        <select id="user" required style="padding:10px;border:1.5px solid #9db3b0;border-radius:6px;font:inherit;background:#fff">
+          <option value="tecnoincubadora">TecnoIncubadora</option>
+          <option value="kulera">Editora Kulera</option>
+        </select>
+      </label>
+      <label style="display:grid;gap:6px;font-weight:600;font-size:14px">Senha
+        <input id="key" type="password" autocomplete="current-password" spellcheck="false" required style="padding:10px;border:1.5px solid #9db3b0;border-radius:6px;font:inherit">
       </label>
       <p class="msg err" id="err" style="margin:0;font-size:13px"></p>
       <button type="submit" class="btn-primary" style="padding:12px">Entrar no Painel</button>
@@ -115,6 +121,9 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
         <button class="nav-tab" data-tab="tab-partners">🤝 Parceiros & Autores</button>
         <button class="nav-tab" data-tab="tab-sales">💰 Vendas & Saques</button>
         <button class="nav-tab" data-tab="tab-leads">📞 Leads de Parceiros</button>
+        <button class="nav-tab" data-tab="tab-authors">✍️ Autores</button>
+        <button class="nav-tab" data-tab="tab-account">🔐 A Minha Conta</button>
+        <a class="nav-tab" href="/financeiro.html">📈 Financeiro</a>
       </nav>
     </aside>
 
@@ -122,6 +131,79 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
       <div id="sandboxAlert" class="sandbox-banner" hidden>
         <div>⚠️ <strong>MODO SANDBOX ATIVO:</strong> Todos os pagamentos (PaySuite) cobram apenas <strong>10.00 MZN</strong> para testes reais.</div>
         <button type="button" class="btn-action" onclick="toggleSandbox(false)">Desativar</button>
+      </div>
+
+      <!-- TAB AUTORES: registo único, ligação aos livros e valor por livro -->
+      <div id="tab-authors" class="tab-content">
+        <div class="pane-title">Autores</div>
+        <div class="pane-sub">Um autor entra uma vez e serve todas as editoras. Ao ligar o autor ao livro declara-se quanto ele recebe.</div>
+        <div class="table-card"><div class="table-wrap"><table id="authorsTable"></table></div></div>
+
+        <div class="form-card">
+          <h3>Novo autor</h3>
+          <form class="f" id="authorForm">
+            <label>Nome completo <input name="name" required maxlength="120"></label>
+            <label>NUIT <input name="nuit" maxlength="24" placeholder="obrigatório para moçambicano"></label>
+            <label>BI <input name="bi" maxlength="30"></label>
+            <label>Classe
+              <select name="klass">
+                <option value="national">Moçambicano / residente</option>
+                <option value="foreign">Estrangeiro não residente (gerido pela editora)</option>
+              </select>
+            </label>
+            <button type="submit" class="btn-primary">Guardar autor</button>
+            <p class="msg" id="authorMsg" role="alert"></p>
+          </form>
+        </div>
+
+        <div class="form-card">
+          <h3>Ligar autor a livro</h3>
+          <form class="f" id="linkForm">
+            <label>Livro <select name="bookId" id="linkBook"></select></label>
+            <label>Autor <select name="authorId" id="linkAuthor"></select></label>
+            <label>Percentagem (%) <input name="share" type="number" min="0" max="100" step="0.01" value="0"></label>
+            <label>Ou valor fixo por livro (MT) <input name="amount" type="number" min="0" step="0.01"></label>
+            <button type="submit" class="btn-secondary">Ligar autor ao livro</button>
+            <p class="msg" id="linkMsg" role="alert"></p>
+          </form>
+        </div>
+
+        <div class="table-card"><div class="table-wrap"><table id="linksTable"></table></div></div>
+      </div>
+
+      <!-- TAB CONTA: SESSÃO E DADOS BANCÁRIOS -->
+      <div id="tab-account" class="tab-content">
+        <div class="pane-title">A Minha Conta</div>
+        <div class="pane-sub" id="accountWho">Sessão de administração.</div>
+
+        <div class="form-card">
+          <h3>Dados bancários</h3>
+          <p style="font-size:13px;color:#557077;margin:0 0 12px">Só podem ser alterados na sua própria sessão. Cada alteração fica registada.</p>
+          <form class="f" id="bankForm">
+            <label>Titular <input name="holder" maxlength="120" autocomplete="off"></label>
+            <label>Banco <input name="bank_name" maxlength="80" autocomplete="off"></label>
+            <label>Número de conta <input name="account_number" maxlength="34" autocomplete="off"></label>
+            <label>NIB <input name="nib" maxlength="30" autocomplete="off"></label>
+            <label>Carteira móvel <input name="wallet" maxlength="20" autocomplete="off" placeholder="ex.: 84xxxxxxx"></label>
+            <button type="submit" class="btn-primary">Guardar dados bancários</button>
+            <p class="msg" id="bankMsg" style="font-size:13px"></p>
+          </form>
+        </div>
+
+        <div class="form-card" id="passCard">
+          <h3>Senha</h3>
+          <p style="font-size:13px;color:#557077;margin:0 0 12px">A troca de senha é recomendada, não obrigatória.</p>
+          <form class="f" id="passForm">
+            <label>Senha atual <input name="current" type="password" autocomplete="current-password"></label>
+            <label>Nova senha <input name="password" type="password" autocomplete="new-password" minlength="8"></label>
+            <button type="submit" class="btn-secondary">Alterar senha</button>
+            <p class="msg" id="passMsg" style="font-size:13px"></p>
+          </form>
+        </div>
+        <div class="form-card" id="passLocked" hidden>
+          <h3>Senha</h3>
+          <p style="font-size:13px;color:#557077;margin:0">Esta senha não é alterável pela aplicação.</p>
+        </div>
       </div>
 
       <!-- TAB 1: VISÃO GERAL -->
@@ -355,7 +437,7 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-let KEY = sessionStorage.getItem('kulera_admin_key') || '', DATA = null, contentHtml = null, LOAD_INTERVAL = null;
+let DATA = null, contentHtml = null, LOAD_INTERVAL = null, SESSION = null;
 
 const fmt = m => (m/100).toLocaleString('pt-MZ', { minimumFractionDigits: 2 }) + ' MZN';
 const cell = v => { const td = document.createElement('td'); td.textContent = v ?? ''; return td; };
@@ -364,9 +446,9 @@ const cell = v => { const td = document.createElement('td'); td.textContent = v 
 const field = (form, name) => form?.elements?.namedItem(name) || null;
 const fieldValue = (form, name) => field(form, name)?.value ?? '';
 const setFieldValue = (form, name, value) => { const el = field(form, name); if(el) el.value = value == null ? '' : value; };
-const api = body => fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify(body) }).then(async r => {
+const api = body => fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-requested-with': 'kulera-admin' }, body: JSON.stringify(body) }).then(async r => {
   const j = await r.json().catch(() => ({}));
-  if(r.status === 401){ forceLogout('Chave de administração incorreta ou sessão expirada.'); return { ok: false, auth: true, status: r.status, j }; }
+  if(r.status === 401){ forceLogout('Sessão expirada. Entre novamente.'); return { ok: false, auth: true, status: r.status, j }; }
   return { ok: r.ok, status: r.status, j };
 });
 
@@ -391,14 +473,15 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     tab.classList.add('active');
     const target = tab.dataset.tab;
     if($(target)) $(target).classList.add('active');
+    if(target === 'tab-authors') renderAuthors();
   });
 });
 
 // Logout
-$('logoutBtn').onclick = () => {
-  if(confirm('Terminar sessão de administração?')){
-    forceLogout('');
-  }
+$('logoutBtn').onclick = async () => {
+  if(!confirm('Terminar sessão de administração?')) return;
+  try { await sessionFetch({ action: 'logout' }); } catch {}
+  forceLogout('');
 };
 
 // Limpa do ecrã todos os dados de administração (encomendas, contactos, etc.).
@@ -429,17 +512,16 @@ function clearAdminView(){
   try { syncFormats(); } catch {}
 }
 
-// Quando o servidor recusa a chave (401), volta ao ecrã de login e apaga a
+// Quando o servidor recusa a sessão (401), volta ao ecrã de login e apaga a
 // informação que estava no ecrã — nenhuma funcionalidade fica acessível.
 function forceLogout(message){
-  sessionStorage.removeItem('kulera_admin_key');
-  KEY = '';
+  SESSION = null;
   DATA = null;
   if(LOAD_INTERVAL){ clearInterval(LOAD_INTERVAL); LOAD_INTERVAL = null; }
   clearAdminView();
   $('app').hidden = true;
   $('login').hidden = false;
-  $('key').value = '';
+  if($('key')) $('key').value = '';
   $('err').textContent = message || '';
 }
 
@@ -473,14 +555,14 @@ function renderSandbox(isSandbox){
 }
 
 async function load(){
-  const r = await fetch('/api/admin', { cache: 'no-store', headers: { 'x-admin-key': KEY } });
+  const r = await fetch('/api/admin', { cache: 'no-store' });
   if(!r.ok){
     let j = {};
     try { j = await r.json(); } catch {}
     const err = new Error(r.status === 401 ? 'auth' : 'server');
     err.status = r.status;
     err.code = j.error || '';
-    if(r.status === 401) forceLogout('Chave de administração incorreta ou sessão expirada.');
+    if(r.status === 401) forceLogout('Sessão expirada. Entre novamente.');
     else if(r.status === 503) forceLogout(loginErrorMessage(err));
     else if(LOAD_INTERVAL){ clearInterval(LOAD_INTERVAL); LOAD_INTERVAL = null; }
     throw err;
@@ -1220,13 +1302,105 @@ $('bookForm').addEventListener('submit', async e => {
       return;
     }
     m.className = 'msg';
-    m.textContent = j.warning ? 'Guardado como rascunho (falta ficheiro de conteúdo).' : 'Livro guardado com sucesso.';
+    const avisos = {
+      sem_conteudo_ficou_rascunho: 'Ficou como rascunho: falta o ficheiro de conteúdo.',
+      sem_autor_ficou_rascunho: 'Ficou como rascunho: ligue um autor registado no separador «Autores» e volte a publicar.',
+    };
+    let texto = avisos[j.warning] || 'Livro guardado com sucesso.';
     setFieldValue(f, 'id', j.id);
+    // Mostra já à editora o valor real que ganha com este livro.
+    try {
+      const { ok: eok, j: ej } = await api({
+        action: 'book_earnings', bookId: j.id,
+        priceMinor: hasDigital ? digitalPrice : physicalPrice,
+        partnerId: fieldValue(f, 'partnerId') || null,
+      });
+      if(eok && ej.ok){
+        const mt = v => (Number(v||0)/100).toLocaleString('pt-MZ', {minimumFractionDigits:2,maxFractionDigits:2});
+        texto += ' Ganha ' + mt(ej.publisher) + ' MT por livro';
+        if(ej.author > 0) texto += ' (o autor leva ' + mt(ej.author) + ' MT)';
+        texto += '.';
+      }
+    } catch {}
+    m.textContent = texto;
     contentHtml = null;
     await load();
   } finally {
     if(submitBtn) submitBtn.disabled = false;
   }
+});
+
+// ===== Autores: registo único, ligação ao livro e valor por livro =====
+function renderAuthors(){
+  if(!DATA) return;
+  const autores = DATA.authors || [], links = DATA.bookAuthors || [], livros = DATA.books || [];
+  const mt = v => (Number(v||0)/100).toLocaleString('pt-MZ', {minimumFractionDigits:2,maxFractionDigits:2});
+
+  fill($('authorsTable'), ['Nome','NUIT','Classe','Estado','Livros'], autores, a => {
+    const tr = document.createElement('tr');
+    const n = links.filter(l => l.author_id === a.id).length;
+    const faltas = [];
+    if(!a.nuit) faltas.push('NUIT');
+    if(!a.bi_number) faltas.push('BI');
+    if(!a.is_related && !(Number(a.default_share_bps) > 0)) faltas.push('%');
+    if(!a.payout_account) faltas.push('conta');
+    const estado = a.is_related ? 'Dono'
+      : (faltas.length ? 'Falta: ' + faltas.join(', ') : 'Completo');
+    tr.append(cell(a.full_name), cell(a.nuit || '—'), cell(a.class === 'foreign' ? 'Estrangeiro' : 'Nacional'), cell(estado), cell(String(n)));
+    return tr;
+  });
+
+  const selLivro = $('linkBook'), selAutor = $('linkAuthor');
+  const keepB = selLivro.value, keepA = selAutor.value;
+  selLivro.innerHTML = ''; selAutor.innerHTML = '';
+  livros.forEach(b => { const o = document.createElement('option'); o.value = b.id; o.textContent = b.title; selLivro.appendChild(o); });
+  autores.forEach(a => { const o = document.createElement('option'); o.value = a.id; o.textContent = a.full_name; selAutor.appendChild(o); });
+  if(keepB) selLivro.value = keepB;
+  if(keepA) selAutor.value = keepA;
+
+  fill($('linksTable'), ['Livro','Autor','Valor por livro',''], links, l => {
+    const tr = document.createElement('tr');
+    const livro = livros.find(b => b.id === l.book_id);
+    const autor = autores.find(a => a.id === l.author_id);
+    const valor = l.amount_minor != null
+      ? mt(l.amount_minor) + ' MT'
+      : (Number(l.share_bps||0)/100).toLocaleString('pt-MZ', {minimumFractionDigits:2,maxFractionDigits:2}) + '%';
+    tr.append(cell(livro?.title || l.book_id), cell(autor?.full_name || l.author_id), cell(valor),
+      btn('Remover', async () => {
+        const { ok } = await api({ action:'unlink_book_author', bookId:l.book_id, authorId:l.author_id });
+        if(ok){ await load(); renderAuthors(); }
+      }));
+    return tr;
+  });
+}
+
+$('authorForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, m = $('authorMsg');
+  m.className = 'msg'; m.textContent = 'A guardar...';
+  const { ok, j } = await api({
+    action: 'save_author', name: fieldValue(f,'name'),
+    nuit: fieldValue(f,'nuit'), bi: fieldValue(f,'bi'), klass: fieldValue(f,'klass'),
+  });
+  if(!ok){ m.className = 'msg err'; m.textContent = j.detail || 'Não foi possível guardar o autor.'; return; }
+  m.textContent = j.created ? 'Autor criado.' : 'Esse autor já existia — um autor, um registo.';
+  f.reset();
+  await load(); renderAuthors();
+});
+
+$('linkForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, m = $('linkMsg');
+  const shareBps = Math.round(Number(fieldValue(f,'share')) * 100);
+  const amountTexto = String(fieldValue(f,'amount')).trim();
+  const amountMinor = amountTexto === '' ? null : Math.round(Number(amountTexto) * 100);
+  const { ok, j } = await api({
+    action: 'link_book_author', bookId: fieldValue(f,'bookId'), authorId: fieldValue(f,'authorId'),
+    shareBps, amountMinor,
+  });
+  if(!ok){ m.className = 'msg err'; m.textContent = j.detail || 'Não foi possível ligar o autor.'; return; }
+  m.className = 'msg'; m.textContent = 'Autor ligado ao livro com o valor declarado.';
+  await load(); renderAuthors();
 });
 
 // Partner submit
@@ -1344,13 +1518,13 @@ $('runMaintenance').onclick = async () => {
 // Login form — a chave só é guardada depois de o servidor a aceitar.
 // As mensagens não revelam detalhes internos (tabelas, SQL ou ambiente).
 function loginErrorMessage(err){
-  if(err?.code === 'admin_key_not_configured'){
-    return 'O acesso ao painel não está configurado neste servidor. Contacte o responsável técnico.';
+  if(err?.code === 'admin_not_seeded'){
+    return 'Ainda não existem contas de administração. O responsável técnico tem de correr o seed.';
   }
-  if(err?.code === 'admin_key_unavailable'){
-    return 'Não foi possível validar o acesso neste momento. Tente novamente dentro de instantes.';
+  if(err?.code === 'too_many_attempts'){
+    return 'Demasiadas tentativas falhadas. Tente novamente dentro de alguns minutos.';
   }
-  if(err?.message === 'auth') return 'Chave de administração incorreta.';
+  if(err?.code === 'invalid_credentials' || err?.message === 'auth') return 'Conta ou senha incorreta.';
   return 'Erro ao ligar ao servidor. Tente novamente.';
 }
 
@@ -1361,28 +1535,96 @@ function startAutoRefresh(){
   }, 30000);
 }
 
+const sessionFetch = body => fetch('/api/admin-session', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'x-requested-with': 'kulera-admin' },
+  body: JSON.stringify(body),
+}).then(async r => ({ ok: r.ok, status: r.status, j: await r.json().catch(() => ({})) }));
+
+// Preenche o separador "A Minha Conta" com a sessão actual e os dados bancários.
+async function loadAccount(){
+  const r = await fetch('/api/admin-session', { cache: 'no-store' });
+  if(!r.ok) return null;
+  const j = await r.json().catch(() => ({}));
+  SESSION = j.user || null;
+  if(SESSION){
+    $('accountWho').textContent = 'Sessão iniciada como ' + (SESSION.displayName || SESSION.username) + '.';
+  }
+  if(j.bank){
+    const f = $('bankForm');
+    ['holder','bank_name','account_number','nib','wallet'].forEach(k => setFieldValue(f, k, j.bank[k] || ''));
+  }
+  // A senha da TecnoIncubadora não se altera: esconde o formulário em vez de o deixar falhar.
+  const canChange = SESSION ? SESSION.canChangePassword !== false : true;
+  $('passCard').hidden = !canChange;
+  $('passLocked').hidden = canChange;
+  return j;
+}
+
+$('bankForm')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target;
+  const bank = {
+    holder: fieldValue(f,'holder'), bank_name: fieldValue(f,'bank_name'),
+    account_number: fieldValue(f,'account_number'), nib: fieldValue(f,'nib'), wallet: fieldValue(f,'wallet'),
+  };
+  const { ok, j } = await sessionFetch({ action: 'save_bank', bank });
+  $('bankMsg').textContent = ok ? 'Dados bancários guardados. Alteração registada.' : 'Não foi possível guardar (' + (j.error || 'erro') + ').';
+  $('bankMsg').style.color = ok ? '#1a7f5a' : '#b23c3c';
+});
+
+$('passForm')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target;
+  const current = fieldValue(f,'current'), password = fieldValue(f,'password');
+  const { ok, j } = await sessionFetch({ action: 'change_password', current, password });
+  if(ok){
+    $('passMsg').textContent = 'Senha alterada. As outras sessões foram terminadas.';
+    $('passMsg').style.color = '#1a7f5a';
+    f.reset();
+    return;
+  }
+  const msg = j.error === 'password_too_short' ? 'A nova senha precisa de pelo menos 8 caracteres.'
+    : j.error === 'password_locked' ? 'Esta senha não é alterável pela aplicação.'
+    : j.error === 'invalid_credentials' ? 'Senha atual incorreta.'
+    : 'Não foi possível alterar (' + (j.error || 'erro') + ').';
+  $('passMsg').textContent = msg;
+  $('passMsg').style.color = '#b23c3c';
+});
+
 $('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
+  const username = ($('user')?.value || 'tecnoincubadora').trim();
   const typed = ($('key').value || '').trim();
-  if(!typed){ $('err').textContent = 'Escreva a chave de administração.'; return; }
-  KEY = typed;
+  if(!typed){ $('err').textContent = 'Escreva a senha.'; return; }
+  const btn = e.target.querySelector('button[type=submit]');
+  if(btn) btn.disabled = true;
   try {
-    await load();
-    sessionStorage.setItem('kulera_admin_key', KEY);
+    const { ok, status, j } = await sessionFetch({ action: 'login', username, password: typed });
+    if(!ok){
+      const err = new Error('auth'); err.status = status; err.code = j.error || '';
+      throw err;
+    }
+    SESSION = j.user || null;
     $('err').textContent = '';
+    await loadAccount();
+    await load();
     $('login').hidden = true;
     $('app').hidden = false;
     startAutoRefresh();
+    if(j.passwordChangeRecommended && SESSION?.canChangePassword !== false){
+      $('passMsg').textContent = 'A troca de senha é recomendada.';
+    }
   } catch(err){
-    KEY = '';
-    sessionStorage.removeItem('kulera_admin_key');
-    $('err').textContent = loginErrorMessage(err);
+    forceLogout(loginErrorMessage(err));
+  } finally {
+    if(btn) btn.disabled = false;
   }
 });
 
 async function csv(t){
-  const r = await fetch('/api/admin?format=csv&type=' + t, { cache: 'no-store', headers: { 'x-admin-key': KEY } });
-  if(r.status === 401){ forceLogout('A sua sessão expirou. Introduza novamente a chave de administração.'); return; }
+  const r = await fetch('/api/admin?format=csv&type=' + t, { cache: 'no-store' });
+  if(r.status === 401){ forceLogout('A sua sessão expirou. Entre novamente.'); return; }
   const b = await r.blob();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(b);
@@ -1444,15 +1686,14 @@ $('reconcileBtn').onclick = async () => {
 };
 $('csvP').onclick = () => csv('payouts');
 
-// Recupera a sessão do separador actual, se existir. Sem chave guardada nunca
-// se abre o painel: o ecrã de login (e só ele) fica visível.
+// Ao abrir o painel, pergunta ao servidor se há sessão válida (cookie httpOnly).
+// Sem sessão, só o ecrã de login fica visível.
 async function tryInit(){
   $('app').hidden = true;
-  if(!KEY){
-    $('login').hidden = false;
-    return;
-  }
   try {
+    const r = await fetch('/api/admin-session', { cache: 'no-store' });
+    if(!r.ok){ $('login').hidden = false; $('err').textContent = ''; return; }
+    await loadAccount();
     await load();
     $('login').hidden = true;
     $('app').hidden = false;
@@ -1460,10 +1701,6 @@ async function tryInit(){
   } catch(err){
     $('login').hidden = false;
     $('app').hidden = true;
-    if(err?.message === 'auth'){
-      sessionStorage.removeItem('kulera_admin_key');
-      KEY = '';
-    }
     $('err').textContent = loginErrorMessage(err);
   }
 }
@@ -1472,13 +1709,9 @@ async function tryInit(){
 // sessão antes de mostrar seja o que for.
 window.addEventListener('pageshow', (e) => {
   if(!e.persisted) return;
-  const stored = sessionStorage.getItem('kulera_admin_key') || '';
-  if(!stored){
-    forceLogout('Sessão terminada. Introduza a chave novamente.');
-    return;
-  }
-  KEY = stored;
-  load().catch(() => {});
+  fetch('/api/admin-session', { cache: 'no-store' })
+    .then(r => { if(!r.ok) forceLogout('Sessão terminada. Entre novamente.'); else load().catch(() => {}); })
+    .catch(() => {});
 });
 
 tryInit();

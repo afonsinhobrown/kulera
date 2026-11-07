@@ -4,20 +4,47 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { escapeHtml, splitChapters } from '../lib/content.js';
 import { resolvePaysuiteCreateUrl, verifySignature } from '../lib/paysuite.js';
-import { computeSplit } from '../lib/split.js';
+import { SCENARIOS, gatewayFee, goldenRule, splitSale } from '../lib/split.js';
 
-test('split: app + editors + parceiro = bruto, sempre', () => {
+test('divisão: as partes somam sempre o bruto, nos três cenários', () => {
   for (const g of [1, 3, 99, 35000, 70000, 123457]) {
-    for (const hasPartner of [false, true]) {
-      const s = computeSplit(g, hasPartner);
-      assert.equal(s.app + s.editors + s.partner, g);
-      assert.ok(s.app >= 0 && s.editors >= 0 && s.partner >= 0);
+    for (const scenario of [SCENARIOS.KULERA_AUTHOR, SCENARIOS.RELATED_AUTHOR, SCENARIOS.MARKET]) {
+      const s = splitSale({ grossMinor: g, scenario, authorShareBps: 5000 });
+      assert.equal(s.author + s.publisher + s.kulera + s.emilio + s.techNet + s.gateway, g);
+      assert.ok(s.author >= 0 && s.publisher >= 0 && s.techNet >= 0);
+      assert.equal(s.golden.ok, true);
     }
   }
-  assert.deepEqual(computeSplit(70000, true), { app: 14000, editors: 7000, partner: 49000 });
-  assert.deepEqual(computeSplit(35000, false), { app: 7000, editors: 28000, partner: 0 });
-  assert.throws(() => computeSplit(-1, true));
-  assert.throws(() => computeSplit(10.5, false));
+  assert.throws(() => splitSale({ grossMinor: -1, scenario: 'C' }));
+  assert.throws(() => splitSale({ grossMinor: 10.5, scenario: 'C' }));
+  assert.throws(() => splitSale({ grossMinor: 1000, scenario: 'Z' }));
+});
+
+test('cenário C: 30% da plataforma (gateway dentro) e 70% da editora do mercado', () => {
+  const s = splitSale({ grossMinor: 100000, scenario: SCENARIOS.MARKET });
+  assert.deepEqual([s.tech, s.gateway, s.techNet, s.publisher], [30000, 7000, 23000, 70000]);
+});
+
+test('cenário A: autor recebe o combinado, Kulera 0%, resto para a TecnoIncubadora', () => {
+  const porPercentagem = splitSale({ grossMinor: 100000, scenario: SCENARIOS.KULERA_AUTHOR, authorShareBps: 5000 });
+  assert.deepEqual([porPercentagem.author, porPercentagem.kulera, porPercentagem.techNet, porPercentagem.publisher], [50000, 0, 43000, 0]);
+
+  const porValorFixo = splitSale({ grossMinor: 100000, scenario: SCENARIOS.KULERA_AUTHOR, authorAmountMinor: 25000 });
+  assert.equal(porValorFixo.author, 25000);
+  assert.equal(porValorFixo.techNet, 68000);
+});
+
+test('cenário B: o Emílio não leva royalties — ganha pelo capital', () => {
+  const s = splitSale({ grossMinor: 100000, scenario: SCENARIOS.RELATED_AUTHOR, authorShareBps: 5000 });
+  assert.deepEqual([s.author, s.publisher, s.kulera, s.techNet], [0, 0, 0, 93000]);
+});
+
+test('regra de ouro: o lado Kulera nunca fica acima da TecnoIncubadora', () => {
+  assert.equal(goldenRule({ kulera: 0, emilio: 0, tech: 43000 }).ok, true);
+  assert.equal(goldenRule({ kulera: 43000, emilio: 0, tech: 43000 }).ok, true, 'empatar é permitido');
+  const bad = goldenRule({ kulera: 30000, emilio: 20000, tech: 40000 });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.excess, 10000);
 });
 
 test('capítulos', () => {
@@ -177,19 +204,45 @@ test('Revisão V3: planos mensais e créditos temporários', async () => {
   assert.equal(packByPrice(100000).slots, 5);
 });
 
-test('gateway 7%: o exemplo Bronze + venda dá 316 MT (26,3% do fluxo)', async () => {
-  const { gatewayFee, computeNet } = await import('../lib/split.js');
+test('saques: 3 meses contam-se a partir do último saque pago', async () => {
+  const { addDays, PROFIT_PERIOD_DAYS } = await import('../lib/withdrawals.js');
+  assert.equal(PROFIT_PERIOD_DAYS, 90);
+  const dia = new Date('2026-11-05T12:00:00Z');
+  assert.equal(addDays(dia, 90).toISOString(), '2027-02-03T12:00:00.000Z');
+});
+
+test('autor: enquanto faltar um dado, a conta fica presa no formulário', async () => {
+  const { missingFields, isComplete } = await import('../lib/author-auth.js');
+  const completo = {
+    full_name: 'Autor',
+    nuit: '123456789',
+    bi_number: '110100123456A',
+    default_share_bps: 5000,
+    payout_method: 'mpesa',
+    payout_account: '841234567',
+  };
+  assert.equal(isComplete(completo), true);
+  assert.deepEqual(missingFields({ ...completo, nuit: null }), ['NUIT']);
+  assert.deepEqual(missingFields({ ...completo, bi_number: '  ' }), ['BI']);
+  assert.deepEqual(missingFields({ ...completo, default_share_bps: 0 }), ['percentagem na venda']);
+  assert.deepEqual(missingFields({ ...completo, payout_method: 'banco' }), ['forma de recebimento']);
+  assert.deepEqual(missingFields({ ...completo, payout_account: '' }), ['conta de recebimento']);
+  assert.deepEqual(missingFields(null), ['registo']);
+  // O Emílio é parte relacionada: 0% é a regra, não é dado em falta.
+  assert.equal(isComplete({ ...completo, is_related: true, default_share_bps: 0 }), true);
+});
+
+test('gateway 7% nas duas pontas do fluxo', async () => {
   assert.equal(gatewayFee(20000), 1400); // 200 MT -> 14 MT
   assert.equal(gatewayFee(100000), 7000); // 1.000 MT -> 70 MT
+  assert.throws(() => gatewayFee(-1));
 
   const bronzeNet = 20000 - gatewayFee(20000); // 186 MT
-  const sale = computeNet(100000, true); // comissão 20% = 200 MT
-  assert.equal(sale.app, 20000);
-  assert.equal(sale.gateway, 7000);
-  assert.equal(sale.appNet, 13000); // 130 MT depois do gateway
-  const combined = bronzeNet + sale.appNet;
-  assert.equal(combined, 31600);
-  assert.ok(Math.abs((combined / 120000) * 100 - 26.333) < 0.01);
+  const venda = splitSale({ grossMinor: 100000, scenario: SCENARIOS.MARKET });
+  assert.equal(venda.tech, 30000); // 30% retidos, gateway incluído
+  assert.equal(venda.techNet, 23000); // 230 MT depois do gateway
+  assert.equal(venda.publisher, 70000);
+  assert.equal(bronzeNet + venda.techNet, 41600);
 });
 
 test('tolerância de 3 dias, cobertura durante a tolerância e avisos 72h/24h', async () => {

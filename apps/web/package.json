@@ -11,6 +11,7 @@
     "qrcode": "^1.5.4"
   },
   "scripts": {
-    "test": "node --test test/flow.test.mjs test/lib.test.mjs"
+    "test": "node --test test/flow.test.mjs test/lib.test.mjs test/admin-auth.test.mjs",
+    "seed:admins": "node scripts/seed-admins.mjs"
   }
 }

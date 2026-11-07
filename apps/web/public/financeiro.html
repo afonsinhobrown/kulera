@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kulera+ — Financeiro</title>
+<style>
+  :root{--ink:#073337;--muted:#5b747c;--line:#dfe7e5;--card:#fff;--bg:#f4f8f7;--accent:#0e7c66}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{background:#073337;color:#fff;padding:16px 24px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between}
+  header h1{margin:0;font:700 20px Georgia,serif}
+  .who{font-size:13px;opacity:.85}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .bar button{border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;padding:8px 14px;border-radius:8px;font:inherit;cursor:pointer}
+  .bar button.on{background:#fff;color:var(--ink);font-weight:600}
+  main{max-width:1180px;margin:0 auto;padding:24px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .kpi .l{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .kpi .v{font-size:20px;font-weight:700;margin-top:4px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:20px}
+  h2{font:700 16px Georgia,serif;margin:0 0 12px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  td.num,th.num{text-align:right}
+  tbody tr:hover{background:#f6fbf9}
+  .empty{color:var(--muted);font-size:14px;padding:8px 0}
+  .note{font-size:13px;color:var(--muted);margin:0 0 12px}
+  @media print{
+    header .bar{display:none}
+    body{background:#fff}
+    main{max-width:none;padding:0}
+    section{break-inside:avoid;border-color:#ccc}
+    .kpis{grid-template-columns:repeat(4,1fr)}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Financeiro</h1>
+    <div class="who" id="who">—</div>
+  </div>
+  <div class="bar">
+    <button data-p="week">Semana</button>
+    <button data-p="month" class="on">Mês</button>
+    <button data-p="year">Ano</button>
+    <button data-p="all">Tudo</button>
+    <button id="print">Imprimir / PDF</button>
+    <button id="back">Voltar ao painel</button>
+  </div>
+</header>
+
+<main>
+  <div class="kpis" id="kpis"></div>
+
+  <section>
+    <h2>Vendas do período</h2>
+    <p class="note" id="salesNote"></p>
+    <div style="overflow:auto"><table id="sales"></table></div>
+  </section>
+
+  <section>
+    <h2>Saldo por editora, por livro</h2>
+    <div style="overflow:auto"><table id="pubBook"></table></div>
+  </section>
+
+  <section>
+    <h2>Saldo por autor, por livro</h2>
+    <div style="overflow:auto"><table id="authBook"></table></div>
+  </section>
+
+  <section>
+    <h2>Saques e divisões de lucros</h2>
+    <div style="overflow:auto"><table id="withdrawals"></table></div>
+  </section>
+
+  <section>
+    <h2>Saldos das entidades</h2>
+    <div style="overflow:auto"><table id="balances"></table></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const money = m => (Number(m||0)/100).toLocaleString('pt-MZ',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' MT';
+const dt = s => s ? new Date(s).toLocaleString('pt-MZ',{dateStyle:'short',timeStyle:'short'}) : '—';
+let PERIOD = 'month', DATA = null;
+
+const cell = (v, cls) => { const td = document.createElement('td'); td.textContent = v ?? ''; if(cls) td.className = cls; return td; };
+
+function table(el, heads, rows, make){
+  el.innerHTML = '';
+  const tr = document.createElement('tr');
+  heads.forEach(([label, cls]) => { const th = document.createElement('th'); th.textContent = label; if(cls) th.className = cls; tr.appendChild(th); });
+  el.appendChild(tr);
+  if(!rows.length){ const r = document.createElement('tr'); r.appendChild(cell('Sem registos neste período.')).colSpan = heads.length; el.appendChild(r); return; }
+  rows.forEach(x => el.appendChild(make(x)));
+}
+
+function render(){
+  if(!DATA) return;
+  const t = DATA.totals;
+  $('who').textContent = 'Período: ' + DATA.period.label + ' · ' + new Date(DATA.period.from).toLocaleDateString('pt-MZ') + ' a ' + new Date(DATA.period.to).toLocaleDateString('pt-MZ');
+  $('kpis').innerHTML = '';
+  [
+    ['Vendas', String(t.sales)],
+    ['Bruto', money(t.gross)],
+    ['Gateway 7%', money(t.gateway)],
+    ['Líquido', money(t.net)],
+    ['Plataforma (TecnoIncubadora)', money(t.tech)],
+    ['Autores', money(t.author)],
+    ['Editoras', money(t.publisher)],
+    ['Retido Kulera', money(t.kulera)],
+    ['Retido Emílio', money(t.emilio)],
+    ['Saques pagos', money(t.withDrawn)],
+  ].forEach(([l,v]) => {
+    const d = document.createElement('div'); d.className = 'kpi';
+    const a = document.createElement('div'); a.className = 'l'; a.textContent = l;
+    const b = document.createElement('div'); b.className = 'v'; b.textContent = v;
+    d.append(a,b); $('kpis').appendChild(d);
+  });
+
+  $('salesNote').textContent = DATA.sales.length + ' venda(s) listada(s).';
+
+  table($('sales'),
+    [['Data'],['Livro'],['Editora'],['Bruto','num'],['Gateway','num'],['Autor','num'],['Editora','num'],['Plataforma','num'],['Kulera','num']],
+    DATA.sales,
+    s => { const tr = document.createElement('tr');
+      tr.append(cell(dt(s.at)), cell(s.book), cell(s.publisher), cell(money(s.gross),'num'), cell(money(s.gateway),'num'),
+               cell(money(s.author),'num'), cell(money(s.publisherShare),'num'), cell(money(s.tech),'num'), cell(money(s.kulera),'num'));
+      return tr; });
+
+  table($('pubBook'),
+    [['Editora'],['Livro'],['Vendas','num'],['Bruto','num'],['Para a editora','num'],['Plataforma','num'],['Gateway','num']],
+    DATA.byPublisherBook,
+    r => { const tr = document.createElement('tr');
+      tr.append(cell(r.publisher), cell(r.book), cell(String(r.sales),'num'), cell(money(r.gross),'num'),
+               cell(money(r.publisherShare),'num'), cell(money(r.tech),'num'), cell(money(r.gateway),'num'));
+      return tr; });
+
+  table($('authBook'),
+    [['Autor'],['Livro'],['Movimentos','num'],['Recebido','num']],
+    DATA.byAuthorBook,
+    r => { const tr = document.createElement('tr');
+      tr.append(cell(r.author), cell(r.book), cell(String(r.movements),'num'), cell(money(r.received),'num'));
+      return tr; });
+
+  table($('withdrawals'),
+    [['Data'],['Tipo'],['Entidade'],['Bruto','num'],['Taxa 1%','num'],['Líquido','num'],['Estado']],
+    DATA.withdrawals,
+    w => { const tr = document.createElement('tr');
+      const tipo = w.kind === 'profit_share' ? 'Divisão de lucros' : 'Saque de editora';
+      const ent = w.kind === 'profit_share'
+        ? 'TecnoIncubadora ' + money(w.techShare) + ' / Emílio ' + money(w.emilioShare)
+        : (w.entity === 'publisher' ? 'Editora' : w.entity);
+      tr.append(cell(dt(w.requestedAt)), cell(tipo), cell(ent), cell(money(w.amount),'num'),
+               cell(money(w.fee),'num'), cell(money(w.net),'num'), cell(w.status + (w.extraordinary ? ' (extraordinário)' : '')));
+      return tr; });
+
+  const b = DATA.balances || {};
+  const rows = ['tecnoincubadora','kulera','emilio'].map(k => ({
+    entity: k,
+    accrued: b[k]?.accrued || 0,
+    paid: b[k]?.paid || 0,
+    available: b[k]?.available || 0,
+  }));
+  table($('balances'),
+    [['Entidade'],['Direito adquirido','num'],['Já pago','num'],['Disponível','num']],
+    rows,
+    r => { const tr = document.createElement('tr');
+      tr.append(cell(r.entity), cell(money(r.accrued),'num'), cell(money(r.paid),'num'), cell(money(r.available),'num'));
+      return tr; });
+}
+
+async function load(period){
+  PERIOD = period || PERIOD;
+  document.querySelectorAll('[data-p]').forEach(b => b.classList.toggle('on', b.dataset.p === PERIOD));
+  const r = await fetch('/api/finance?period=' + encodeURIComponent(PERIOD), { cache: 'no-store' });
+  if(r.status === 401){ location.href = '/admin.html'; return; }
+  if(!r.ok){ $('who').textContent = 'Não foi possível carregar o relatório.'; return; }
+  DATA = await r.json();
+  render();
+}
+
+document.querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => load(b.dataset.p)));
+$('print').addEventListener('click', () => window.print());
+$('back').addEventListener('click', () => { location.href = '/admin.html'; });
+
+load('month');
+</script>
+</body>
+</html>
