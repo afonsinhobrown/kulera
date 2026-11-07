@@ -165,7 +165,12 @@ deles pagam 0 ao autor até isso ser preenchido no separador «Autores».
   `profile_incomplete` a qualquer outra acção.
 - Ao completar o NUIT, reconcilia com o registo criado pela editora: os livros passam para a
   conta do autor e o registo órfão desaparece.
-- O painel mostra na lista de autores o que falta a cada um (`Falta: NUIT, BI, %`).
+- **Página própria no arranque:** se a Kulera entrar e houver autores por concluir, o painel não
+  abre — é levada para `/finalizar-autores.html`, que lista cada autor e os campos em falta.
+  Só depois de fechar todos é que o painel fica disponível.
+- **Sem autores repetidos:** ao escrever um nome que já existe (sem acentos nem maiúsculas), o
+  sistema usa o registo existente em vez de criar outro; o formulário sugere os nomes já
+  registados.
 - A percentagem definida na conta vale para os livros onde a editora não declarou valor.
 
 **Correcção das vendas antigas** (`scripts/fix-legacy-sales.mjs`, já corrida na base real).

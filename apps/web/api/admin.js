@@ -10,7 +10,8 @@ import { announceBook, subscriberCount } from '../lib/marketing.js';
 import { emailConfig, emailConfigured, sendEmail } from '../lib/email.js';
 import { markSubscriptionPaymentFailed, markSubscriptionPaymentRecovered, runDailyMaintenance } from '../lib/lifecycle.js';
 import { CSRF_HEADER, CSRF_VALUE, ensureAdminSchema, requireAdmin } from '../lib/admin-auth.js';
-import { ensureFinanceSchema, resolveSaleScenario, setBookAuthor, upsertAuthor } from '../lib/finance.js';
+import { ensureFinanceSchema, missingFields, resolveSaleScenario, setBookAuthor, upsertAuthor } from '../lib/finance.js';
+import { completeAuthorProfile } from '../lib/author-auth.js';
 import { splitSale } from '../lib/split.js';
 import { SESSION_ACTIONS, handleAdminSession } from '../lib/admin-session-handler.js';
 import { WITHDRAWAL_ACTIONS, handleWithdrawals } from '../lib/withdrawals-handler.js';
@@ -152,6 +153,23 @@ async function action(b, req) {
           allowMissingNuit: b.allowMissingNuit === true,
         });
         return [200, { ok: true, ...out }];
+      } catch (e) {
+        return [400, { error: 'invalid', detail: String(e?.message || e) }];
+      }
+    }
+    case 'complete_author': {
+      if (!uuid(b.authorId)) return [400, { error: 'invalid' }];
+      try {
+        await ensureFinanceSchema(pool);
+        const a = await completeAuthorProfile(pool, b.authorId, {
+          nuit: b.nuit,
+          bi: b.bi,
+          shareBps: b.shareBps,
+          payoutMethod: b.payoutMethod,
+          payoutAccount: b.payoutAccount,
+          payoutHolder: b.payoutHolder,
+        });
+        return [200, { ok: true, missing: missingFields(a) }];
       } catch (e) {
         return [400, { error: 'invalid', detail: String(e?.message || e) }];
       }
@@ -476,6 +494,19 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'csrf' });
   }
 
+  // Autores com registo por concluir (a página de arranque só precisa disto).
+  if (req.method === 'GET' && req.query?.format === 'author-gate') {
+    try {
+      const rows = (await pool.query(
+        'select id, full_name, nuit, bi_number, is_related, default_share_bps, payout_method, payout_account, payout_holder from fair_authors order by full_name',
+      )).rows.map((a) => ({ ...a, missing: missingFields(a) }));
+      return res.json({ ok: true, authorsMissing: rows.filter((a) => a.missing.length > 0) });
+    } catch (e) {
+      console.error('author-gate.error', e?.message || String(e));
+      return res.status(500).json({ error: 'gate_failed' });
+    }
+  }
+
   // Relatório financeiro (semana, mês, ano, tudo).
   if (req.method === 'GET' && req.query?.format === 'finance') {
     const period = PERIODS.includes(String(req.query.period)) ? String(req.query.period) : 'month';
@@ -604,12 +635,14 @@ export default async function handler(req, res) {
     let bookAuthors = [];
     try {
       authors = (await pool.query(
-        'select id, full_name, pen_name, nuit, bi_number, class, status, is_related, default_share_bps, payout_method, payout_account, data_completed_at from fair_authors order by full_name',
-      )).rows.map((a) => ({ ...a, default_share_bps: Number(a.default_share_bps || 0) }));
+        'select id, full_name, pen_name, nuit, bi_number, class, status, is_related, default_share_bps, payout_method, payout_account, payout_holder, data_completed_at from fair_authors order by full_name',
+      )).rows.map((a) => ({ ...a, default_share_bps: Number(a.default_share_bps || 0), missing: missingFields(a) }));
       bookAuthors = (await pool.query(
         'select book_id, author_id, role, share_bps, amount_minor from fair_book_authors',
       )).rows.map((r) => ({ ...r, share_bps: Number(r.share_bps), amount_minor: r.amount_minor == null ? null : Number(r.amount_minor) }));
     } catch {}
+    // Autores cujo registo ainda não está concluído: a Kulera tem de os fechar antes de usar o painel.
+    const authorsMissing = authors.filter((a) => (a.missing || []).length > 0);
 
     if (req.query?.format === 'csv') {
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -623,7 +656,7 @@ export default async function handler(req, res) {
       withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})),
       subscribers, emailReady: emailConfigured(), emailFrom: emailConfig()?.from || null, emailSupport: emailConfig()?.replyTo || null, promotions, readers,
       settings: { publication_fee_minor: await getPublicationFeeMinor(pool) },
-      authors, bookAuthors,
+      authors, bookAuthors, authorsMissing,
       sandbox });
   } catch (e) {
     console.error('admin.error', e?.message || String(e));

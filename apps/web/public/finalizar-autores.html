@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kulera+ — Finalizar cadastro dos autores</title>
+<style>
+  :root{--ink:#073337;--muted:#5b747c;--line:#dfe7e5;--card:#fff;--bg:#f4f8f7;--accent:#0e7c66;--err:#b23c3c}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{background:#073337;color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+  header h1{margin:0;font:700 20px Georgia,serif}
+  header button{border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;padding:8px 14px;border-radius:8px;font:inherit;cursor:pointer}
+  main{max-width:720px;margin:0 auto;padding:26px 20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:18px}
+  h2{font:700 18px Georgia,serif;margin:0 0 6px}
+  p.sub{color:var(--muted);font-size:14px;margin:0 0 16px}
+  label{display:grid;gap:6px;font-weight:600;font-size:14px;margin-bottom:12px}
+  input,select{padding:10px;border:1.5px solid #9db3b0;border-radius:8px;font:inherit;width:100%;background:#fff}
+  button.primary{padding:12px 18px;border:0;border-radius:8px;background:var(--accent);color:#fff;font:600 15px inherit;cursor:pointer}
+  .msg{font-size:13px;margin:10px 0 0;min-height:18px}
+  .msg.err{color:var(--err)}
+  .msg.ok{color:#1a7f5a}
+  .tag{display:inline-block;background:#fff2d8;color:#7a5a12;border:1px solid #f0d9a8;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:600;margin-bottom:10px}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Finalizar cadastro dos autores</h1>
+  <button id="logout">Sair</button>
+</header>
+
+<main>
+  <p class="sub" id="intro">Enquanto estes autores estiverem por concluir, o painel não abre.</p>
+  <div id="list"></div>
+  <div class="card" id="done" hidden>
+    <h2>Tudo concluído</h2>
+    <p class="sub">A abrir o painel…</p>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const H = { 'Content-Type': 'application/json', 'x-requested-with': 'kulera-admin' };
+const post = (body) => fetch('/api/admin', { method: 'POST', headers: H, body: JSON.stringify(body) })
+  .then(async r => ({ ok: r.ok, status: r.status, j: await r.json().catch(() => ({})) }));
+
+function campo(form, label, name, type, value, placeholder){
+  const l = document.createElement('label');
+  l.textContent = label;
+  const i = document.createElement('input');
+  i.name = name; i.type = type || 'text'; i.value = value || '';
+  if(placeholder) i.placeholder = placeholder;
+  l.appendChild(i); form.appendChild(l); return i;
+}
+
+function cartao(a){
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  const tag = document.createElement('div');
+  tag.className = 'tag';
+  tag.textContent = 'Falta: ' + a.missing.join(', ');
+  card.appendChild(tag);
+
+  const h = document.createElement('h2');
+  h.textContent = a.full_name;
+  card.appendChild(h);
+
+  const f = document.createElement('form');
+  campo(f, 'NUIT', 'nuit', 'text', a.nuit || '', '9 dígitos');
+  campo(f, 'BI', 'bi', 'text', a.bi_number || '', 'número do BI');
+  if(!a.is_related) campo(f, 'Percentagem na venda (%)', 'share', 'number', a.default_share_bps ? (a.default_share_bps/100) : '', 'ex.: 50');
+
+  const lsel = document.createElement('label');
+  lsel.textContent = 'Forma de recebimento';
+  const sel = document.createElement('select');
+  sel.name = 'payoutMethod';
+  [['','Escolher…'],['mpesa','M-Pesa'],['emola','e-Mola'],['nib','NIB']].forEach(([v, t]) => {
+    const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o);
+  });
+  sel.value = a.payout_method || '';
+  lsel.appendChild(sel); f.appendChild(lsel);
+
+  campo(f, 'Conta que vai receber', 'payoutAccount', 'text', a.payout_account || '', 'ex.: 84xxxxxxx ou NIB');
+  campo(f, 'Titular da conta', 'payoutHolder', 'text', a.payout_holder || a.full_name);
+
+  const btn = document.createElement('button');
+  btn.type = 'submit'; btn.className = 'primary'; btn.textContent = 'Guardar e concluir';
+  f.appendChild(btn);
+
+  const msg = document.createElement('p'); msg.className = 'msg'; f.appendChild(msg);
+
+  f.addEventListener('submit', async e => {
+    e.preventDefault();
+    msg.className = 'msg'; msg.textContent = 'A guardar...';
+    const val = n => (f.elements.namedItem(n)?.value ?? '');
+    const r = await post({
+      action: 'complete_author', authorId: a.id,
+      nuit: val('nuit'), bi: val('bi'),
+      shareBps: Math.round(Number(val('share') || 0) * 100),
+      payoutMethod: val('payoutMethod'),
+      payoutAccount: val('payoutAccount'),
+      payoutHolder: val('payoutHolder'),
+    });
+    if(!r.ok){ msg.className = 'msg err'; msg.textContent = r.j.detail || 'Não foi possível guardar.'; return; }
+    await carregar();
+  });
+
+  card.appendChild(f);
+  return card;
+}
+
+async function carregar(){
+  const r = await fetch('/api/admin?format=author-gate', { cache: 'no-store' });
+  if(r.status === 401){ location.replace('/admin.html'); return; }
+  const j = await r.json().catch(() => ({}));
+  const pendentes = j.authorsMissing || [];
+  if(!pendentes.length){
+    $('list').innerHTML = '';
+    $('intro').hidden = true;
+    $('done').hidden = false;
+    setTimeout(() => location.replace('/admin.html'), 900);
+    return;
+  }
+  $('intro').hidden = false;
+  $('done').hidden = true;
+  $('list').innerHTML = '';
+  pendentes.forEach(a => $('list').appendChild(cartao(a)));
+}
+
+$('logout').addEventListener('click', async () => {
+  await post({ action: 'logout' });
+  location.replace('/admin.html');
+});
+
+carregar();
+</script>
+</body>
+</html>

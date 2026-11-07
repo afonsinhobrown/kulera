@@ -142,7 +142,8 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
         <div class="form-card">
           <h3>Novo autor</h3>
           <form class="f" id="authorForm">
-            <label>Nome completo <input name="name" required maxlength="120"></label>
+            <label>Nome completo <input name="name" required maxlength="120" list="authorNames" autocomplete="off" placeholder="escreva para escolher um autor existente"></label>
+            <datalist id="authorNames"></datalist>
             <label>NUIT <input name="nuit" maxlength="24" placeholder="obrigatório para moçambicano"></label>
             <label>BI <input name="bi" maxlength="30"></label>
             <label>Classe
@@ -569,6 +570,11 @@ async function load(){
   }
   const j = await r.json();
   DATA = j;
+  // Autores por concluir: o painel não abre, vai para a página própria.
+  if(j.authorsMissing && j.authorsMissing.length){
+    location.replace('/finalizar-autores.html');
+    return;
+  }
   renderSandbox(j.sandbox);
 
   // KPIs
@@ -1351,6 +1357,12 @@ function renderAuthors(){
   });
 
   const selLivro = $('linkBook'), selAutor = $('linkAuthor');
+  // Sugestões de nomes: evita escrever um autor que já existe.
+  const dl = $('authorNames');
+  if(dl){
+    dl.innerHTML = '';
+    autores.forEach(a => { const o = document.createElement('option'); o.value = a.full_name; dl.appendChild(o); });
+  }
   const keepB = selLivro.value, keepA = selAutor.value;
   selLivro.innerHTML = ''; selAutor.innerHTML = '';
   livros.forEach(b => { const o = document.createElement('option'); o.value = b.id; o.textContent = b.title; selLivro.appendChild(o); });
@@ -1383,7 +1395,11 @@ $('authorForm').addEventListener('submit', async e => {
     nuit: fieldValue(f,'nuit'), bi: fieldValue(f,'bi'), klass: fieldValue(f,'klass'),
   });
   if(!ok){ m.className = 'msg err'; m.textContent = j.detail || 'Não foi possível guardar o autor.'; return; }
-  m.textContent = j.created ? 'Autor criado.' : 'Esse autor já existia — um autor, um registo.';
+  m.textContent = j.created
+    ? 'Autor criado.'
+    : (j.matchedBy === 'nome'
+        ? 'Já existia um autor com esse nome — a usar o registo existente, sem duplicar.'
+        : 'Esse autor já existia (mesmo NUIT) — a usar o registo existente.');
   f.reset();
   await load(); renderAuthors();
 });

@@ -102,6 +102,35 @@ const onlyDigits = (v) => String(v ?? '').replace(/\D+/g, '');
 /** Normaliza o NUIT: só dígitos. Vazio conta como ausente. */
 export const normalizeNuit = (v) => onlyDigits(v) || null;
 
+/** Nome comparável: sem acentos, sem maiúsculas e sem espaços a mais. */
+export const normalizeName = (v) =>
+  String(v ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+export const PAYOUT_METHODS = ['mpesa', 'emola', 'nib'];
+
+/**
+ * O que falta no registo de um autor. Enquanto a lista não estiver vazia, o autor (ou a
+ * editora que o regista) não pode dar o cadastro por concluído.
+ */
+export function missingFields(author) {
+  const faltas = [];
+  if (!author) return ['registo'];
+  if (!normalizeNuit(author.nuit)) faltas.push('NUIT');
+  if (!String(author.bi_number || '').trim()) faltas.push('BI');
+  // O Emílio é parte relacionada: os royalties dele são 0 por regra, não é dado em falta.
+  if (!author.is_related && !(Number(author.default_share_bps) > 0)) faltas.push('percentagem na venda');
+  if (!PAYOUT_METHODS.includes(String(author.payout_method || ''))) faltas.push('forma de recebimento');
+  if (!String(author.payout_account || '').trim()) faltas.push('conta de recebimento');
+  return faltas;
+}
+
+export const isComplete = (author) => missingFields(author).length === 0;
+
 /**
  * Cria (ou devolve) um autor pelo NUIT. Um NUIT, um autor: se já existir, devolve o
  * existente em vez de duplicar.
@@ -118,11 +147,13 @@ export async function upsertAuthor(db, { fullName, penName = null, nuit = null, 
   }
   if (n) {
     const found = await db.query('select id, nuit from fair_authors where nuit = $1', [n]);
-    if (found.rows[0]) return { id: found.rows[0].id, created: false };
+    if (found.rows[0]) return { id: found.rows[0].id, created: false, matchedBy: 'nuit' };
   } else {
-    // Sem NUIT, o nome é a única forma de não duplicar na importação.
-    const found = await db.query('select id from fair_authors where nuit is null and lower(full_name) = lower($1)', [name]);
-    if (found.rows[0]) return { id: found.rows[0].id, created: false };
+    // Sem NUIT, o nome é a única forma de não duplicar. Compara sem acentos nem maiúsculas,
+    // para «Emílio Cossa» e «EMILIO  cossa» serem o mesmo autor.
+    const cands = await db.query('select id, full_name from fair_authors where nuit is null');
+    const hit = cands.rows.find((r) => normalizeName(r.full_name) === normalizeName(name));
+    if (hit) return { id: hit.id, created: false, matchedBy: 'nome' };
   }
   const r = await db.query(
     `insert into fair_authors (full_name, pen_name, nuit, bi_number, class, owner_partner_id, private_to_partner, is_related)

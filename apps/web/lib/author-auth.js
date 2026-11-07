@@ -9,10 +9,9 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import { hashPassword, verifyPassword } from './admin-auth.js';
-import { normalizeNuit } from './finance.js';
+import { missingFields, isComplete, normalizeNuit, PAYOUT_METHODS } from './finance.js';
 
 export const AUTHOR_COOKIE = 'kaut';
-export const PAYOUT_METHODS = ['mpesa', 'emola', 'nib'];
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 horas
 
 const sha256 = (v) => createHash('sha256').update(String(v)).digest('hex');
@@ -42,21 +41,9 @@ export async function ensureAuthorSchema(db) {
 
 /**
  * O que falta ao autor. Enquanto a lista não estiver vazia, a conta fica bloqueada
- * no formulário de completação.
+ * no formulário de completação. (A regra vive em finance.js, partilhada com o painel.)
  */
-export function missingFields(author) {
-  const faltas = [];
-  if (!author) return ['registo'];
-  if (!normalizeNuit(author.nuit)) faltas.push('NUIT');
-  if (!String(author.bi_number || '').trim()) faltas.push('BI');
-  // O Emílio é parte relacionada: os royalties dele são 0 por regra, não é dado em falta.
-  if (!author.is_related && !(Number(author.default_share_bps) > 0)) faltas.push('percentagem na venda');
-  if (!PAYOUT_METHODS.includes(String(author.payout_method || ''))) faltas.push('forma de recebimento');
-  if (!String(author.payout_account || '').trim()) faltas.push('conta de recebimento');
-  return faltas;
-}
-
-export const isComplete = (author) => missingFields(author).length === 0;
+export { missingFields, isComplete, PAYOUT_METHODS };
 
 export async function createAuthorAccount(db, { email, password, fullName }) {
   const mail = String(email || '').trim().toLowerCase();
