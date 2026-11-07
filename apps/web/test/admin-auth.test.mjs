@@ -262,6 +262,8 @@ const makeRes = () => {
 
 const req = ({ method = 'POST', body, cookie, ip = '203.0.113.10' }) => ({
   method,
+  // O endpoint consolidado responde à sessão em /api/admin?session=1.
+  query: { session: '1' },
   headers: { 'x-forwarded-for': ip, 'x-requested-with': 'kulera-admin', ...(cookie ? { cookie } : {}) },
   body,
 });
@@ -293,7 +295,7 @@ async function readyEndpoint({ seed = true } = {}) {
       displayName: 'Editora Kulera',
     });
   }
-  const { default: handler } = await import('../api/admin-session.js');
+  const { default: handler } = await import('../api/admin.js');
   return { pool: sharedPool, handler };
 }
 

@@ -45,7 +45,7 @@ const { default: webhook } = await import('../api/webhook.js');
 const { default: chapter } = await import('../api/chapter.js');
 const { default: status } = await import('../api/status.js');
 const { default: books } = await import('../api/books.js');
-const { default: bookCfg } = await import('../api/book.js');
+const { default: bookCfg } = await import('../api/books.js');
 const { default: lead } = await import('../api/lead.js');
 const { default: subscriptions } = await import('../api/subscriptions.js');
 const { default: partnerSubmit } = await import('../api/partner-submit.js');
@@ -310,7 +310,7 @@ assert.equal(cSim.body.amountMinor, 1000); // 10 MT em sandbox
 assert.ok(cSim.body.checkoutUrl.includes('/pagamento.html?t=') && cSim.body.checkoutUrl.includes('sim=1'));
 
 // O catálogo/configuração pública diz se o modo de teste está activo e qual o valor cobrado
-const cfgSandbox = await call(bookCfg, { method: 'GET' });
+const cfgSandbox = await call(bookCfg, { method: 'GET', query: { meta: '1' } });
 assert.equal(cfgSandbox.body.sandbox, true);
 assert.equal(cfgSandbox.body.sandboxPriceMinor, 1000);
 
@@ -323,7 +323,7 @@ assert.equal(simConfirm.body.status, 'paid');
 assert.equal((await readChapter(cSim.body.token)).code, 200);
 failWithCompanyError = false;
 await setSandbox(false);
-assert.equal((await call(bookCfg, { method: 'GET' })).body.sandbox, false);
+assert.equal((await call(bookCfg, { method: 'GET', query: { meta: '1' } })).body.sandbox, false);
 
 // Links gerados em sandbox deixam de funcionar quando o modo produção está activo
 const sandboxBlocked = await readChapter(cSim.body.token);

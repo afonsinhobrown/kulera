@@ -1,15 +1,7 @@
-// Saques (só administração). O pedido de saque de editora vai para os dois admins.
-//
-// GET  → modo vigente, saldos dos sócios, pedidos pendentes e histórico
-// POST { action: 'request', kind, entity, entityId, amount, extraordinary, note }
-// POST { action: 'divide_profit', amount, extraordinary, note }
-// POST { action: 'approve' | 'reject', id }
-// POST { action: 'pay', id }
-// POST { action: 'set_mode', mode }            → só a TecnoIncubadora
+// Saques — servidos por /api/admin?format=withdrawals (GET) e pelas acções POST de saque.
+// Vive aqui dentro para não gastar mais funções serverless no deployment.
 
-import { pool } from '../lib/db.js';
-import { CSRF_HEADER, CSRF_VALUE, ensureAdminSchema, requireAdmin } from '../lib/admin-auth.js';
-import { ZERO_ID, balanceOf, ensureFinanceSchema } from '../lib/finance.js';
+import { ZERO_ID, balanceOf, ensureFinanceSchema } from './finance.js';
 import {
   KINDS,
   PROFIT_ENTITIES,
@@ -21,25 +13,24 @@ import {
   payWithdrawal,
   setWithdrawalMode,
   withdrawalMode,
-} from '../lib/withdrawals.js';
+} from './withdrawals.js';
+import { CSRF_HEADER, CSRF_VALUE, requireAdmin } from './admin-auth.js';
 
-const bodyOf = (raw) => {
-  if (!raw) return {};
-  if (typeof raw === 'object') return raw;
-  try {
-    return JSON.parse(String(raw));
-  } catch {
-    return {};
-  }
-};
+export const WITHDRAWAL_ACTIONS = [
+  'withdrawal_request',
+  'withdrawal_divide',
+  'withdrawal_approve',
+  'withdrawal_reject',
+  'withdrawal_pay',
+  'withdrawal_set_mode',
+];
 
 const cents = (v) => Math.round(Number(v));
 
-export default async function handler(req, res) {
+export async function handleWithdrawals(req, res, pool) {
   res.setHeader('Cache-Control', 'no-store');
 
   try {
-    await ensureAdminSchema(pool);
     await ensureFinanceSchema(pool);
     await ensureWithdrawalSchema(pool);
   } catch (e) {
@@ -58,20 +49,18 @@ export default async function handler(req, res) {
       listWithdrawals(pool, { limit: 100 }),
     ]);
     const saldos = {};
-    for (const entity of PROFIT_ENTITIES) {
-      saldos[entity] = await balanceOf(pool, { entity });
-    }
+    for (const entity of PROFIT_ENTITIES) saldos[entity] = await balanceOf(pool, { entity });
     return res.json({ ok: true, mode, admin, balances: saldos, pending, recent });
   }
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   if (req.headers?.[CSRF_HEADER] !== CSRF_VALUE) return res.status(403).json({ error: 'csrf' });
 
-  const b = bodyOf(req.body);
+  const b = req.body && typeof req.body === 'object' ? req.body : {};
 
   try {
     switch (b.action) {
-      case 'request': {
+      case 'withdrawal_request': {
         const kind = b.kind === KINDS.PROFIT ? KINDS.PROFIT : KINDS.PUBLISHER;
         const entity = kind === KINDS.PUBLISHER ? 'publisher' : String(b.entity || '');
         const entityId = kind === KINDS.PUBLISHER ? String(b.entityId || '') : ZERO_ID;
@@ -90,8 +79,7 @@ export default async function handler(req, res) {
         return res.json({ ok: true, withdrawal: w, mode: await withdrawalMode(pool) });
       }
 
-      case 'divide_profit': {
-        // A divisão societária é 50/50 entre os dois donos, num único pedido.
+      case 'withdrawal_divide': {
         const w = await createProfitDivision(pool, {
           totalMinor: cents(b.amount),
           requestedBy: admin,
@@ -101,22 +89,22 @@ export default async function handler(req, res) {
         return res.json({ ok: true, withdrawal: w, mode: await withdrawalMode(pool) });
       }
 
-      case 'approve':
-      case 'reject': {
+      case 'withdrawal_approve':
+      case 'withdrawal_reject': {
         const out = await decideWithdrawal(pool, {
           id: String(b.id || ''),
           admin,
-          decision: b.action === 'approve' ? 'approve' : 'reject',
+          decision: b.action === 'withdrawal_approve' ? 'approve' : 'reject',
         });
         return res.json({ ok: true, ...out });
       }
 
-      case 'pay': {
+      case 'withdrawal_pay': {
         const w = await payWithdrawal(pool, { id: String(b.id || ''), admin });
         return res.json({ ok: true, withdrawal: w });
       }
 
-      case 'set_mode': {
+      case 'withdrawal_set_mode': {
         const mode = await setWithdrawalMode(pool, { admin, mode: b.mode });
         return res.json({ ok: true, mode });
       }
@@ -125,7 +113,6 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'invalid_action' });
     }
   } catch (e) {
-    // Regras de negócio (período, saldo, autorização) devolvem a mensagem ao painel.
     return res.status(400).json({ error: 'rule', detail: String(e?.message || e) });
   }
 }

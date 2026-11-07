@@ -127,7 +127,7 @@ depois, com a data; extraordinário recusado à Kulera e aceite pela TecnoIncuba
 modo recusada à Kulera.
 
 **Fase 4 — feita e verificada na base real.** Página `/financeiro.html` (ligada no painel) e
-`/api/finance`, com filtros **semana / mês / ano / tudo**:
+`/api/admin?format=finance`, com filtros **semana / mês / ano / tudo**:
 
 - totais: vendas, bruto, gateway 7%, líquido, plataforma, autores, editoras, retido Kulera,
   retido Emílio, saques pagos;
@@ -171,6 +171,12 @@ deles pagam 0 ao autor até isso ser preenchido no separador «Autores».
 **Por fazer:** PDF gerado no servidor, se for preciso.
 
 ## Decidido
+
+0. **Limite de 12 funções da Vercel.** O plano Hobby só aceita 12 funções serverless por
+   deployment. Sessão, financeiro e saques vivem dentro de `/api/admin` (`?session=1`,
+   `?format=finance`, `?format=withdrawals`, acções `withdrawal_*`), e `/api/book` passou a
+   `/api/books?meta=1` por rewrite. Ao acrescentar endpoints, fundir em vez de criar ficheiro
+   novo — acima de 12 o deploy falha.
 
 1. **Modo padrão dos saques: aprovado** — os dois admins autorizam. Só a TecnoIncubadora muda
    o modo.

@@ -1,9 +1,34 @@
 import { pool } from '../lib/db.js';
-// Catálogo público (sem cache para reflectir alterações de capa/preço imediatamente)
+import { book } from '../lib/book.js';
+import { isSandbox, SANDBOX_AMOUNT_MINOR } from '../lib/payments.js';
+import { getPublicationFeeMinor } from '../lib/settings.js';
+
+// Catálogo público (sem cache para reflectir alterações de capa/preço imediatamente).
+// Com ?meta=1 devolve a configuração pública (suporte, parceiro, sandbox, taxa de
+// publicação) — antes vivia em /api/book, que foi fundido aqui para poupar funções.
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
+
+  if (req.query?.meta === '1') {
+    let sandbox = false;
+    let publicationFeeMinor = null;
+    try {
+      sandbox = await isSandbox();
+    } catch {}
+    try {
+      publicationFeeMinor = await getPublicationFeeMinor(pool);
+    } catch {}
+    return res.json({
+      supportWhatsApp: book.supportWhatsApp,
+      partner: book.partner,
+      sandbox,
+      sandboxPriceMinor: sandbox ? SANDBOX_AMOUNT_MINOR : null,
+      publicationFeeMinor,
+    });
+  }
+
   try {
     let rows = [];
     try {

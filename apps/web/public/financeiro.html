@@ -178,7 +178,7 @@ function render(){
 async function load(period){
   PERIOD = period || PERIOD;
   document.querySelectorAll('[data-p]').forEach(b => b.classList.toggle('on', b.dataset.p === PERIOD));
-  const r = await fetch('/api/finance?period=' + encodeURIComponent(PERIOD), { cache: 'no-store' });
+  const r = await fetch('/api/admin?format=finance&period=' + encodeURIComponent(PERIOD), { cache: 'no-store' });
   if(r.status === 401){ location.href = '/admin.html'; return; }
   if(!r.ok){ $('who').textContent = 'Não foi possível carregar o relatório.'; return; }
   DATA = await r.json();

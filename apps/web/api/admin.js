@@ -12,6 +12,9 @@ import { markSubscriptionPaymentFailed, markSubscriptionPaymentRecovered, runDai
 import { CSRF_HEADER, CSRF_VALUE, ensureAdminSchema, requireAdmin } from '../lib/admin-auth.js';
 import { ensureFinanceSchema, resolveSaleScenario, setBookAuthor, upsertAuthor } from '../lib/finance.js';
 import { splitSale } from '../lib/split.js';
+import { SESSION_ACTIONS, handleAdminSession } from '../lib/admin-session-handler.js';
+import { WITHDRAWAL_ACTIONS, handleWithdrawals } from '../lib/withdrawals-handler.js';
+import { PERIODS, buildReport, resolvePeriod } from '../lib/report.js';
 
 const sameKey = (a, b) => {
   const ax = String(a ?? '').trim();
@@ -436,9 +439,9 @@ async function action(b, req) {
   }
 }
 
-// Painel da Kulera. A chave de acesso vive APENAS na base de dados
-// (fair_settings.admin_key), gerida directamente no SQL. Não há ADMIN_KEY de
-// ambiente, nem valor por omissão no código.
+// Painel da Kulera. Duas contas de administração (tecnoincubadora e kulera) com sessão
+// em cookie. Sessão, saques e finanças vivem aqui dentro porque a Vercel limita o número
+// de funções por deployment — cada um mantém o seu próprio portão de autenticação.
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   // Cron diário da Vercel (chega como GET com Authorization: Bearer <CRON_SECRET>).
@@ -452,6 +455,18 @@ export default async function handler(req, res) {
       return res.status(500).json({ ok: false, error: 'internal_error' });
     }
   }
+
+  // Sessão (entrar, sair, senha, dados bancários) antes de qualquer portão.
+  const bodyIn = req.body && typeof req.body === 'object' ? req.body : {};
+  const actionName = req.method === 'POST' ? String(bodyIn.action || '') : '';
+  if (req.query?.session === '1' || SESSION_ACTIONS.includes(actionName)) {
+    return handleAdminSession(req, res, pool);
+  }
+  // Saques: cada acção tem o seu nome, para não colidir com as acções do painel.
+  if (WITHDRAWAL_ACTIONS.includes(actionName) || req.query?.format === 'withdrawals') {
+    return handleWithdrawals(req, res, pool);
+  }
+
   // Autenticação por sessão. Deixou de existir a chave única: o painel pertence a
   // dois administradores — tecnoincubadora e kulera — cada um com a sua conta.
   await ensureAdminSchema(pool).catch((e) => console.error('admin.schema.error', e?.message || String(e)));
@@ -459,6 +474,19 @@ export default async function handler(req, res) {
   if (!current) return res.status(401).json({ error: 'unauthorized' });
   if (req.method === 'POST' && req.headers?.[CSRF_HEADER] !== CSRF_VALUE) {
     return res.status(403).json({ error: 'csrf' });
+  }
+
+  // Relatório financeiro (semana, mês, ano, tudo).
+  if (req.method === 'GET' && req.query?.format === 'finance') {
+    const period = PERIODS.includes(String(req.query.period)) ? String(req.query.period) : 'month';
+    const range = resolvePeriod(period, { from: req.query.from ?? null, to: req.query.to ?? null });
+    try {
+      const report = await buildReport(pool, range);
+      return res.json({ ok: true, period: { key: period, label: range.label, from: range.from, to: range.to }, ...report });
+    } catch (e) {
+      console.error('finance.report', e?.message || String(e));
+      return res.status(500).json({ error: 'report_failed' });
+    }
   }
   try {
     await ensurePaymentSchema();

@@ -7,6 +7,9 @@
       "permanent": true
     }
   ],
-  "rewrites": [{ "source": "/livro/:id", "destination": "/api/livro?id=:id" }],
+  "rewrites": [
+    { "source": "/livro/:id", "destination": "/api/livro?id=:id" },
+    { "source": "/api/book", "destination": "/api/books?meta=1" }
+  ],
   "crons": [{ "path": "/api/admin", "schedule": "0 3 * * *" }]
 }

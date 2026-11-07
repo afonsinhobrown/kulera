@@ -1,36 +1,10 @@
-// Sessão dos administradores.
+// Sessão dos administradores — vive dentro de /api/admin porque a Vercel limita o número
+// de funções por deployment. O comportamento é o mesmo de um endpoint próprio.
 //
-// POST { action: 'login', username, password }  → abre sessão (cookie httpOnly)
-// POST { action: 'logout' }                      → fecha
-// POST { action: 'change_password', current, password } → recomendado, nunca obrigatório
-// POST { action: 'save_bank', ... }              → dados bancários do próprio admin
-// GET                                            → quem está autenticado + os seus dados bancários
-//
-// A chave única antiga (x-admin-key) deixa de existir.
+// POST { action: 'login' | 'logout' | 'change_password' | 'save_bank' }
+// GET  (chamado por /api/admin?session=1) → quem está autenticado + dados bancários
 
-import { pool } from '../lib/db.js';
-import {
-  CSRF_HEADER,
-  CSRF_VALUE,
-  MIN_PASSWORD_LENGTH,
-  MAX_FAILS,
-  bankOf,
-  clearSessionCookie,
-  countAdmins,
-  createSession,
-  destroyOtherSessions,
-  destroySession,
-  ensureAdminSchema,
-  findUser,
-  hashPassword,
-  publicUser,
-  recentFailures,
-  recordAttempt,
-  requireAdmin,
-  saveBank,
-  setSessionCookie,
-  verifyPassword,
-} from '../lib/admin-auth.js';
+import { CSRF_HEADER, CSRF_VALUE, bankOf, clearSessionCookie, countAdmins, createSession, destroyOtherSessions, destroySession, ensureAdminSchema, findUser, hashPassword, publicUser, recentFailures, recordAttempt, requireAdmin, saveBank, setSessionCookie, verifyPassword, MIN_PASSWORD_LENGTH, MAX_FAILS } from './admin-auth.js';
 
 const bodyOf = (raw) => {
   if (!raw) return {};
@@ -47,7 +21,9 @@ const clientIp = (req) =>
 
 const USERNAME = /^[a-z0-9_-]{3,32}$/;
 
-export default async function handler(req, res) {
+export const SESSION_ACTIONS = ['login', 'logout', 'change_password', 'save_bank'];
+
+export async function handleAdminSession(req, res, pool) {
   res.setHeader('Cache-Control', 'no-store');
 
   try {
@@ -70,9 +46,6 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
-
-  // Qualquer POST do painel tem de trazer este cabeçalho. Um formulário de outro
-  // site não consegue pôr cabeçalhos personalizados, e o cookie é SameSite=Lax.
   if (req.headers?.[CSRF_HEADER] !== CSRF_VALUE) return res.status(403).json({ error: 'csrf' });
 
   const body = bodyOf(req.body);
@@ -85,12 +58,7 @@ export default async function handler(req, res) {
       if (!USERNAME.test(username)) return res.status(400).json({ error: 'invalid_username' });
       if (!password) return res.status(400).json({ error: 'invalid_password' });
 
-      if ((await countAdmins(pool)) === 0) {
-        // Sem administradores criados: diz-se à pessoa para correr o seed. Não se
-        // inventa senha nenhuma no código.
-        return res.status(503).json({ error: 'admin_not_seeded' });
-      }
-
+      if ((await countAdmins(pool)) === 0) return res.status(503).json({ error: 'admin_not_seeded' });
       if ((await recentFailures(pool, username, ip)) >= MAX_FAILS) {
         return res.status(429).json({ error: 'too_many_attempts' });
       }
@@ -99,7 +67,6 @@ export default async function handler(req, res) {
       const ok = Boolean(user) && user.status === 'active' && verifyPassword(password, user.password_hash);
       if (!ok) {
         await recordAttempt(pool, username, ip, false);
-        // Mensagem igual para utilizador inexistente e senha errada.
         return res.status(401).json({ error: 'invalid_credentials' });
       }
 

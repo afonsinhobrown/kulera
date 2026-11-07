@@ -1535,7 +1535,7 @@ function startAutoRefresh(){
   }, 30000);
 }
 
-const sessionFetch = body => fetch('/api/admin-session', {
+const sessionFetch = body => fetch('/api/admin?session=1', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', 'x-requested-with': 'kulera-admin' },
   body: JSON.stringify(body),
@@ -1543,7 +1543,7 @@ const sessionFetch = body => fetch('/api/admin-session', {
 
 // Preenche o separador "A Minha Conta" com a sessão actual e os dados bancários.
 async function loadAccount(){
-  const r = await fetch('/api/admin-session', { cache: 'no-store' });
+  const r = await fetch('/api/admin?session=1', { cache: 'no-store' });
   if(!r.ok) return null;
   const j = await r.json().catch(() => ({}));
   SESSION = j.user || null;
@@ -1691,7 +1691,7 @@ $('csvP').onclick = () => csv('payouts');
 async function tryInit(){
   $('app').hidden = true;
   try {
-    const r = await fetch('/api/admin-session', { cache: 'no-store' });
+    const r = await fetch('/api/admin?session=1', { cache: 'no-store' });
     if(!r.ok){ $('login').hidden = false; $('err').textContent = ''; return; }
     await loadAccount();
     await load();
@@ -1709,7 +1709,7 @@ async function tryInit(){
 // sessão antes de mostrar seja o que for.
 window.addEventListener('pageshow', (e) => {
   if(!e.persisted) return;
-  fetch('/api/admin-session', { cache: 'no-store' })
+  fetch('/api/admin?session=1', { cache: 'no-store' })
     .then(r => { if(!r.ok) forceLogout('Sessão terminada. Entre novamente.'); else load().catch(() => {}); })
     .catch(() => {});
 });
