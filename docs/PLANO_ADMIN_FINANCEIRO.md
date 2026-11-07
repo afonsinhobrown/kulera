@@ -168,6 +168,20 @@ deles pagam 0 ao autor até isso ser preenchido no separador «Autores».
 - O painel mostra na lista de autores o que falta a cada um (`Falta: NUIT, BI, %`).
 - A percentagem definida na conta vale para os livros onde a editora não declarou valor.
 
+**Correcção das vendas antigas** (`scripts/fix-legacy-sales.mjs`, já corrida na base real).
+As 4 vendas gravadas com o modelo anterior (20% plataforma / 80% Kulera, sem gateway) passaram
+às regras actuais. São do livro do Emílio, cenário B:
+
+| | Antes (por venda) | Depois |
+|---|---|---|
+| Plataforma | 2,00 | **9,30** |
+| Kulera | 8,00 | **0,00** |
+| Gateway | 0,00 | **0,70** |
+
+Total: bruto 40,00 · gateway 2,80 · plataforma **37,20** · Kulera 0,00 · autores 0,00. Como não
+havia saques registados, nada foi pago a ninguém — corrigiu-se a repartição e o saldo, não um
+pagamento. O script é idempotente (chave por encomenda no livro de razão).
+
 **Por fazer:** PDF gerado no servidor, se for preciso.
 
 ## Decidido
