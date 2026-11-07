@@ -25,6 +25,6 @@
 - [ ] Testar webhook com pagamento real
 - [ ] Verificar split de comissões
 - [ ] Testar acesso ao leitor após pagamento
-- [ ] Verificar painel admin com `ADMIN_KEY` real
+- [ ] Verificar painel admin com a chave de `fair_settings.admin_key` (definir no SQL; não há `ADMIN_KEY` no ambiente)
 
 **Estado atual:** Dev/test funcional. Só falta configuração de produção.

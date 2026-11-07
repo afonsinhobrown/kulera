@@ -10,10 +10,12 @@ Configure no painel da Vercel/servidor:
 | `PAYSUITE_CREATE_URL` | web | Endpoint para criar pagamento PaySuite |
 | `PAYSUITE_TOKEN` | web | Token Bearer PaySuite |
 | `PAYSUITE_WEBHOOK_SECRET` | web/api | Segredo para validar assinatura HMAC do webhook |
-| `ADMIN_KEY` | web | Chave para aceder ao `/admin.html` (usar chave longa aleatória) |
 | `DEFAULT_COMMISSION_BPS` | api | Comissão padrão Kulera (2000 = 20%) |
 | `PANDOC_CMD` | worker | `pandoc` (se usar worker) |
 | `EPUBCHECK_CMD` | worker | `epubcheck` (se usar worker) |
+
+**Chave do painel:** não vai no ambiente. É gerida apenas na base de dados
+(`fair_settings.admin_key`) — ver SQL em `ENV_PRODUCAO.md`.
 
 **Remover em produção:** `SANDBOX`, `TEST_PRICE_MT`, `TEST_PRICE_MT_ALL`, `FORCE_TEST_PRICE`
 
@@ -45,7 +47,7 @@ node src/server.ts
 Requer: `pandoc`, `epubcheck`, opcional `calibre` (ebook-convert). Definir PATH ou variáveis `*_CMD`.
 
 ## 4) Checklist pré-produção
-- [ ] Trocar `ADMIN_KEY` por valor forte
+- [ ] Definir `fair_settings.admin_key` na base de dados (senha longa e forte) e remover `ADMIN_KEY` do ambiente
 - [ ] Remover variáveis de teste
 - [ ] Configurar webhook PaySuite para apontar para `https://SEU-DOMINIO/api/webhook`
 - [ ] Testar compra real com 1 MT ou valor pequeno

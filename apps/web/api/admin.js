@@ -1,9 +1,9 @@
 import { timingSafeEqual } from 'node:crypto';
 import { pool } from '../lib/db.js';
-import { ensurePaymentSchema, isSandbox, setSandbox, getAdminKeyFromDb, getPaysuiteTokenFromDb, resolveSiteUrl, settleOrderPaid } from '../lib/payments.js';
-import { createPayment, getPaymentStatus } from '../lib/paysuite.js';
+import { ensurePaymentSchema, isSandbox, setSandbox, getAdminKeyFromDb, resolveSiteUrl, settleOrderPaid, restoreReservedStock } from '../lib/payments.js';
+import { createPayment, getPaymentStatus, resolvePaysuiteToken } from '../lib/paysuite.js';
 import { ensurePlanSchema } from '../lib/plans.js';
-import { getPublicationFeeMinor, getSetting, setSetting } from '../lib/settings.js';
+import { getPublicationFeeMinor, setSetting } from '../lib/settings.js';
 import { grantCredit } from '../lib/reader.js';
 import { approveDeviceRequest, rejectDeviceRequest } from '../lib/device.js';
 import { announceBook, subscriberCount } from '../lib/marketing.js';
@@ -27,7 +27,74 @@ const toCsv = (rows) => rows.length ? [Object.keys(rows[0]).join(','), ...rows.m
 const clip = (v, n) => String(v ?? '').replace(/\u0000/g, '').trim().slice(0, n);
 const uuid = (v) => /^[0-9a-f-]{36}$/.test(String(v));
 
-async function action(b) {
+async function saveBook(b) {
+  const title = clip(b.title, 200), author = clip(b.author, 200);
+  const okPrice = (p) => Number.isInteger(p) && p > 0 && p <= 100_000_000;
+  const status = ['draft', 'published', 'suspended'].includes(b.status) ? b.status : 'draft';
+  const content = typeof b.contentHtml === 'string' && b.contentHtml.trim() ? b.contentHtml.replace(/\u0000/g, '') : null;
+  if (content && content.length > 3_500_000) return [413, { error: 'content_too_large' }];
+  const hasDigital = b.hasDigital === true || b.hasDigital === 'true' || (b.hasDigital == null && b.kind !== 'physical');
+  const hasPhysical = b.hasPhysical === true || b.hasPhysical === 'true' || (b.hasPhysical == null && b.kind === 'physical');
+  if (title.length < 1 || author.length < 1) return [400, { error: 'invalid' }];
+  if (!hasDigital && !hasPhysical) return [400, { error: 'invalid_format' }];
+  const digitalPrice = Number(b.priceMinor), physicalPrice = Number(b.pricePhysicalMinor);
+  if (hasDigital && !okPrice(digitalPrice)) return [400, { error: 'invalid_price_digital' }];
+  if (hasPhysical && !okPrice(physicalPrice)) return [400, { error: 'invalid_price_physical' }];
+  if (hasPhysical && (b.stock === '' || b.stock == null || !Number.isInteger(Number(b.stock)) || Number(b.stock) < 0)) {
+    return [400, { error: 'invalid_stock' }];
+  }
+  // price_minor é NOT NULL: guarda o preço digital, ou o físico se o livro for só físico.
+  const price = hasDigital ? digitalPrice : physicalPrice;
+  const pricePhysical = hasPhysical ? physicalPrice : null;
+  const kind = hasPhysical && !hasDigital ? 'physical' : 'ebook';
+  const stock = hasPhysical ? Number(b.stock) : null;
+  const requiresShipping = hasPhysical;
+  const cover = clip(b.coverUrl, 2_500_000) || null;
+  try {
+    await pool.query('alter table fair_books add column if not exists kind text not null default \'ebook\'');
+    await pool.query('alter table fair_books add column if not exists stock integer');
+    await pool.query('alter table fair_books add column if not exists requires_shipping boolean not null default false');
+    await pool.query('alter table fair_books add column if not exists has_digital boolean not null default true');
+    await pool.query('alter table fair_books add column if not exists has_physical boolean not null default false');
+    await pool.query('alter table fair_books add column if not exists price_physical_minor bigint');
+    await pool.query('alter table fair_books add column if not exists publication_fee_minor bigint not null default 0');
+    await pool.query('alter table fair_books add column if not exists publication_fee_paid_at timestamptz');
+  } catch {}
+  const args = [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, cover, content, kind, stock, requiresShipping, hasDigital, hasPhysical];
+  let id = uuid(b.id) ? b.id : null;
+  if (id) {
+    try {
+      await pool.query('update fair_books set title=$2,author=$3,description=$4,language=$5,price_minor=$6,partner_id=$7,status=$8,cover_url=$9,content_html=coalesce($10,content_html),kind=$11,stock=$12,requires_shipping=$13,has_digital=$14,has_physical=$15,updated_at=now() where id=$1', [id, ...args]);
+    } catch {
+      await pool.query('update fair_books set title=$2,author=$3,description=$4,language=$5,price_minor=$6,partner_id=$7,status=$8,cover_url=$9,content_html=coalesce($10,content_html),updated_at=now() where id=$1', [id, title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, cover, content]);
+    }
+  } else {
+    try {
+      id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html,kind,stock,requires_shipping,has_digital,has_physical) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id', args)).rows[0].id;
+    } catch {
+      id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id', [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, cover, content])).rows[0].id;
+    }
+  }
+  try {
+    await pool.query('update fair_books set price_physical_minor=$2 where id=$1', [id, pricePhysical]);
+    // Quando o Admin publica directamente no painel, marca a taxa como regularizada para não reverter para rascunho.
+    await pool.query(
+      `update fair_books set publication_fee_minor = case when partner_id is null then 0 else greatest(coalesce(publication_fee_minor,0), $2) end,
+         publication_fee_paid_at = case when $3 = 'published' and partner_id is not null then coalesce(publication_fee_paid_at, now()) else publication_fee_paid_at end
+       where id=$1`,
+      [id, await getPublicationFeeMinor(pool), status],
+    );
+  } catch {}
+  // Nunca fica publicado um livro que oferece apenas digital sem conteúdo.
+  let warning;
+  try {
+    const revContent = await pool.query("update fair_books set status='draft' where id=$1 and status='published' and coalesce(has_digital,true) and not coalesce(has_physical,false) and content_html is null", [id]);
+    if (revContent.rowCount) warning = 'sem_conteudo_ficou_rascunho';
+  } catch {}
+  return [200, { ok: true, id, warning }];
+}
+
+async function action(b, req) {
   switch (b.action) {
     case 'lead_status': {
       if (!['new', 'contacted', 'signed', 'declined'].includes(b.status) || !uuid(b.id)) return [400, { error: 'invalid' }];
@@ -37,75 +104,26 @@ async function action(b) {
     case 'save_partner': {
       const name = clip(b.name, 120), kind = b.kind === 'author' ? 'author' : 'publisher';
       if (name.length < 2) return [400, { error: 'invalid' }];
+      const commission = Number(b.commissionBps);
+      const bps = b.commissionBps != null && b.commissionBps !== '' && Number.isInteger(commission) && commission >= 0 && commission <= 10000 ? commission : null;
       const args = [name, kind, clip(b.phone, 30) || null, clip(b.email, 120) || null, b.status === 'suspended' ? 'suspended' : 'active'];
-      if (uuid(b.id)) { await pool.query('update fair_partners set name=$2,kind=$3,phone=$4,email=$5,status=$6 where id=$1', [b.id, ...args]); return [200, { ok: true, id: b.id }]; }
-      const r = await pool.query('insert into fair_partners (name,kind,phone,email,status) values ($1,$2,$3,$4,$5) returning id', args);
+      if (uuid(b.id)) {
+        if (bps == null) await pool.query('update fair_partners set name=$2,kind=$3,phone=$4,email=$5,status=$6 where id=$1', [b.id, ...args]);
+        else await pool.query('update fair_partners set name=$2,kind=$3,phone=$4,email=$5,status=$6,commission_bps=$7 where id=$1', [b.id, ...args, bps]);
+        return [200, { ok: true, id: b.id }];
+      }
+      const r = bps == null
+        ? await pool.query('insert into fair_partners (name,kind,phone,email,status) values ($1,$2,$3,$4,$5) returning id', args)
+        : await pool.query('insert into fair_partners (name,kind,phone,email,status,commission_bps) values ($1,$2,$3,$4,$5,$6) returning id', [...args, bps]);
       return [200, { ok: true, id: r.rows[0].id }];
     }
     case 'save_book': {
-      const title = clip(b.title, 200), author = clip(b.author, 200);
-      const okPrice = (p) => Number.isInteger(p) && p > 0 && p <= 100_000_000;
-      const status = ['draft', 'published', 'suspended'].includes(b.status) ? b.status : 'draft';
-      const content = typeof b.contentHtml === 'string' && b.contentHtml.trim() ? b.contentHtml.replace(/\u0000/g, '') : null;
-      if (content && content.length > 3_500_000) return [413, { error: 'content_too_large' }];
-      const hasDigital = b.hasDigital === true || b.hasDigital === 'true' || (b.hasDigital == null && b.kind !== 'physical');
-      const hasPhysical = b.hasPhysical === true || b.hasPhysical === 'true' || (b.hasPhysical == null && b.kind === 'physical');
-      if (title.length < 1 || author.length < 1) return [400, { error: 'invalid' }];
-      if (!hasDigital && !hasPhysical) return [400, { error: 'invalid_format' }];
-      const digitalPrice = Number(b.priceMinor), physicalPrice = Number(b.pricePhysicalMinor);
-      if (hasDigital && !okPrice(digitalPrice)) return [400, { error: 'invalid_price_digital' }];
-      if (hasPhysical && !okPrice(physicalPrice)) return [400, { error: 'invalid_price_physical' }];
-      if (hasPhysical && (b.stock === '' || b.stock == null || !Number.isInteger(Number(b.stock)) || Number(b.stock) < 0)) return [400, { error: 'invalid_stock' }];
-      // price_minor é NOT NULL: guarda o preço digital, ou o físico se o livro for só físico.
-      const price = hasDigital ? digitalPrice : physicalPrice;
-      const pricePhysical = hasPhysical ? physicalPrice : null;
-      const kind = hasPhysical && !hasDigital ? 'physical' : 'ebook';
-      const stock = hasPhysical ? Number(b.stock) : null;
-      const requiresShipping = hasPhysical;
-      const cover = clip(b.coverUrl, 2_500_000) || null;
       try {
-        await pool.query('alter table fair_books add column if not exists kind text not null default \'ebook\'');
-        await pool.query('alter table fair_books add column if not exists stock integer');
-        await pool.query('alter table fair_books add column if not exists requires_shipping boolean not null default false');
-        await pool.query('alter table fair_books add column if not exists has_digital boolean not null default true');
-        await pool.query('alter table fair_books add column if not exists has_physical boolean not null default false');
-        await pool.query('alter table fair_books add column if not exists price_physical_minor bigint');
-        await pool.query('alter table fair_books add column if not exists publication_fee_minor bigint not null default 0');
-        await pool.query('alter table fair_books add column if not exists publication_fee_paid_at timestamptz');
-      } catch {}
-      const args = [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, cover, content, kind, stock, requiresShipping, hasDigital, hasPhysical];
-      let id = b.id;
-      if (uuid(id)) {
-        try {
-          await pool.query('update fair_books set title=$2,author=$3,description=$4,language=$5,price_minor=$6,partner_id=$7,status=$8,cover_url=$9,content_html=coalesce($10,content_html),kind=$11,stock=$12,requires_shipping=$13,has_digital=$14,has_physical=$15,updated_at=now() where id=$1', [id, ...args]);
-        } catch {
-          await pool.query('update fair_books set title=$2,author=$3,description=$4,language=$5,price_minor=$6,partner_id=$7,status=$8,cover_url=$9,content_html=coalesce($10,content_html),updated_at=now() where id=$1', [id, title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, cover, content]);
-        }
+        return await saveBook(b);
+      } catch (e) {
+        console.error('admin.save_book.error', e?.message || String(e));
+        return [500, { error: 'save_failed', detail: String(e?.message || e).slice(0, 180) }];
       }
-      else {
-        try {
-          id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html,kind,stock,requires_shipping,has_digital,has_physical) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id', args)).rows[0].id;
-        } catch {
-          id = (await pool.query('insert into fair_books (title,author,description,language,price_minor,partner_id,status,cover_url,content_html) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id', [title, author, clip(b.description, 2000) || null, clip(b.language, 10) || 'pt', price, uuid(b.partnerId) ? b.partnerId : null, status, cover, content])).rows[0].id;
-        }
-      }
-      try {
-        await pool.query('update fair_books set price_physical_minor=$2 where id=$1', [id, pricePhysical]);
-        // Quando o Admin publica directamente no painel, marca a taxa como regularizada para não reverter para rascunho.
-        await pool.query(
-          `update fair_books set publication_fee_minor = case when partner_id is null then 0 else greatest(coalesce(publication_fee_minor,0), $2) end,
-             publication_fee_paid_at = case when $3 = 'published' and partner_id is not null then coalesce(publication_fee_paid_at, now()) else publication_fee_paid_at end
-           where id=$1`,
-          [id, await getPublicationFeeMinor(pool), status],
-        );
-      } catch {}
-      // Nunca fica publicado um livro que oferece apenas digital sem conteúdo.
-      let warning;
-      try {
-        const revContent = await pool.query("update fair_books set status='draft' where id=$1 and status='published' and coalesce(has_digital,true) and not coalesce(has_physical,false) and content_html is null", [id]);
-        if (revContent.rowCount) warning = 'sem_conteudo_ficou_rascunho';
-      } catch {}
-      return [200, { ok: true, id, warning }];
     }
     case 'delete_book': {
       if (!uuid(b.id)) return [400, { error: 'invalid' }];
@@ -183,7 +201,7 @@ async function action(b) {
             and created_at > now() - interval '14 days'
           order by created_at desc limit 200`,
       );
-      const apiToken = await getPaysuiteTokenFromDb();
+      const apiToken = resolvePaysuiteToken();
       let checked = 0, paid = 0, closed = 0;
       for (const o of pend.rows) {
         const remoteStatus = await getPaymentStatus(o.provider_payment_id, apiToken);
@@ -192,7 +210,9 @@ async function action(b) {
         if (remoteStatus === 'paid') {
           if (await settleOrderPaid(pool, o.id, o.provider_payment_id)) paid++;
         } else if (remoteStatus === 'failed' || remoteStatus === 'cancelled') {
-          await pool.query("update fair_orders set status = $2 where id = $1 and status in ('created','pending')", [o.id, remoteStatus]).catch(() => {});
+          const upd = await pool.query("update fair_orders set status = $2 where id = $1 and status in ('created','pending')", [o.id, remoteStatus]).catch(() => null);
+          // Devolve ao stock o exemplar que tinha sido reservado por um pagamento que não se concluiu.
+          if (upd?.rowCount) await restoreReservedStock(pool, o.id);
           closed++;
         }
       }
@@ -319,16 +339,11 @@ async function action(b) {
         [pr.name, pr.phone || '000000000', pr.email, b.planId, start, days, b.partnerId]);
       return [200, { ok: true }];
     }
-    case 'change_admin_key': {
-      const newKey = clip(b.newKey, 64);
-      if (!newKey || newKey.length < 3) return [400, { error: 'key_too_short' }];
-      await pool.query(
-        `insert into fair_settings (key,value,updated_at) values ('admin_key',$1,now())
-         on conflict (key) do update set value=excluded.value, updated_at=now()`, [newKey]);
-      return [200, { ok: true }];
-    }
     case 'test_paysuite': {
-      const tok = clip(b.token, 200) || (await getPaysuiteTokenFromDb());
+      // A chave da PaySuite só existe no ambiente do servidor. O painel nunca
+      // recebe, guarda nem aceita tokens vindos do browser.
+      const tok = resolvePaysuiteToken();
+      if (!tok) return [200, { ok: false, detail: 'Token da PaySuite não configurado no servidor (PAYSUITE_TOKEN).' }];
       try {
         const res = await createPayment({
           reference: 'KFTEST' + Date.now(),
@@ -347,7 +362,9 @@ async function action(b) {
   }
 }
 
-// Painel da Kulera. A chave é lida da base de dados (tabela fair_settings, chave 'admin_key', default: 'kulera').
+// Painel da Kulera. A chave de acesso vive APENAS na base de dados
+// (fair_settings.admin_key), gerida directamente no SQL. Não há ADMIN_KEY de
+// ambiente, nem valor por omissão no código.
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   // Cron diário da Vercel (chega como GET com Authorization: Bearer <CRON_SECRET>).
@@ -361,18 +378,27 @@ export default async function handler(req, res) {
       return res.status(500).json({ ok: false, error: 'internal_error' });
     }
   }
-  // Autenticação: compara a chave enviada com a guardada na base de dados
-  // (tabela fair_settings, chave 'admin_key', default: 'kulera').
-  let expectedKey = 'kulera';
-  try { expectedKey = await getAdminKeyFromDb(); } catch {}
-  const envKey = String(process.env.ADMIN_KEY || '').trim();
+  // Autenticação: só a chave guardada na base de dados é aceite.
+  let expectedKey;
+  try {
+    expectedKey = await getAdminKeyFromDb();
+  } catch (e) {
+    console.error('admin.key.error', e?.message || String(e));
+    return res.status(503).json({ error: 'admin_key_unavailable' });
+  }
+  if (!expectedKey) {
+    return res.status(503).json({
+      error: 'admin_key_not_configured',
+      detail: "Defina a chave na base de dados: insert into fair_settings (key,value) values ('admin_key','a-sua-senha-forte') on conflict (key) do update set value=excluded.value, updated_at=now();",
+    });
+  }
   const provided = req.headers?.['x-admin-key'] || '';
-  if (!sameKey(provided, expectedKey) && !(envKey && sameKey(provided, envKey))) {
+  if (!sameKey(provided, expectedKey)) {
     return res.status(401).json({ error: 'unauthorized' });
   }
   try {
     await ensurePaymentSchema();
-    if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}); return res.status(status).json(body); }
+    if (req.method === 'POST') { const [status, body] = await action(req.body ?? {}, req); return res.status(status).json(body); }
 
     const totals = (await pool.query(
       `select count(*) filter (where status='paid')::int as paid, coalesce(sum(amount_minor) filter (where status='paid'),0)::bigint as paid_minor,
@@ -452,8 +478,6 @@ export default async function handler(req, res) {
       plans = (await pool.query('select id,code,name,description,price_minor,currency,interval,status,max_publications,showcase_priority from fair_plans order by showcase_priority desc, price_minor asc')).rows;
     } catch {}
     const sandbox = await isSandbox();
-    const currentTok = await getPaysuiteTokenFromDb();
-    const paysuiteTokenHint = currentTok ? `${currentTok.slice(0, 8)}…${currentTok.slice(-4)}` : '';
     let subs = [];
     try {
       subs = (await pool.query(`select s.id,s.buyer_name,s.buyer_phone,s.status,s.starts_at,s.ends_at,s.partner_id,s.grace_ends_at,s.last_payment_failed_at,pl.name as plan, p.name as partner_name,
@@ -495,7 +519,7 @@ export default async function handler(req, res) {
       withdrawals: withdrawals.map((x)=>({...x,amount_minor:Number(x.amount_minor)})),
       subscribers, emailReady: emailConfigured(), emailFrom: emailConfig()?.from || null, emailSupport: emailConfig()?.replyTo || null, promotions, readers,
       settings: { publication_fee_minor: await getPublicationFeeMinor(pool) },
-      sandbox, paysuiteTokenHint });
+      sandbox });
   } catch (e) {
     console.error('admin.error', e?.message || String(e));
     console.error('admin.error.stack', e?.stack);

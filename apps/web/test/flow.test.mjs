@@ -94,6 +94,25 @@ const hook = async (event, data, sig) => {
 };
 
 const U = '00000000-0000-4000-8000-0000000000';
+
+// 0. Autenticação do painel: a chave vive só na base de dados.
+S.settings.admin_key = 'kulera';
+const postAdmin = (key, body) => call(admin, {
+  method: 'POST',
+  headers: key === undefined ? {} : { 'x-admin-key': key },
+  body,
+});
+delete S.settings.admin_key;
+const semChave = await postAdmin('kulera', { action: 'ping' });
+assert.equal(semChave.code, 503);
+assert.equal(semChave.body.error, 'admin_key_not_configured');
+S.settings.admin_key = 'segredo-da-bd';
+process.env.ADMIN_KEY = 'segredo-do-env';
+assert.equal((await postAdmin('segredo-do-env', { action: 'ping' })).code, 401); // ENV já não é aceite
+assert.equal((await postAdmin('segredo-da-bd', { action: 'ping' })).code, 400); // autenticado, acção inválida
+delete process.env.ADMIN_KEY;
+S.settings.admin_key = 'kulera';
+
 S.partners.push({ id: U + '01', name: 'Editora Sol', phone: '841112223', email: 'sol@editora.mz', commission_bps: 3000, status: 'active' });
 S.partnerUsers.push({ id: U + '51', partner_id: U + '01', email: 'sol@editora.mz', status: 'active' });
 S.books.push(
@@ -311,6 +330,7 @@ const updatedBook = catAfter.body.find((b) => b.id === U + '11');
 assert.equal(updatedBook.coverUrl, newCover);
 assert.equal(updatedBook.hasPhysical, true);
 assert.equal(updatedBook.physicalPriceMinor, 120000);
+assert.equal(updatedBook.physicalAvailable, true); // 5 exemplares em stock
 
 // Venda física sem endereço deve falhar com 400 invalid_address
 const physNoAddr = await call(checkout, {
@@ -355,6 +375,25 @@ const physZeroStock = await call(checkout, {
 });
 assert.equal(physZeroStock.code, 400);
 assert.equal(physZeroStock.body.error, 'out_of_stock');
+assert.match(physZeroStock.body.message, /não há livro físico disponível neste momento/i);
+S.books.find((b) => b.id === U + '11').stock = 4;
+
+// Stock nulo também conta como esgotado (nunca se vende um exemplar que não existe)
+S.books.find((b) => b.id === U + '11').stock = null;
+const physNullStock = await call(checkout, {
+  method: 'POST',
+  body: {
+    bookId: U + '11',
+    format: 'physical',
+    name: 'Carlos',
+    phone: '841234567',
+    shippingAddress: 'Av. Julius Nyerere 123, Polana',
+    shippingCity: 'Maputo',
+  },
+});
+assert.equal(physNullStock.code, 400);
+assert.equal(physNullStock.body.error, 'out_of_stock');
+assert.equal((await call(books, { method: 'GET' })).body.find((b) => b.id === U + '11').physicalAvailable, false);
 S.books.find((b) => b.id === U + '11').stock = 4;
 
 // 9. Validações e protecções de catálogo
@@ -388,6 +427,7 @@ S.books.push({
   status: 'published',
   has_digital: true,
   has_physical: true,
+  stock: 3,
   cover_url: 'https://cdn.test/capa.jpg',
   content_html: '<h1>Cap</h1><p>x</p>',
 });
@@ -429,6 +469,15 @@ assert.ok(!shareDigital.body.includes('og:image'));
 assert.equal((await call(livroPage, { query: { id: U + '99' } })).code, 404);
 assert.equal((await call(livroPage, { query: { id: 'x' } })).code, 404);
 assert.ok((await call(livroPage, { query: { id: U + '99' } })).body.includes('Ver todos os livros'));
+
+// Livro físico sem stock: responde sempre com a mensagem e não mostra botão de compra do físico
+S.books.find((b) => b.id === U + '11').stock = 0;
+const shareOut = await call(livroPage, { query: { id: U + '11' } });
+assert.equal(shareOut.code, 200);
+assert.ok(shareOut.body.includes('não há livro físico disponível neste momento'));
+assert.ok(!shareOut.body.includes('fmt=physical'));
+assert.ok(shareOut.body.includes('fmt=digital')); // o E-book continua à venda
+S.books.find((b) => b.id === U + '11').stock = 4;
 
 // 11. Reconciliação: confirma pedidos pendentes junto da PaySuite (o webhook da conta é partilhado com outros sistemas)
 const c11 = await call(checkout, { method: 'POST', body: { ...body, bookId: U + '12' } });
@@ -489,5 +538,25 @@ await hook('payment.success', { id: o13.provider_payment_id });
 const pdfLegacy = await readChapter(c13.body.token);
 assert.equal(pdfLegacy.code, 409);
 assert.equal(pdfLegacy.body.error, 'pdf_not_supported');
+
+// 14. Pagamento físico cancelado devolve o exemplar reservado ao stock
+const stockBefore = S.books.find((b) => b.id === U + '11').stock;
+const physCancel = await call(checkout, {
+  method: 'POST',
+  body: {
+    bookId: U + '11',
+    format: 'physical',
+    name: 'Carlos',
+    phone: '841234567',
+    shippingAddress: 'Av. Julius Nyerere 123, Polana',
+    shippingCity: 'Maputo',
+  },
+});
+assert.equal(physCancel.code, 200);
+assert.equal(S.books.find((b) => b.id === U + '11').stock, stockBefore - 1);
+const cancelOrder = S.orders.find((o) => o.token === physCancel.body.token);
+assert.equal((await hook('payment.cancelled', { id: cancelOrder.provider_payment_id })).body.result, 'applied');
+assert.equal(S.books.find((b) => b.id === U + '11').stock, stockBefore);
+assert.equal(S.orders.find((o) => o.id === cancelOrder.id).status, 'cancelled');
 
 console.log('fluxo completo OK');

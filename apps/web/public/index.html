@@ -44,6 +44,7 @@
       <a class="btn" id="goBuy" href="#">Comprar agora</a>
       <a class="btn sec" id="goBuyPhysical" href="#" hidden>📦 Comprar Físico (Entrega)</a>
     </div>
+    <p id="stockNote" hidden style="margin:10px auto 0;max-width:420px;font-size:14px;line-height:1.45;color:#842029;background:#fbeaea;border:1px solid #f1c2c2;border-radius:8px;padding:10px 12px"><b>Sem stock:</b> não há livro físico disponível neste momento. Aguarde reposição ou contacte-nos para falar com a editora.<br><a id="stockContact" href="#" hidden style="display:inline-block;margin-top:6px;font-weight:700;color:#0b5c63">💬 Falar com a Kulera</a></p>
     <div class="share-bar">
       <button type="button" class="btn-share" id="shareNativeBtn">🔗 Partilhar livro</button>
       <a class="btn-share" id="shareWaBtn" href="#" target="_blank" rel="noopener">💬 WhatsApp</a>
@@ -83,14 +84,22 @@ function bookShareUrl(b){
   return shareOrigin() + '/livro/' + encodeURIComponent(b.id);
 }
 
+// Um livro físico só está à venda com exemplares em stock (nulo ou 0 = esgotado).
+function physicalAvailable(b){
+  const hasP = b.hasPhysical === true || b.requiresShipping === true;
+  if(!hasP) return false;
+  if(typeof b.physicalAvailable === 'boolean') return b.physicalAvailable;
+  return b.stock != null && Number(b.stock) > 0;
+}
+
 function bookSharePrices(b){
   const hasD = b.hasDigital !== false;
   const hasP = b.hasPhysical === true || b.requiresShipping === true;
-  const hasStock = hasP && (b.stock != null && Number(b.stock) > 0);
+  const hasStock = physicalAvailable(b);
   const parts = [];
   if(hasD) parts.push('E-book ' + money(b.digitalPriceMinor ?? b.priceMinor, b.currency));
   if(hasStock) parts.push('Físico ' + money(b.physicalPriceMinor ?? b.priceMinor, b.currency));
-  else if(hasP) parts.push('Físico (Esgotado)');
+  else if(hasP) parts.push('Físico (sem stock — aguarde reposição)');
   return parts.join(' · ');
 }
 
@@ -155,6 +164,15 @@ function makeCoverElement(book, maxWidth){
 }
 
 try{const t=localStorage.getItem('kulera_token');if(t){$('have').hidden=false;$('haveLink').href='/ler.html?t='+t}}catch{}
+// Contacto de apoio quando um livro físico está sem stock (fala com a editora através da Kulera).
+fetch('/api/book?_='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(cfg=>{
+  const n=String(cfg?.supportWhatsApp||'').replace(/\D/g,'');
+  if(!n) return;
+  const a=$('stockContact');
+  if(!a) return;
+  a.href='https://wa.me/'+n+'?text='+encodeURIComponent('Olá! Quero saber quando um livro físico volta a estar disponível.');
+  a.hidden=false;
+}).catch(()=>{});
 fetch('/api/books?_='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(list=>{
   const box=$('books');box.innerHTML='';
   const arr = Array.isArray(list) ? list : (list?.books||[]);
@@ -166,23 +184,23 @@ fetch('/api/books?_='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(list
     const a=document.createElement('p');a.textContent=b.author;
     const hasD = b.hasDigital !== false;
     const hasP = b.hasPhysical === true || b.requiresShipping === true;
-    const hasStock = hasP && (b.stock != null && Number(b.stock) > 0);
+    const hasStock = physicalAvailable(b);
     const badge = document.createElement('p'); badge.style.fontSize='13px'; badge.style.fontWeight='600'; badge.style.color = hasP ? '#7a3b00' : '#0b5c63';
-    badge.textContent = [hasD?'E-book':null,hasStock?'Físico':(hasP?'Físico (Esgotado)':null)].filter(Boolean).join(' + ') + (hasStock?' • Entrega':(hasD?' • Digital':''));
+    badge.textContent = [hasD?'E-book':null,hasStock?'Físico':(hasP?'Físico (sem stock)':null)].filter(Boolean).join(' + ') + (hasStock?' • Entrega':(hasD?' • Digital':''));
     const p=document.createElement('div');p.className='prices';
     const addPrice=(label,v)=>{if(v==null)return;const s=document.createElement('span');s.textContent=label;const bb=document.createElement('b');bb.textContent=money(v,b.currency);s.appendChild(bb);p.appendChild(s)};
     if(hasD)addPrice('Digital',b.digitalPriceMinor??b.priceMinor);
     if(hasStock)addPrice('Físico',b.physicalPriceMinor??b.priceMinor);
     else if(hasP && !hasStock) {
-      const s=document.createElement('span');s.textContent='Físico';const bb=document.createElement('b');bb.textContent='Esgotado';bb.style.color='#b02a37';s.appendChild(bb);p.appendChild(s);
+      const s=document.createElement('span');s.textContent='Físico';const bb=document.createElement('b');bb.textContent='Sem stock';bb.style.color='#b02a37';s.appendChild(bb);p.appendChild(s);
     }
     const act=document.createElement('div');act.className='card-actions';
         const btn=document.createElement('button');btn.type='button';
     if(hasP && !hasD && !hasStock){
-      btn.textContent='Esgotado';
-      btn.disabled=true;
-      btn.style.opacity='0.6';
-      btn.style.cursor='not-allowed';
+      // Só físico e sem exemplares: o botão responde com a mensagem de indisponibilidade.
+      btn.textContent='Sem stock';
+      btn.onclick=()=>choose(b);
+      btn.style.opacity='0.75';
     } else {
       btn.textContent='Comprar';
       btn.onclick=()=>choose(b);
@@ -202,9 +220,9 @@ fetch('/api/books?_='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(list
 function choose(b,scroll=true){
   current=b;
   const hasD=b.hasDigital!==false,hasP=b.hasPhysical===true||b.requiresShipping===true;
-  // Verificar stock para livros físicos
-  const hasStock = hasP && (b.stock != null && Number(b.stock) > 0);
-  const parts=[hasD?'Digital: '+money(b.digitalPriceMinor??b.priceMinor,b.currency):null,hasStock?'Físico (c/ entrega): '+money(b.physicalPriceMinor??b.priceMinor,b.currency):(hasP?'Físico (Esgotado)':null)].filter(Boolean);
+  // Verificar stock para livros físicos (nulo ou 0 = esgotado)
+  const hasStock = physicalAvailable(b);
+  const parts=[hasD?'Digital: '+money(b.digitalPriceMinor??b.priceMinor,b.currency):null,hasStock?'Físico (c/ entrega): '+money(b.physicalPriceMinor??b.priceMinor,b.currency):(hasP?'Físico (sem stock)':null)].filter(Boolean);
   $('buy').hidden=false;
   const covBox=$('bCover');
   if(covBox){
@@ -217,31 +235,39 @@ function choose(b,scroll=true){
   $('bPrice').textContent=parts.join(' · ');
   const buyDigitalBtn = $('goBuy');
   const buyPhysBtn = $('goBuyPhysical');
+  // Limpar estados de "sem stock" de uma escolha anterior.
+  buyDigitalBtn.style.opacity = '1';
+  buyDigitalBtn.style.pointerEvents = '';
+  buyDigitalBtn.onclick = null;
+  buyPhysBtn.style.opacity = '1';
+  buyPhysBtn.style.pointerEvents = '';
+  buyPhysBtn.onclick = null;
+  buyPhysBtn.textContent='📦 Comprar Físico (Entrega)';
+  $('stockNote').hidden = !(hasP && !hasStock);
   if(hasD && hasStock){
     buyDigitalBtn.href='comprar.html?id='+encodeURIComponent(b.id)+'&fmt=digital';
     buyDigitalBtn.textContent='📱 Comprar E-book';
     buyPhysBtn.href='comprar.html?id='+encodeURIComponent(b.id)+'&fmt=physical';
     buyPhysBtn.hidden=false;
   } else if(hasD && hasP && !hasStock) {
-    // Tem digital e físico mas físico sem stock
+    // Tem digital e físico mas o físico está sem exemplares.
     buyDigitalBtn.href='comprar.html?id='+encodeURIComponent(b.id)+'&fmt=digital';
     buyDigitalBtn.textContent='📱 Comprar E-book';
     buyPhysBtn.hidden=false;
-    buyPhysBtn.textContent='📦 Físico (Esgotado)';
-    buyPhysBtn.style.opacity = '0.5';
-    buyPhysBtn.style.pointerEvents = 'none';
+    buyPhysBtn.textContent='📦 Físico (sem stock)';
+    buyPhysBtn.style.opacity = '0.55';
     buyPhysBtn.href = '#';
+    buyPhysBtn.onclick = (e) => { e.preventDefault(); $('stockNote').scrollIntoView({behavior:'smooth',block:'center'}); };
   } else if(hasStock){
     buyDigitalBtn.href='comprar.html?id='+encodeURIComponent(b.id)+'&fmt=physical';
     buyDigitalBtn.textContent='📦 Comprar Físico (Entrega)';
     buyPhysBtn.hidden=true;
   } else if(hasP && !hasStock) {
-    // Só tem físico mas sem stock
-    buyDigitalBtn.href='comprar.html?id='+encodeURIComponent(b.id)+'&fmt=physical';
-    buyDigitalBtn.textContent='📦 Físico (Esgotado)';
-    buyDigitalBtn.style.opacity = '0.5';
-    buyDigitalBtn.style.pointerEvents = 'none';
+    // Só tem físico e está sem stock: o botão responde com o aviso.
     buyDigitalBtn.href = '#';
+    buyDigitalBtn.textContent='📦 Físico (sem stock)';
+    buyDigitalBtn.style.opacity = '0.55';
+    buyDigitalBtn.onclick = (e) => { e.preventDefault(); $('stockNote').scrollIntoView({behavior:'smooth',block:'center'}); };
     buyPhysBtn.hidden=true;
   } else {
     buyDigitalBtn.href='comprar.html?id='+encodeURIComponent(b.id);

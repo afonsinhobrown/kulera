@@ -50,7 +50,8 @@
 </main>
 <script>
 const $=id=>document.getElementById(id);
-const errors={invalid_name:'Escreva o seu nome.',invalid_phone:'Escreva um número de telemóvel válido, só com números.',invalid_email:'O email não parece válido.',book_unavailable:'Este livro já não está disponível.',payment_unavailable:'Não foi possível iniciar o pagamento.',invalid_address:'Indique o endereço completo (morada e cidade) para a entrega do livro físico.',invalid_format:'Escolha um formato válido.'};
+const errors={invalid_name:'Escreva o seu nome.',invalid_phone:'Escreva um número de telemóvel válido, só com números.',invalid_email:'O email não parece válido.',book_unavailable:'Este livro já não está disponível.',payment_unavailable:'Não foi possível iniciar o pagamento.',invalid_address:'Indique o endereço completo (morada e cidade) para a entrega do livro físico.',invalid_format:'Escolha um formato válido.',out_of_stock:'Não há livro físico disponível neste momento. Aguarde reposição ou contacte a editora.'};
+const STOCK_MSG='Não há livro físico disponível neste momento. Aguarde reposição ou contacte a editora.';
 const money=(m,c)=>{try{return new Intl.NumberFormat('pt-MZ',{style:'currency',currency:c}).format(m/100)}catch{return (m/100).toFixed(2)+' '+c}};
 const params=new URLSearchParams(location.search);
 const id=params.get('id');
@@ -58,6 +59,7 @@ const requestedFmt=params.get('fmt');
 let b=null,fmt='digital';
 let sandbox={on:false,amountMinor:null};
 let wallet=null;
+let bookHasDigital=false, bookHasStock=false;
 function syncWallet(){
   if(!wallet||!b) return;
   const maxMinor=Math.min(wallet.balance, priceFor(fmt));
@@ -102,13 +104,20 @@ function applyFmt(){
   } else {
     $('go').textContent=(physical?'Pagar (entrega) ':'Pagar ')+money(charged,b.currency);
   }
-  // Desabilitar botão se formato físico sem stock
+  // Desabilitar o botão quando o formato escolhido não tem stock ou quando o
+  // livro (só físico) está esgotado: nunca se inicia um pagamento impossível.
+  const soldOut = !bookHasDigital && !bookHasStock;
   const physicalRadio = document.querySelector('[name=fmt][value=physical]');
-  const noPhysicalStock = physical && physicalRadio && physicalRadio.disabled;
-  $('go').disabled = noPhysicalStock;
-  if (noPhysicalStock) {
-    $('go').textContent = 'Esgotado — apenas E-book disponível';
+  const noPhysicalStock = physical && (!physicalRadio || physicalRadio.disabled);
+  $('go').disabled = soldOut || noPhysicalStock;
+  if (soldOut) {
+    $('go').textContent = 'Sem stock';
     $('go').style.opacity = '0.6';
+  } else if (noPhysicalStock) {
+    $('go').textContent = 'Físico sem stock — comprar E-book';
+    $('go').style.opacity = '0.6';
+  } else {
+    $('go').style.opacity = '1';
   }
   syncWallet();
 }
@@ -123,8 +132,9 @@ async function load(){
   b=(list||[]).find(x=>x.id===id);
   if(!b){$('info').innerHTML='<p class="msg err">Livro não encontrado.</p>'; $('form').hidden=true; return;}
   const hasD=b.hasDigital!==false, hasP=b.hasPhysical===true||b.requiresShipping===true;
-  // Verificar stock para livros físicos
-  const hasStock = hasP && (b.stock != null && Number(b.stock) > 0);
+  // Stock: um livro físico só se vende com exemplares disponíveis (stock nulo ou 0 = esgotado).
+  const hasStock = hasP && (b.physicalAvailable !== undefined ? b.physicalAvailable === true : (b.stock != null && Number(b.stock) > 0));
+  bookHasDigital = hasD; bookHasStock = hasStock;
   if(requestedFmt==='physical' && hasStock) fmt='physical';
   else if(requestedFmt==='digital' && hasD) fmt='digital';
   else fmt=hasD?'digital':(hasStock?'physical':'digital');
@@ -161,7 +171,7 @@ async function load(){
   const meta=document.createElement('div');
   let html='<p style="margin:4px 0"><b id="bTitleText"></b><br><span style="color:#557077" id="bAuthorText"></span><br><small style="color:var(--sea);font-weight:600">'+badge+'</small><br><span class="price" id="fmtPrice" style="font-size:24px;display:inline-block;margin:10px 0 4px"></span></p>';
   if(hasD&&hasP){
-      const stockMsg = hasStock ? '' : ' <span style="color:#b02a37;font-weight:700">(Esgotado)</span>';
+      const stockMsg = hasStock ? '' : ' <span style="color:#b02a37;font-weight:700">(sem stock)</span>';
       html+='<p style="margin:10px 0"><b>Escolha o formato:</b><br><label style="display:inline-flex;gap:6px;align-items:center;font-weight:400;margin:4px 8px"><input type="radio" name="fmt" value="digital" '+(fmt==='digital'?'checked':'')+' style="width:auto"> 📱 E-book (digital) — '+money(priceFor('digital'),b.currency)+'</label> <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400;margin:4px 8px;opacity:'+(hasStock?'1':'0.5')+'"><input type="radio" name="fmt" value="physical" '+(fmt==='physical'?'checked':'')+' style="width:auto" '+(hasStock?'':'disabled')+'> 📦 Físico (entrega) — '+money(priceFor('physical'),b.currency)+stockMsg+'</label></p>';
     }
   meta.innerHTML=html;
@@ -198,6 +208,12 @@ async function load(){
   document.querySelectorAll('[name=fmt]').forEach(x=>x.onchange=()=>{fmt=x.value;applyFmt();});
   const f=$('form'); f.name.oninput=()=>{if(fmt==='physical')f.shippingName.value=f.name.value}; f.phone.oninput=()=>{if(fmt==='physical')f.shippingPhone.value=f.phone.value};
   applyFmt();
+  // Stock 0: responder sempre com a mesma mensagem (sem stock, aguardar reposição ou contactar a editora).
+  if(!hasStock && (hasP || requestedFmt==='physical')){
+    const m=$('msg');
+    m.className='msg err';
+    m.textContent=STOCK_MSG;
+  }
   // Estado do modo de teste: em sandbox a PaySuite cobra 10 MT, não o preço de tabela.
   try{
     const cfg=await fetch('/api/book?_='+Date.now(),{cache:'no-store'}).then(r=>r.json());
@@ -229,7 +245,7 @@ async function load(){
       const curStock = (b && b.stock != null) ? Number(b.stock) : 0;
       if(curStock <= 0){
         msg.className = 'msg err';
-        msg.textContent = 'Este livro físico está esgotado e não pode ser encomendado.';
+        msg.textContent = STOCK_MSG;
         btn.disabled = true;
         return;
       }
@@ -256,7 +272,7 @@ async function load(){
       const curStock = (b && b.stock != null) ? Number(b.stock) : 0;
       if(curStock <= 0){
         msg.className = 'msg err';
-        msg.textContent = 'Este livro físico está esgotado e não pode ser encomendado.';
+        msg.textContent = STOCK_MSG;
         btn.disabled = true;
         return;
       }body.shippingName=fd.get('shippingName')||fd.get('name');body.shippingPhone=fd.get('shippingPhone')||fd.get('phone');body.shippingAddress=fd.get('shippingAddress');body.shippingCity=fd.get('shippingCity');}

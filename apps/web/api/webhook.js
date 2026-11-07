@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { pool } from '../lib/db.js';
-import { settleOrderPaid } from '../lib/payments.js';
+import { settleOrderPaid, restoreReservedStock } from '../lib/payments.js';
 import { onOrderPaid } from '../lib/marketing.js';
 import { releaseHold } from '../lib/reader.js';
 import { EVENT_STATUS, verifySignature } from '../lib/paysuite.js';
@@ -66,10 +66,12 @@ export default async function handler(req, res) {
     if (target === 'paid') {
       await settleOrderPaid(client, order.id, providerId);
     } else {
-      await client.query(
+      const upd = await client.query(
         "update fair_orders set status = $2 where id = $1 and status in ('created','pending')",
         [order.id, target],
       );
+      // Pagamento falhado/cancelado: devolve ao stock o exemplar físico reservado.
+      if (upd.rowCount === 1) await restoreReservedStock(client, order.id);
     }
     await client.query('COMMIT');
     if (target === 'paid') await onOrderPaid(pool, order.id).catch(() => {});

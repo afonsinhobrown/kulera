@@ -30,14 +30,14 @@ async function q(sql, p = []) {
   if (/^insert into fair_settings/i.test(s)) {
     if (s.includes("'sandbox'")) S.settings.sandbox = p[0];
     else if (s.includes("'admin_key'") && p.length) S.settings.admin_key = p[0];
-    else if (s.includes("'admin_key'") && !S.settings.admin_key) S.settings.admin_key = 'kulera';
     return rows([]);
   }
   if (/^select value from fair_settings where key='sandbox'/i.test(s)) {
     return S.settings.sandbox !== undefined ? rows([{ value: S.settings.sandbox }]) : rows([]);
   }
   if (/^select value from fair_settings where key='admin_key'/i.test(s)) {
-    return rows([{ value: S.settings.admin_key || 'kulera' }]);
+    // Sem valor na BD = chave não configurada (o código já não inventa uma).
+    return S.settings.admin_key !== undefined ? rows([{ value: S.settings.admin_key }]) : rows([]);
   }
   if (/^select value from fair_settings where key='paysuite_token'/i.test(s)) {
     return S.settings.paysuite_token ? rows([{ value: S.settings.paysuite_token }]) : rows([]);
@@ -209,6 +209,12 @@ async function q(sql, p = []) {
     if (b && b.stock != null) b.stock++;
     return rows([{}]);
   }
+  if (s.startsWith('update fair_books set stock = coalesce(stock, 0) + 1')) {
+    const o = S.orders.find((x) => x.id === p[0]);
+    const b = S.books.find((x) => x.id === o?.book_id);
+    if (b && (o?.type === 'physical') && b.stock != null) b.stock++;
+    return rows([{}]);
+  }
   if (s.startsWith('update fair_orders set provider_payment_id')) {
     const o = S.orders.find((x) => x.id === p[0]);
     if (o) {
@@ -220,7 +226,7 @@ async function q(sql, p = []) {
   }
   if (s.startsWith("update fair_orders set status = 'failed'") || s.startsWith("update fair_orders set status='failed'")) {
     const o = S.orders.find((x) => x.id === p[0]);
-    if (o && (o.status === 'created' || o.status === 'pending')) o.status = 'failed';
+    if (o && (o.status === 'created' || o.status === 'pending')) { o.status = 'failed'; return rows([{}]); }
     return rows([]);
   }
   if (s.startsWith('select id, status from fair_orders where provider_payment_id')) {
@@ -241,7 +247,7 @@ async function q(sql, p = []) {
   }
   if (s.startsWith('update fair_orders set status = $2')) {
     const o = S.orders.find((x) => x.id === p[0]);
-    if (o && (o.status === 'created' || o.status === 'pending')) o.status = p[1];
+    if (o && (o.status === 'created' || o.status === 'pending')) { o.status = p[1]; return rows([{}]); }
     return rows([]);
   }
   if (s.startsWith("select id, provider_payment_id from fair_orders where status in ('created','pending')")) {

@@ -65,7 +65,11 @@ export default async function handler(req, res) {
   if (isPhysical) {
     const physicalStock = book.stock != null ? Number(book.stock) : 0;
     if (physicalStock <= 0) {
-      return res.status(400).json({ error: 'out_of_stock', detail: 'Este exemplar físico está esgotado.' });
+      return res.status(400).json({
+        error: 'out_of_stock',
+        message: 'Não há livro físico disponível neste momento. Aguarde reposição ou contacte a editora.',
+        detail: 'O exemplar físico está sem stock.',
+      });
     }
     if (!shippingAddress || shippingAddress.length < 5) return res.status(400).json({ error: 'invalid_address' });
   }
@@ -74,7 +78,11 @@ export default async function handler(req, res) {
   if (isPhysical) {
     const updated = await pool.query('update fair_books set stock = stock - 1 where id = $1 and coalesce(stock, 0) >= 1', [book.id]);
     if (updated.rowCount === 0) {
-      return res.status(400).json({ error: 'out_of_stock', detail: 'Este exemplar físico acabou de esgotar.' });
+      return res.status(400).json({
+        error: 'out_of_stock',
+        message: 'Não há livro físico disponível neste momento. Aguarde reposição ou contacte a editora.',
+        detail: 'O exemplar físico acabou de ficar sem stock.',
+      });
     }
   }
 
@@ -99,8 +107,8 @@ export default async function handler(req, res) {
     shipping_city: shippingCity || null,
   };
 
-  const pay = useMinor > 0 && chargeMinor <= 0
-    ? await createWalletOrder({
+  const pay = await (useMinor > 0 && chargeMinor <= 0
+    ? createWalletOrder({
         type: isPhysical ? 'physical' : 'book',
         amountMinor: listMinor,
         currency: book.currency,
@@ -111,7 +119,7 @@ export default async function handler(req, res) {
         useMinor,
         req,
       })
-    : await startPayment({
+    : startPayment({
         type: isPhysical ? 'physical' : 'book',
         listAmountMinor: chargeMinor,
         currency: book.currency,
@@ -121,7 +129,11 @@ export default async function handler(req, res) {
         description: `${isPhysical ? 'Kulera+: Livro físico' : 'Kulera+'}: ${book.title}`,
         extra,
         req,
-      });
+      })
+  ).catch((e) => {
+    console.error('checkout.error', e?.message || String(e));
+    return { ok: false, errorDetail: 'Falha ao iniciar o pagamento.' };
+  });
 
   if (!pay.ok) {
     if (isPhysical && book.stock != null) {

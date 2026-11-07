@@ -8,6 +8,10 @@
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="style.css">
 <style>
+/* O atributo hidden tem de vencer os display:flex/grid definidos abaixo —
+   sem isto o painel e o aviso de sandbox continuavam visíveis depois do logout
+   ou de desactivar o sandbox. */
+[hidden]{display:none!important}
 :root{
   --admin-bg:#f5f8f8;
   --sidebar-w:240px;
@@ -93,8 +97,9 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
     <p style="font-size:14px;color:#5b747c;margin:0 0 20px">Insira a chave de administração da Kulera+.</p>
     <form id="loginForm" style="display:grid;gap:14px">
       <label style="display:grid;gap:6px;font-weight:600;font-size:14px">Chave de acesso
-        <input id="key" type="password" autocomplete="current-password" required style="padding:10px;border:1.5px solid #9db3b0;border-radius:6px;font:inherit">
+        <input id="key" type="password" autocomplete="off" spellcheck="false" required style="padding:10px;border:1.5px solid #9db3b0;border-radius:6px;font:inherit">
       </label>
+      <p style="font-size:12px;color:#5b747c;margin:0">A chave é gerida apenas na base de dados (<code>fair_settings.admin_key</code>).</p>
       <p class="msg err" id="err" style="margin:0;font-size:13px"></p>
       <button type="submit" class="btn-primary" style="padding:12px">Entrar no Painel</button>
     </form>
@@ -355,10 +360,15 @@ let KEY = sessionStorage.getItem('kulera_admin_key') || '', DATA = null, content
 
 const fmt = m => (m/100).toLocaleString('pt-MZ', { minimumFractionDigits: 2 }) + ' MZN';
 const cell = v => { const td = document.createElement('td'); td.textContent = v ?? ''; return td; };
+// Formulários: acede sempre por elements.namedItem. form.<nome> pode devolver
+// uma propriedade do próprio <form> (por exemplo form.id) em vez do campo.
+const field = (form, name) => form?.elements?.namedItem(name) || null;
+const fieldValue = (form, name) => field(form, name)?.value ?? '';
+const setFieldValue = (form, name, value) => { const el = field(form, name); if(el) el.value = value == null ? '' : value; };
 const api = body => fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify(body) }).then(async r => {
   const j = await r.json().catch(() => ({}));
-  if(r.status === 401){ forceLogout('A sua sessão expirou. Introduza novamente a chave de administração.'); return { ok: false, auth: true, j }; }
-  return { ok: r.ok, j };
+  if(r.status === 401){ forceLogout('Chave de administração incorreta ou sessão expirada.'); return { ok: false, auth: true, status: r.status, j }; }
+  return { ok: r.ok, status: r.status, j };
 });
 
 function fill(t, heads, rows, make){
@@ -392,13 +402,42 @@ $('logoutBtn').onclick = () => {
   }
 };
 
-// Quando o servidor recusa a chave (401), volta ao ecrã de login em vez de
-// deixar o painel aberto com dados antigos.
+// Limpa do ecrã todos os dados de administração (encomendas, contactos, etc.).
+function clearAdminView(){
+  ['kpi','books','subs','plans','subsList','partners','dupesCard','payouts','withdrawals','recentOrders','orders','deviceRequests','promotions','readers','leads'].forEach((id) => {
+    const el = $(id);
+    if(el) el.innerHTML = '';
+  });
+  const bookForm = $('bookForm');
+  if(bookForm){
+    bookForm.reset();
+    const hid = bookForm.querySelector('[name=id]');
+    if(hid) hid.value = '';
+    if(bookForm.hasDigital) bookForm.hasDigital.checked = true;
+    if(bookForm.hasPhysical) bookForm.hasPhysical.checked = false;
+  }
+  const partnerForm = $('partnerForm');
+  if(partnerForm){ partnerForm.reset(); const hid = partnerForm.querySelector('[name=id]'); if(hid) hid.value = ''; }
+  const planForm = $('planForm');
+  if(planForm){ planForm.reset(); const hid = planForm.querySelector('[name=id]'); if(hid) hid.value = ''; }
+  if($('coverPreview')) $('coverPreview').innerHTML = '';
+  if($('coverUrlInput')) $('coverUrlInput').value = '';
+  if($('coverMsg')) $('coverMsg').textContent = '';
+  if($('fileMsg')) $('fileMsg').textContent = '';
+  if($('bookMsg')) $('bookMsg').textContent = '';
+  if($('bookFormTitle')) $('bookFormTitle').textContent = 'Registar Novo Livro';
+  contentHtml = null;
+  try { syncFormats(); } catch {}
+}
+
+// Quando o servidor recusa a chave (401), volta ao ecrã de login e apaga a
+// informação que estava no ecrã — nenhuma funcionalidade fica acessível.
 function forceLogout(message){
   sessionStorage.removeItem('kulera_admin_key');
   KEY = '';
   DATA = null;
   if(LOAD_INTERVAL){ clearInterval(LOAD_INTERVAL); LOAD_INTERVAL = null; }
+  clearAdminView();
   $('app').hidden = true;
   $('login').hidden = false;
   $('key').value = '';
@@ -407,7 +446,8 @@ function forceLogout(message){
 
 // Sandbox toggle
 async function toggleSandbox(forceVal){
-  const current = DATA?.sandbox === true;
+  if(!DATA) return;
+  const current = DATA.sandbox === true;
   const next = forceVal !== undefined ? forceVal : !current;
   const promptTxt = next
     ? 'Ativar MODO SANDBOX?\n\nTodos os pagamentos no site cobrarão apenas 10.00 MZN para testes reais na PaySuite.'
@@ -415,9 +455,9 @@ async function toggleSandbox(forceVal){
   if(!confirm(promptTxt)) return;
   const { ok, j, auth } = await api({ action: 'set_sandbox', enabled: next });
   if(ok){
-    DATA.sandbox = j.sandbox;
-    renderSandbox(j.sandbox);
-    if(!next){ $('sandboxAlert').hidden=true; alert('Modo Sandbox DESATIVADO. Pagamentos voltam aos preços reais.'); }
+    DATA.sandbox = j.sandbox === true;
+    renderSandbox(DATA.sandbox);
+    if(!DATA.sandbox) alert('Modo Sandbox DESATIVADO. Pagamentos voltam aos preços reais.');
   } else if(!auth) {
     alert('Erro ao alterar sandbox. Verifique se está autenticado como Admin e tente novamente.');
   }
@@ -426,23 +466,25 @@ $('sandboxToggle').onclick = () => toggleSandbox();
 
 function renderSandbox(isSandbox){
   const b = $('sandboxToggle'), txt = $('sandboxStatusText'), alert = $('sandboxAlert');
-  if(isSandbox){
-    b.className = 'sandbox-badge active';
-    txt.textContent = 'ATIVO (10 MT)';
-    alert.hidden = false;
-  } else {
-    b.className = 'sandbox-badge inactive';
-    txt.textContent = 'Desactivado';
-    alert.hidden = true;
-  }
+  const on = isSandbox === true;
+  b.className = on ? 'sandbox-badge active' : 'sandbox-badge inactive';
+  b.title = on ? 'Modo sandbox activo — clique para desactivar' : 'Clique para activar o modo sandbox';
+  txt.textContent = on ? 'ATIVO (10 MT)' : 'Desactivado';
+  alert.hidden = !on;
 }
 
 async function load(){
   const r = await fetch('/api/admin', { cache: 'no-store', headers: { 'x-admin-key': KEY } });
   if(!r.ok){
-    if(r.status === 401) forceLogout('A sua sessão expirou. Introduza novamente a chave de administração.');
+    let j = {};
+    try { j = await r.json(); } catch {}
+    const err = new Error(r.status === 401 ? 'auth' : 'server');
+    err.status = r.status;
+    err.code = j.error || '';
+    if(r.status === 401) forceLogout('Chave de administração incorreta ou sessão expirada.');
+    else if(r.status === 503) forceLogout(loginErrorMessage(err));
     else if(LOAD_INTERVAL){ clearInterval(LOAD_INTERVAL); LOAD_INTERVAL = null; }
-    throw new Error(r.status === 401 ? 'auth' : 'server');
+    throw err;
   }
   const j = await r.json();
   DATA = j;
@@ -485,7 +527,14 @@ async function load(){
     const p = j.partners.find(x => x.id === b.partner_id);
     const pDig = b.has_digital ? fmt(b.price_minor) : '—';
     const pFis = b.has_physical ? fmt(b.price_physical_minor ?? b.price_minor) : '—';
-    const stockTxt = b.has_physical ? (b.stock != null ? b.stock + ' un.' : '0 un.') : '—';
+    const stockNum = b.stock == null ? 0 : Number(b.stock);
+    const stockTxt = !b.has_physical ? '—' : (stockNum > 0 ? stockNum + ' un.' : 'Sem stock');
+    const stockTd = cell(stockTxt);
+    if (b.has_physical && !(stockNum > 0)) {
+      stockTd.style.color = '#b02a37';
+      stockTd.style.fontWeight = '700';
+      stockTd.title = 'Não há livro físico disponível neste momento. Aguarde reposição ou contacte a editora.';
+    }
     const covTd = document.createElement('td');
     if (b.cover_url) {
       const thumb = document.createElement('img');
@@ -508,7 +557,7 @@ async function load(){
       cell(b.title + ' — ' + b.author),
       cell(pDig),
       cell(pFis),
-      cell(stockTxt),
+      stockTd,
       cell(p ? p.name : 'Kulera (Próprio)'),
       cell(b.has_content ? '✓ Presente' : '⚠️ Falta'),
       cell({ draft: 'Rascunho', published: 'Publicado', suspended: 'Suspenso' }[b.status] || b.status),
@@ -887,22 +936,22 @@ fill($('readers'), ['Leitor', 'Contacto', 'Saldo', 'Criado', ''], j.readers || [
 function editBook(b){
   const f = $('bookForm');
   $('bookFormTitle').textContent = 'Editar: ' + b.title;
-  f.id.value = b.id;
-  f.title.value = b.title;
-  f.author.value = b.author;
-  f.description.value = b.description || '';
-  f.language.value = b.language;
-  f.partnerId.value = b.partner_id || '';
-  f.coverUrl.value = b.cover_url || '';
+  setFieldValue(f, 'id', b.id);
+  setFieldValue(f, 'title', b.title);
+  setFieldValue(f, 'author', b.author);
+  setFieldValue(f, 'description', b.description || '');
+  setFieldValue(f, 'language', b.language);
+  setFieldValue(f, 'partnerId', b.partner_id || '');
+  setFieldValue(f, 'coverUrl', b.cover_url || '');
   showCoverPreview();
-  f.status.value = b.status;
+  setFieldValue(f, 'status', b.status);
   const hd = b.has_digital !== undefined ? b.has_digital : (b.kind !== 'physical');
   const hp = b.has_physical !== undefined ? b.has_physical : (b.kind === 'physical' || b.requires_shipping === true);
-  f.hasDigital.checked = hd === true;
-  f.hasPhysical.checked = hp === true;
-  f.stock.value = b.stock ?? '';
-  f.price.value = hd ? (b.price_minor/100).toFixed(2) : '';
-  f.pricePhysical.value = hp ? (((b.price_physical_minor ?? b.price_minor) || 0)/100).toFixed(2) : '';
+  field(f, 'hasDigital').checked = hd === true;
+  field(f, 'hasPhysical').checked = hp === true;
+  setFieldValue(f, 'stock', b.stock ?? '');
+  setFieldValue(f, 'price', hd ? (b.price_minor/100).toFixed(2) : '');
+  setFieldValue(f, 'pricePhysical', hp ? (((b.price_physical_minor ?? b.price_minor) || 0)/100).toFixed(2) : '');
   syncFormats();
   contentHtml = null;
   $('file').value = '';
@@ -912,10 +961,10 @@ function editBook(b){
 
 function resetBook(){
   $('bookForm').reset();
-  $('bookForm').id.value = '';
+  setFieldValue($('bookForm'), 'id', '');
   $('bookFormTitle').textContent = 'Registar Novo Livro';
-  $('bookForm').hasDigital.checked = true;
-  $('bookForm').hasPhysical.checked = false;
+  field($('bookForm'), 'hasDigital').checked = true;
+  field($('bookForm'), 'hasPhysical').checked = false;
   syncFormats();
   contentHtml = null;
   $('coverPreview').innerHTML = '';
@@ -928,46 +977,47 @@ function resetBook(){
 function editPartner(p){
   const f = $('partnerForm');
   $('partnerFormTitle').textContent = 'Editar: ' + p.name;
-  f.id.value = p.id;
-  f.name.value = p.name;
-  f.kind.value = p.kind;
-  f.commission.value = p.commission_bps / 100;
-  f.phone.value = p.phone || '';
-  f.email.value = p.email || '';
-  f.status.value = p.status;
+  setFieldValue(f, 'id', p.id);
+  setFieldValue(f, 'name', p.name);
+  setFieldValue(f, 'kind', p.kind);
+  setFieldValue(f, 'commission', p.commission_bps / 100);
+  setFieldValue(f, 'phone', p.phone || '');
+  setFieldValue(f, 'email', p.email || '');
+  setFieldValue(f, 'status', p.status);
   f.scrollIntoView({ behavior: 'smooth' });
 }
 
 function resetPartner(){
   $('partnerForm').reset();
-  $('partnerForm').id.value = '';
+  setFieldValue($('partnerForm'), 'id', '');
   $('partnerFormTitle').textContent = 'Registar Novo Parceiro';
   $('partnerMsg').textContent = '';
 }
 
 function editPlan(p){
   const f = $('planForm');
-  f.id.value = p.id;
-  f.code.value = p.code;
-  f.name.value = p.name;
-  f.description.value = p.description || '';
-  f.price.value = (p.price_minor / 100).toFixed(2);
-  f.maxPublications.value = p.max_publications ?? '';
-  f.showcasePriority.value = p.showcase_priority ?? 1;
-  f.status.value = p.status;
+  setFieldValue(f, 'id', p.id);
+  setFieldValue(f, 'code', p.code);
+  setFieldValue(f, 'name', p.name);
+  setFieldValue(f, 'description', p.description || '');
+  setFieldValue(f, 'price', (p.price_minor / 100).toFixed(2));
+  setFieldValue(f, 'maxPublications', p.max_publications ?? '');
+  setFieldValue(f, 'showcasePriority', p.showcase_priority ?? 1);
+  setFieldValue(f, 'status', p.status);
   f.scrollIntoView({ behavior: 'smooth' });
 }
 
 function syncFormats(){
-  const f = $('bookForm'), d = f.hasDigital.checked, p = f.hasPhysical.checked;
+  const f = $('bookForm');
+  const d = field(f, 'hasDigital').checked, p = field(f, 'hasPhysical').checked;
   $('digitalFields').hidden = !d;
   $('physicalFields').hidden = !p;
-  f.price.required = d;
-  f.pricePhysical.required = p;
-  f.stock.required = p;
+  field(f, 'price').required = d;
+  field(f, 'pricePhysical').required = p;
+  field(f, 'stock').required = p;
 }
-$('bookForm').hasDigital.addEventListener('change', syncFormats);
-$('bookForm').hasPhysical.addEventListener('change', syncFormats);
+field($('bookForm'), 'hasDigital').addEventListener('change', syncFormats);
+field($('bookForm'), 'hasPhysical').addEventListener('change', syncFormats);
 syncFormats();
 
 function showCoverPreview(){
@@ -995,60 +1045,73 @@ function showCoverPreview(){
   p.appendChild(wrap);
 }
 
+const COVER_W = 600, COVER_H = 900; // proporção 2:3 usada em todo o site
+
+function fileToImage(file){
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => { URL.revokeObjectURL(url); resolve(im); };
+    im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image')); };
+    im.src = url;
+  });
+}
+
 async function processCoverFile(file){
-  if(!file || !file.type.startsWith('image/')){
+  if(!file || !/^image\//.test(file.type || '')){
     if($('coverMsg')){ $('coverMsg').className = 'msg err'; $('coverMsg').textContent = 'Seleccione um ficheiro de imagem válido (JPG, PNG, WebP).'; }
     return;
   }
   if($('coverMsg')){ $('coverMsg').className = 'msg'; $('coverMsg').textContent = 'A optimizar imagem da capa...'; }
   try {
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const im = new Image();
-        im.onload = () => {
-          const maxW = 600, maxH = 900;
-          let w = im.width, h = im.height;
-          const ratio = Math.min(maxW / w, maxH / h, 1);
-          w = Math.max(1, Math.round(w * ratio));
-          h = Math.max(1, Math.round(h * ratio));
-          const canvas = document.createElement('canvas');
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext('2d');
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, w, h);
-          ctx.drawImage(im, 0, 0, w, h);
-          resolve(canvas.toDataURL('image/jpeg', 0.85));
-        };
-        im.onerror = reject;
-        im.src = reader.result;
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-    $('coverUrlInput').value = dataUrl;
+    const im = await fileToImage(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = COVER_W;
+    canvas.height = COVER_H;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, COVER_W, COVER_H);
+    // Preenche a moldura 2:3 e centra a imagem: o excesso é cortado dos dois
+    // lados (nunca esticado nem encostado a um canto).
+    const scale = Math.max(COVER_W / im.naturalWidth, COVER_H / im.naturalHeight);
+    const w = im.naturalWidth * scale;
+    const h = im.naturalHeight * scale;
+    ctx.drawImage(im, (COVER_W - w) / 2, (COVER_H - h) / 2, w, h);
+    $('coverUrlInput').value = canvas.toDataURL('image/jpeg', 0.86);
     showCoverPreview();
+    if($('coverMsg')){ $('coverMsg').className = 'msg'; $('coverMsg').textContent = '✓ Capa optimizada e centrada (proporção 2:3).'; }
   } catch {
-    if($('coverMsg')){ $('coverMsg').className = 'msg err'; $('coverMsg').textContent = 'Erro ao processar a imagem seleccionada.'; }
+    if($('coverMsg')){ $('coverMsg').className = 'msg err'; $('coverMsg').textContent = 'Não foi possível ler esta imagem. Use JPG, PNG ou WebP.'; }
   }
 }
 
 $('coverUrlInput').addEventListener('input', showCoverPreview);
-// Colar uma imagem da área de transferência (Ctrl+V) na secção da capa:
-// converte-a em data URL, redimensiona e mostra a pré-visualização centrada.
-const coverSection = $('coverSection');
-if(coverSection){
-  coverSection.addEventListener('paste', e => {
-    const items = e.clipboardData?.items || [];
-    for(const item of items){
-      if(item.type && item.type.startsWith('image/')){
-        const file = item.getAsFile();
-        if(file){ e.preventDefault(); processCoverFile(file); return; }
-      }
+
+// Colar uma imagem da área de transferência (Ctrl+V) em qualquer sítio do
+// formulário de livros, desde que a secção da capa esteja visível.
+function pastedImageFile(e){
+  const dt = e.clipboardData;
+  if(!dt) return null;
+  const items = dt.items ? Array.from(dt.items) : [];
+  for(const item of items){
+    if(item.kind === 'file' && /^image\//.test(item.type || '')){
+      const file = item.getAsFile();
+      if(file) return file;
     }
-  });
+  }
+  const files = dt.files ? Array.from(dt.files) : [];
+  return files.find((f) => /^image\//.test(f.type || '')) || null;
 }
+
+document.addEventListener('paste', (e) => {
+  const section = $('coverSection');
+  if(!section || section.offsetParent === null) return; // painel ou tab escondido
+  const file = pastedImageFile(e);
+  if(!file) return;
+  e.preventDefault();
+  processCoverFile(file);
+});
+
 if($('coverDropZone') && $('coverFileInput')){
   const dz = $('coverDropZone'), fi = $('coverFileInput');
   dz.onclick = () => fi.click();
@@ -1109,53 +1172,82 @@ $('file').addEventListener('change', async e => {
 $('bookForm').addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target, m = $('bookMsg');
+  const submitBtn = f.querySelector('button[type=submit]');
+  if(submitBtn?.disabled) return;
   m.className = 'msg'; m.textContent = 'A guardar...';
-  if(!f.hasDigital.checked && !f.hasPhysical.checked){
+  const hasDigital = field(f, 'hasDigital').checked, hasPhysical = field(f, 'hasPhysical').checked;
+  if(!hasDigital && !hasPhysical){
     m.className = 'msg err'; m.textContent = 'Marque Digital, Físico ou ambos.'; return;
   }
-  const { ok, j } = await api({
-    action: 'save_book', id: f.id.value || undefined,
-    title: f.title.value, author: f.author.value, description: f.description.value, language: f.language.value,
-    priceMinor: f.hasDigital.checked ? Math.round(Number(f.price.value)*100) : null,
-    pricePhysicalMinor: f.hasPhysical.checked ? Math.round(Number(f.pricePhysical.value)*100) : null,
-    partnerId: f.partnerId.value || null, coverUrl: $('coverUrlInput').value.trim(), status: f.status.value,
-    hasDigital: f.hasDigital.checked, hasPhysical: f.hasPhysical.checked,
-    stock: f.hasPhysical.checked ? f.stock.value : null, contentHtml
-  });
-  if(!ok){
+  const digitalPrice = Math.round(Number(fieldValue(f, 'price'))*100);
+  const physicalPrice = Math.round(Number(fieldValue(f, 'pricePhysical'))*100);
+  const stockRaw = String(fieldValue(f, 'stock')).trim();
+  if(hasDigital && !(digitalPrice > 0)){ m.className = 'msg err'; m.textContent = 'Indique o preço digital (MZN).'; return; }
+  if(hasPhysical && !(physicalPrice > 0)){ m.className = 'msg err'; m.textContent = 'Indique o preço físico (MZN).'; return; }
+  if(hasPhysical && !/^\d+$/.test(stockRaw)){ m.className = 'msg err'; m.textContent = 'Indique a quantidade em stock (0 ou mais).'; return; }
+  const cover = $('coverUrlInput').value.trim();
+  if(cover.length + (contentHtml ? contentHtml.length : 0) > 4_000_000){
     m.className = 'msg err';
-    m.textContent = ({
-      content_too_large: 'O livro é demasiado grande.',
-      invalid_price_digital: 'Indique o preço digital.',
-      invalid_price_physical: 'Indique o preço físico.',
-      invalid_stock: 'Indique o stock físico.',
-      invalid_format: 'Marque Digital, Físico ou ambos.'
-    })[j.error] || 'Verifique os dados inseridos.';
+    m.textContent = 'Capa + conteúdo do livro são demasiado grandes para um só pedido. Use uma imagem de capa mais leve ou divida o manuscrito.';
     return;
   }
-  m.className = 'msg';
-  m.textContent = j.warning ? 'Guardado como rascunho (falta ficheiro de conteúdo).' : 'Livro guardado com sucesso.';
-  f.id.value = j.id; contentHtml = null; load();
+  if(submitBtn) submitBtn.disabled = true;
+  try {
+    const { ok, j, status } = await api({
+      action: 'save_book', id: fieldValue(f, 'id') || undefined,
+      title: fieldValue(f, 'title'), author: fieldValue(f, 'author'), description: fieldValue(f, 'description'), language: fieldValue(f, 'language'),
+      priceMinor: hasDigital ? digitalPrice : null,
+      pricePhysicalMinor: hasPhysical ? physicalPrice : null,
+      partnerId: fieldValue(f, 'partnerId') || null, coverUrl: cover, status: fieldValue(f, 'status'),
+      hasDigital, hasPhysical,
+      stock: hasPhysical ? Number(stockRaw) : null, contentHtml
+    });
+    if(!ok){
+      m.className = 'msg err';
+      if(status === 413){ m.textContent = 'O livro/capa é demasiado grande para ser enviado. Reduza o ficheiro e tente novamente.'; return; }
+      if(j.error === 'save_failed'){
+        console.error('save_book:', j.detail || 'erro');
+        m.textContent = 'Não foi possível gravar na base de dados. Tente novamente; se persistir, verifique os logs do servidor.';
+        return;
+      }
+      m.textContent = ({
+        content_too_large: 'O livro é demasiado grande (máximo ~3,5 MB de texto).',
+        invalid_price_digital: 'Indique o preço digital.',
+        invalid_price_physical: 'Indique o preço físico.',
+        invalid_stock: 'Indique o stock físico.',
+        invalid_format: 'Marque Digital, Físico ou ambos.',
+        invalid: 'Preencha o título e o autor.'
+      })[j.error] || ('Não foi possível guardar (' + (j.error || 'erro ' + status) + ').');
+      return;
+    }
+    m.className = 'msg';
+    m.textContent = j.warning ? 'Guardado como rascunho (falta ficheiro de conteúdo).' : 'Livro guardado com sucesso.';
+    setFieldValue(f, 'id', j.id);
+    contentHtml = null;
+    await load();
+  } finally {
+    if(submitBtn) submitBtn.disabled = false;
+  }
 });
 
 // Partner submit
 $('partnerForm').addEventListener('submit', async e => {
   e.preventDefault(); const f = e.target, m = $('partnerMsg');
   const { ok, j } = await api({
-    action: 'save_partner', id: f.id.value || undefined, name: f.name.value, kind: f.kind.value,
-    commissionBps: Math.round(Number(f.commission.value)*100), phone: f.phone.value, email: f.email.value, status: f.status.value
+    action: 'save_partner', id: fieldValue(f, 'id') || undefined, name: fieldValue(f, 'name'), kind: fieldValue(f, 'kind'),
+    commissionBps: Math.round(Number(fieldValue(f, 'commission'))*100), phone: fieldValue(f, 'phone'), email: fieldValue(f, 'email'), status: fieldValue(f, 'status')
   });
   m.className = ok ? 'msg' : 'msg err';
-  m.textContent = ok ? 'Parceiro guardado com sucesso.' : 'Verifique os dados.';
-  if(ok){ f.id.value = j.id; load(); }
+  m.textContent = ok ? 'Parceiro guardado com sucesso.' : ('Não foi possível guardar (' + (j.error || 'verifique os dados') + ').');
+  if(ok){ setFieldValue(f, 'id', j.id); load(); }
 });
 
 // Plan submit
 $('planForm').addEventListener('submit', async e => {
   e.preventDefault(); const f = e.target, m = $('planMsg');
   const { ok } = await api({
-    action: 'save_plan', id: f.id.value || undefined, code: f.code.value, name: f.name.value, description: f.description.value,
-    priceMinor: Math.round(Number(f.price.value)*100), maxPublications: f.maxPublications.value, showcasePriority: f.showcasePriority.value, status: f.status.value
+    action: 'save_plan', id: fieldValue(f, 'id') || undefined, code: fieldValue(f, 'code'), name: fieldValue(f, 'name'), description: fieldValue(f, 'description'),
+    priceMinor: Math.round(Number(fieldValue(f, 'price'))*100), maxPublications: fieldValue(f, 'maxPublications'), showcasePriority: fieldValue(f, 'showcasePriority'), status: fieldValue(f, 'status')
   });
   m.className = ok ? 'msg' : 'msg err';
   m.textContent = ok ? 'Plano guardado com sucesso.' : 'Erro ao guardar plano.';
@@ -1232,7 +1324,7 @@ $('settingsForm').onsubmit = async e => {
     btn.textContent = label;
   }
 };
-$('planReset').onclick = () => { $('planForm').reset(); $('planForm').id.value = ''; $('planMsg').textContent = ''; };
+$('planReset').onclick = () => { $('planForm').reset(); setFieldValue($('planForm'), 'id', ''); $('planMsg').textContent = ''; };
 $('runMaintenance').onclick = async () => {
   const btn = $('runMaintenance');
   if(!confirm('Executar agora a manutenção diária? Expira créditos, aplica a tolerância das assinaturas e envia avisos.')) return;
@@ -1250,23 +1342,41 @@ $('runMaintenance').onclick = async () => {
   }
 };
 
-// Login form
+// Login form — a chave só é guardada depois de o servidor a aceitar.
+function loginErrorMessage(err){
+  if(err?.code === 'admin_key_not_configured'){
+    return 'A chave de administração ainda não está definida na base de dados. No SQL, execute: insert into fair_settings (key,value) values (\'admin_key\',\'a-sua-senha\') on conflict (key) do update set value=excluded.value, updated_at=now();';
+  }
+  if(err?.code === 'admin_key_unavailable'){
+    return 'Não foi possível ler a chave de administração na base de dados. Verifique a ligação DATABASE_URL.';
+  }
+  if(err?.message === 'auth') return 'Chave de administração incorreta.';
+  return 'Erro ao ligar ao servidor. Tente novamente.';
+}
+
+function startAutoRefresh(){
+  if(LOAD_INTERVAL) clearInterval(LOAD_INTERVAL);
+  LOAD_INTERVAL = setInterval(() => {
+    if(!document.activeElement || !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) load().catch(()=>{});
+  }, 30000);
+}
+
 $('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
-  KEY = ($('key').value || '').trim();
-  sessionStorage.setItem('kulera_admin_key', KEY);
+  const typed = ($('key').value || '').trim();
+  if(!typed){ $('err').textContent = 'Escreva a chave de administração.'; return; }
+  KEY = typed;
   try {
     await load();
+    sessionStorage.setItem('kulera_admin_key', KEY);
     $('err').textContent = '';
     $('login').hidden = true;
     $('app').hidden = false;
-    if(LOAD_INTERVAL) clearInterval(LOAD_INTERVAL);
-    LOAD_INTERVAL = setInterval(() => {
-      if(!document.activeElement || !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) load().catch(()=>{});
-    }, 30000);
+    startAutoRefresh();
   } catch(err){
-    $('err').textContent = err?.message === 'auth' ? 'Chave de administração incorreta.' : 'Erro ao ligar ao servidor.';
-    if(err?.message === 'auth') sessionStorage.removeItem('kulera_admin_key');
+    KEY = '';
+    sessionStorage.removeItem('kulera_admin_key');
+    $('err').textContent = loginErrorMessage(err);
   }
 });
 
@@ -1334,24 +1444,43 @@ $('reconcileBtn').onclick = async () => {
 };
 $('csvP').onclick = () => csv('payouts');
 
-// Tenta carregar directamente. Se não houver ADMIN_KEY configurada no servidor, entra logo sem login.
+// Recupera a sessão do separador actual, se existir. Sem chave guardada nunca
+// se abre o painel: o ecrã de login (e só ele) fica visível.
 async function tryInit(){
+  $('app').hidden = true;
+  if(!KEY){
+    $('login').hidden = false;
+    return;
+  }
   try {
     await load();
     $('login').hidden = true;
     $('app').hidden = false;
-    if(LOAD_INTERVAL) clearInterval(LOAD_INTERVAL);
-    LOAD_INTERVAL = setInterval(() => {
-      if(!document.activeElement || !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) load().catch(()=>{});
-    }, 30000);
+    startAutoRefresh();
   } catch(err){
-    // Sempre mostrar login se falhar - nunca auto-login sem credenciais
     $('login').hidden = false;
     $('app').hidden = true;
-    sessionStorage.removeItem('kulera_admin_key');
-    KEY = '';
+    if(err?.message === 'auth'){
+      sessionStorage.removeItem('kulera_admin_key');
+      KEY = '';
+    }
+    $('err').textContent = loginErrorMessage(err);
   }
 }
+
+// Ao voltar com o botão "Voltar" (bfcache) o painel pode reaparecer: confirma a
+// sessão antes de mostrar seja o que for.
+window.addEventListener('pageshow', (e) => {
+  if(!e.persisted) return;
+  const stored = sessionStorage.getItem('kulera_admin_key') || '';
+  if(!stored){
+    forceLogout('Sessão terminada. Introduza a chave novamente.');
+    return;
+  }
+  KEY = stored;
+  load().catch(() => {});
+});
+
 tryInit();
 </script>
 </body>

@@ -1,6 +1,6 @@
 import { pool } from '../lib/db.js';
-import { ensurePaymentSchema, isSandbox, settleOrderPaid, getPaysuiteTokenFromDb, resolveSiteUrl, startPayment } from '../lib/payments.js';
-import { getPaymentStatus } from '../lib/paysuite.js';
+import { ensurePaymentSchema, isSandbox, settleOrderPaid, resolveSiteUrl, startPayment, restoreReservedStock } from '../lib/payments.js';
+import { getPaymentStatus, resolvePaysuiteToken } from '../lib/paysuite.js';
 import { recoverAccess } from '../lib/recovery.js';
 import { fingerprintHash, isDeviceKey, deviceHash, requestDeviceChange, sanitizeDeviceInfo } from '../lib/device.js';
 import { onOrderPaid, unsubscribe } from '../lib/marketing.js';
@@ -213,7 +213,8 @@ export default async function handler(req, res) {
         await settleOrderPaid(client, order.id, order.provider_payment_id || 'sim_manual');
         order.status = 'paid';
       } else {
-        await client.query("update fair_orders set status = 'failed' where id = $1 and status in ('created','pending')", [order.id]);
+        const upd = await client.query("update fair_orders set status = 'failed' where id = $1 and status in ('created','pending')", [order.id]);
+        if (upd?.rowCount) await restoreReservedStock(client, order.id);
         order.status = 'failed';
       }
       await client.query('COMMIT');
@@ -231,7 +232,7 @@ export default async function handler(req, res) {
 
   // Verificação activa na PaySuite caso o webhook ainda não tenha chegado.
   if (order.status === 'pending' && order.id && order.provider_payment_id && !String(order.provider_payment_id).startsWith('sim_')) {
-    const remoteStatus = await getPaymentStatus(order.provider_payment_id, await getPaysuiteTokenFromDb());
+    const remoteStatus = await getPaymentStatus(order.provider_payment_id, resolvePaysuiteToken());
     if (remoteStatus === 'paid') {
       const client = await pool.connect();
       try {
@@ -246,7 +247,8 @@ export default async function handler(req, res) {
         client.release();
       }
     } else if (remoteStatus === 'failed' || remoteStatus === 'cancelled') {
-      await pool.query("update fair_orders set status = $2 where id = $1 and status in ('created','pending')", [order.id, remoteStatus]).catch(() => {});
+      const upd = await pool.query("update fair_orders set status = $2 where id = $1 and status in ('created','pending')", [order.id, remoteStatus]).catch(() => null);
+      if (upd?.rowCount) await restoreReservedStock(pool, order.id);
       await releaseHold(pool, order.id).catch(() => {});
       order.status = remoteStatus;
     }

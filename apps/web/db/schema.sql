@@ -257,3 +257,9 @@ create table if not exists fair_recovery_attempts (
   ok boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+-- Chave do painel /admin.html: gerida APENAS aqui na base de dados (não há ADMIN_KEY no ambiente nem valor por omissão no código).
+-- Defina ou altere com:
+-- insert into fair_settings (key, value) values ('admin_key', 'UMA-SENHA-LONGA-E-FORTE')
+-- on conflict (key) do update set value = excluded.value, updated_at = now();
+

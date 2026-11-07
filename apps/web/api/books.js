@@ -41,6 +41,8 @@ export default async function handler(req, res) {
     }
     res.json(
       rows.map((b) => {
+        const hasPhysical = b.has_physical === true || b.kind === 'physical' || b.requires_shipping === true;
+        const stock = b.stock == null ? null : Number(b.stock);
         const out = {
           id: b.id,
           title: b.title,
@@ -49,18 +51,17 @@ export default async function handler(req, res) {
           language: b.language,
           priceMinor: Number(b.price_minor),
           digitalPriceMinor: b.has_digital !== false ? Number(b.price_minor) : null,
-          physicalPriceMinor:
-            b.has_physical === true || b.kind === 'physical'
-              ? Number(b.price_physical_minor ?? b.price_minor)
-              : null,
+          physicalPriceMinor: hasPhysical ? Number(b.price_physical_minor ?? b.price_minor) : null,
           currency: b.currency,
           coverUrl: b.cover_url,
           updatedAt: b.updated_at ? new Date(b.updated_at).getTime() : null,
           kind: b.kind || 'ebook',
           requiresShipping: b.requires_shipping || b.kind === 'physical',
-          stock: b.stock,
+          stock,
+          // Stock nulo ou 0 = esgotado: um livro físico nunca se vende sem exemplares.
+          physicalAvailable: hasPhysical && stock != null && stock > 0,
           hasDigital: b.has_digital !== false,
-          hasPhysical: b.has_physical === true || b.kind === 'physical',
+          hasPhysical,
           hasContent: b.has_content,
         };
         return out;

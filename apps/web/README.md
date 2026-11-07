@@ -4,13 +4,18 @@ Catálogo de vários livros, cada um com o seu preço, parceiros (editoras e esc
 
 ## Colocar no ar (cerca de 20 minutos)
 1. **Neon:** crie a base de dados e corra `db/schema.sql` no editor SQL.
-2. **Vercel:** importe esta pasta como projecto e defina as variáveis de `.env.example`: `DATABASE_URL`, `SITE_URL`, `PAYSUITE_CREATE_URL`, `PAYSUITE_TOKEN`, `PAYSUITE_WEBHOOK_SECRET`, `ADMIN_KEY` (chave longa e secreta). Faça deploy.
-3. **PaySuite:** configure o webhook `https://SEU-SITE/api/webhook`.
-4. **Confirme `lib/paysuite.js`** com a implementação PaySuite que já usa (campos do pedido e da resposta, nomes dos eventos, formato da assinatura). Está tudo marcado no ficheiro.
-5. **Textos:** edite `book.config.json` (WhatsApp de suporte e oferta aos parceiros).
-6. Abra `/admin.html`, entre com a `ADMIN_KEY` e:
+2. **Chave do painel (só na base de dados):** o acesso ao `/admin.html` usa a chave guardada em `fair_settings.admin_key`. Defina-a uma vez no editor SQL do Neon (nunca em variáveis de ambiente):
+   ```sql
+   insert into fair_settings (key, value) values ('admin_key', 'UMA-SENHA-LONGA-E-FORTE')
+   on conflict (key) do update set value = excluded.value, updated_at = now();
+   ```
+3. **Vercel:** importe esta pasta como projecto e defina as variáveis de `.env.example`: `DATABASE_URL`, `SITE_URL`, `PAYSUITE_CREATE_URL`, `PAYSUITE_TOKEN`, `PAYSUITE_WEBHOOK_SECRET`. Faça deploy.
+4. **PaySuite:** configure o webhook `https://SEU-SITE/api/webhook`.
+5. **Confirme `lib/paysuite.js`** com a implementação PaySuite que já usa (campos do pedido e da resposta, nomes dos eventos, formato da assinatura). Está tudo marcado no ficheiro.
+6. **Textos:** edite `book.config.json` (WhatsApp de suporte e oferta aos parceiros).
+7. Abra `/admin.html`, entre com a chave definida na base de dados e:
    - crie os **parceiros** (com a comissão da Kulera para cada um);
-   - crie os **livros**: título, autor, sinopse, **preço**, parceiro (ou «Kulera»), capa (endereço de imagem) e o ficheiro do livro (Word .docx ou HTML, convertido no próprio browser; cada «Título 1» do Word vira um capítulo);
+   - crie os **livros**: título, autor, sinopse, **preço**, parceiro (ou «Kulera»), capa (ficheiro, Ctrl+V, arrastar ou endereço de imagem) e o ficheiro do livro (Word .docx, HTML ou PDF, lido no leitor da plataforma); cada «Título 1» do Word vira um capítulo;
    - ponha o estado em **Publicado**. Um livro sem conteúdo nunca fica publicado nem se vende.
 
 ## O que a plataforma faz
@@ -18,7 +23,7 @@ Catálogo de vários livros, cada um com o seu preço, parceiros (editoras e esc
 - **Link de partilha por livro** (`/livro/<id>`): mostra a capa, os preços e um botão **Compre agora** por formato, que leva à página de pagamento desse livro. A pré-visualização no WhatsApp/Facebook mostra a capa, o título e os preços (a capa é servida pela mesma função, em `/api/livro?id=<id>&capa=1`, mesmo quando está guardada em base64 no painel).
 - Divisão da receita registada em cada venda (comissão aplicada na altura, que não muda depois) e valores a pagar a cada parceiro no painel, com CSV.
 - Captação de parceiros (`parceiros.html`) com lista, estado e WhatsApp directo no painel.
-- Segurança: o livro só sai com pagamento confirmado; sem ficheiro nem link público; marca de água com nome e telemóvel; webhooks com assinatura e sem duplicados; preço e disponibilidade sempre da base de dados. **Nenhum token de pagamento no código:** o token da PaySuite vem de `PAYSUITE_TOKEN`/`PAYSUITE_API_KEY` (Vercel) ou é guardado pelo painel em `fair_settings`.
+- Segurança: o livro só sai com pagamento confirmado; sem ficheiro nem link público; marca de água com nome e telemóvel; webhooks com assinatura e sem duplicados; preço e disponibilidade sempre da base de dados; livros físicos só se vendem com stock > 0. **Nenhum token de pagamento no código nem na base de dados:** o token da PaySuite vem apenas de `PAYSUITE_TOKEN`/`PAYSUITE_API_KEY` (ambiente do servidor) e não é mostrado nem editável no painel. A chave do painel vive só em `fair_settings.admin_key`.
 
 ## Testes
 `npm install && npm test` (testes da lógica e do fluxo completo comprar → pagar → ler, com base de dados simulada). **Isto não substitui a compra de teste real** com a PaySuite e o Neon antes de vender:

@@ -13,8 +13,10 @@ export const SANDBOX_AMOUNT_MINOR = 1000;
 let ensured = false;
 export async function ensurePaymentSchema() {
   if (ensured) return;
+  // A tabela de configurações é crítica (chave do admin, modo sandbox). Se não
+  // existir, o erro tem de chegar ao painel — nunca se aceita uma chave por omissão.
+  await pool.query(`create table if not exists fair_settings (key text primary key, value text, updated_at timestamptz not null default now())`);
   try {
-    await pool.query(`create table if not exists fair_settings (key text primary key, value text, updated_at timestamptz not null default now())`);
     await pool.query(`alter table fair_orders add column if not exists partner_id uuid`);
     await pool.query(`alter table fair_orders add column if not exists list_amount_minor bigint`);
     await pool.query(`alter table fair_orders add column if not exists sandbox boolean not null default false`);
@@ -83,21 +85,54 @@ export async function setSandbox(on) {
   );
 }
 
-export async function getPaysuiteTokenFromDb() {
-  await ensurePaymentSchema();
+/**
+ * Chave de administração. Vive APENAS na base de dados (fair_settings.admin_key).
+ * Não há valor por omissão nem variável de ambiente: se a chave não estiver
+ * definida na BD, o painel recusa o acesso e diz o que fazer.
+ *
+ * Lê directamente a tabela (sem correr todo o bootstrap do schema) para o login
+ * não depender de dezenas de DDL numa ligação fria; e tenta de novo uma vez em
+ * falhas transitórias de ligação (Neon a acordar, ligação reciclada).
+ */
+export async function getAdminKeyFromDb() {
+  const read = async () => {
+    const r = await pool.query("select value from fair_settings where key='admin_key'");
+    const raw = r.rows[0]?.value;
+    if (raw == null) return null;
+    const key = String(raw).trim();
+    return key || null;
+  };
   try {
-    const r = await pool.query("select value from fair_settings where key='paysuite_token'");
-    const dbTok = r.rows[0]?.value?.trim();
-    if (dbTok) return dbTok;
-  } catch {}
-  return resolvePaysuiteToken();
+    return await read();
+  } catch (e) {
+    if (e?.code === '42P01') {
+      await pool.query(`create table if not exists fair_settings (key text primary key, value text, updated_at timestamptz not null default now())`);
+      return read();
+    }
+    if (/ECONNRESET|ETIMEDOUT|ECONNREFUSED|terminated|timeout|Connection/i.test(String(e?.message || e))) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      return read();
+    }
+    throw e;
+  }
 }
 
-export async function getAdminKeyFromDb() {
-  await ensurePaymentSchema();
-  await pool.query("insert into fair_settings (key,value,updated_at) values ('admin_key','kulera',now()) on conflict (key) do nothing");
-  const r = await pool.query("select value from fair_settings where key='admin_key'");
-  return r.rows[0]?.value || 'kulera';
+/**
+ * Devolve ao stock o exemplar reservado quando um pagamento físico falha ou é
+ * cancelado. O stock é reservado em /api/checkout; sem isto, um pagamento
+ * abandonado esgotava o livro para sempre.
+ */
+export async function restoreReservedStock(client, orderId) {
+  try {
+    await client.query(
+      `update fair_books set stock = coalesce(stock, 0) + 1
+        where id = (select book_id from fair_orders where id = $1 and type = 'physical' and book_id is not null)`,
+      [orderId],
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Valor efectivamente cobrado (10 MT em sandbox). */
@@ -177,7 +212,8 @@ export async function startPayment({ type, listAmountMinor, currency = 'MZN', na
   const vals = [id, token, reference, name, phone, email || null, amountMinor, Number(listAmountMinor), sandbox, currency, type, ...Object.values(extra)];
   await pool.query(`insert into fair_orders (${cols.join(',')}) values (${cols.map((_, i) => '$' + (i + 1)).join(',')})`, vals);
   const site = resolveSiteUrl(req);
-  const apiToken = await getPaysuiteTokenFromDb();
+  // O token da PaySuite vem só do ambiente do servidor (nunca da BD nem do painel).
+  const apiToken = resolvePaysuiteToken();
   try {
     const { providerPaymentId, checkoutUrl } = await createPayment({
       reference,

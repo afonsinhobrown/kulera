@@ -67,7 +67,7 @@ test('o token da PaySuite vem do ambiente e nunca do código', async () => {
     );
     process.env.PAYSUITE_TOKEN = 'abc123';
     assert.equal(resolvePaysuiteToken(), 'abc123');
-    assert.equal(resolvePaysuiteToken('def456'), 'def456'); // token explícito (ex.: vindo do painel) tem prioridade
+    assert.equal(resolvePaysuiteToken('def456'), 'def456'); // token explícito passado internamente
   } finally {
     if (prevApi !== undefined) process.env.PAYSUITE_API_KEY = prevApi;
     else delete process.env.PAYSUITE_API_KEY;
@@ -77,6 +77,11 @@ test('o token da PaySuite vem do ambiente e nunca do código', async () => {
   // Guarda contra voltar a colar credenciais no código: um token tem o formato "1234|..." com 30+ caracteres.
   const src = readFileSync(new URL('../lib/paysuite.js', import.meta.url), 'utf8');
   assert.ok(!/\d{4}\|[A-Za-z0-9]{30,}/.test(src), 'lib/paysuite.js não deve conter tokens');
+  // O token de pagamento não é guardado nem lido da base de dados nem exposto no painel.
+  const paySrc = readFileSync(new URL('../lib/payments.js', import.meta.url), 'utf8');
+  const adminSrc = readFileSync(new URL('../api/admin.js', import.meta.url), 'utf8');
+  assert.ok(!/paysuite_token/i.test(paySrc), 'lib/payments.js não deve ler/guardar paysuite_token');
+  assert.ok(!/key='paysuite_token'|paysuiteTokenHint|save_paysuite_token/i.test(adminSrc), 'api/admin.js não deve guardar nem expor o token');
 });
 
 test('retorno do pagamento usa o domínio do pedido (ignora um SITE_URL errado)', async () => {

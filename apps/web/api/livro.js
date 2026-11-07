@@ -102,7 +102,9 @@ function priceOptions(b) {
     opts.push({ fmt: 'digital', short: 'E-book', label: 'E-book (leitura digital)', price: b.digitalPrice, out: false });
   }
   if (b.hasPhysical && b.physicalPrice != null) {
-    opts.push({ fmt: 'physical', short: 'Físico', label: 'Livro físico (com entrega)', price: b.physicalPrice, out: b.stock != null && b.stock <= 0 });
+    // Sem stock (nulo ou 0) o exemplar físico está esgotado e não se vende.
+    const stock = b.stock == null ? 0 : Number(b.stock);
+    opts.push({ fmt: 'physical', short: 'Físico', label: 'Livro físico (com entrega)', price: b.physicalPrice, out: !(stock > 0) });
   }
   return opts;
 }
@@ -183,7 +185,7 @@ ${og.image ? `<meta name="twitter:image" content="${esc(og.image)}">` : ''}
 .price-row .label{display:block;font-size:13px;color:#557077;font-weight:600}
 .price-row .amount{font:700 22px Georgia,serif;color:var(--ink)}
 .price-row .btn{width:auto;padding:11px 18px;font-size:15px;white-space:nowrap;margin:0}
-.price-row .out{font-size:13px;color:#842029;font-weight:700}
+.price-row .out{font-size:13px;line-height:1.4;color:#842029;font-weight:600;max-width:340px}
 .pay-note{font-size:14px;color:#44606a;margin:0 0 10px}
 .desc{white-space:pre-line;color:#33505a}
 </style>
@@ -218,7 +220,9 @@ function renderBookPage({ book: b, origin }) {
     .map(
       (o) => `<li class="price-row">
       <div><span class="label">${esc(o.label)}</span><b class="amount">${esc(money(o.price, b.currency))}</b></div>
-      ${o.out ? '<span class="out">Esgotado</span>' : `<a class="btn" href="${esc(payHref(b.id, o.fmt))}">Compre agora</a>`}
+      ${o.out
+        ? '<span class="out">Sem stock — não há livro físico disponível neste momento. Aguarde reposição ou contacte a editora.</span>'
+        : `<a class="btn" href="${esc(payHref(b.id, o.fmt))}">Compre agora</a>`}
     </li>`,
     )
     .join('');
