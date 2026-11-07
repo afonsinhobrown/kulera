@@ -99,7 +99,6 @@ form.f input:focus,form.f select:focus,form.f textarea:focus{border-color:var(--
       <label style="display:grid;gap:6px;font-weight:600;font-size:14px">Chave de acesso
         <input id="key" type="password" autocomplete="off" spellcheck="false" required style="padding:10px;border:1.5px solid #9db3b0;border-radius:6px;font:inherit">
       </label>
-      <p style="font-size:12px;color:#5b747c;margin:0">A chave é gerida apenas na base de dados (<code>fair_settings.admin_key</code>).</p>
       <p class="msg err" id="err" style="margin:0;font-size:13px"></p>
       <button type="submit" class="btn-primary" style="padding:12px">Entrar no Painel</button>
     </form>
@@ -1343,12 +1342,13 @@ $('runMaintenance').onclick = async () => {
 };
 
 // Login form — a chave só é guardada depois de o servidor a aceitar.
+// As mensagens não revelam detalhes internos (tabelas, SQL ou ambiente).
 function loginErrorMessage(err){
   if(err?.code === 'admin_key_not_configured'){
-    return 'A chave de administração ainda não está definida na base de dados. No SQL, execute: insert into fair_settings (key,value) values (\'admin_key\',\'a-sua-senha\') on conflict (key) do update set value=excluded.value, updated_at=now();';
+    return 'O acesso ao painel não está configurado neste servidor. Contacte o responsável técnico.';
   }
   if(err?.code === 'admin_key_unavailable'){
-    return 'Não foi possível ler a chave de administração na base de dados. Verifique a ligação DATABASE_URL.';
+    return 'Não foi possível validar o acesso neste momento. Tente novamente dentro de instantes.';
   }
   if(err?.message === 'auth') return 'Chave de administração incorreta.';
   return 'Erro ao ligar ao servidor. Tente novamente.';

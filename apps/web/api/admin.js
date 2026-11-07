@@ -122,7 +122,7 @@ async function action(b, req) {
         return await saveBook(b);
       } catch (e) {
         console.error('admin.save_book.error', e?.message || String(e));
-        return [500, { error: 'save_failed', detail: String(e?.message || e).slice(0, 180) }];
+        return [500, { error: 'save_failed' }];
       }
     }
     case 'delete_book': {
@@ -387,10 +387,13 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: 'admin_key_unavailable' });
   }
   if (!expectedKey) {
-    return res.status(503).json({
-      error: 'admin_key_not_configured',
-      detail: "Defina a chave na base de dados: insert into fair_settings (key,value) values ('admin_key','a-sua-senha-forte') on conflict (key) do update set value=excluded.value, updated_at=now();",
-    });
+    // Detalhe operacional só no log privado do servidor; a resposta não revela
+    // tabelas, colunas nem SQL a quem abre a página de login.
+    console.error(
+      'admin.key.missing',
+      "Defina a chave com: insert into fair_settings (key,value) values ('admin_key','...') on conflict (key) do update set value=excluded.value, updated_at=now();",
+    );
+    return res.status(503).json({ error: 'admin_key_not_configured' });
   }
   const provided = req.headers?.['x-admin-key'] || '';
   if (!sameKey(provided, expectedKey)) {
